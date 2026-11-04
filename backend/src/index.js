@@ -15,7 +15,7 @@ import { PracticeSession } from './models/PracticeSession.js';
 import { messageCutoff } from './messageRetention.js';
 import { SubscriptionEvent } from './models/SubscriptionEvent.js';
 import { Plan } from './models/Plan.js';
-import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, canUseVideo, entitlementPayload, resetUsageIfNeeded } from './subscriptions.js';
+import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded } from './subscriptions.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { generateAiResponse } from './aiService.js';
 
@@ -446,11 +446,10 @@ try {
   // Ensure default PRO plans are seeded to MongoDB
   try {
     await Plan.createIndexes();
-    const existingPlans = await Plan.countDocuments();
-    if (existingPlans === 0) {
-      await Plan.insertMany(DEFAULT_PRO_PLANS);
-      console.log(`Seeded ${DEFAULT_PRO_PLANS.length} default subscription plan(s) to MongoDB.`);
+    for (const p of DEFAULT_PRO_PLANS) {
+      await Plan.updateOne({ id: p.id }, { $setOnInsert: p }, { upsert: true });
     }
+    console.log('Synchronized default subscription plan(s) to MongoDB.');
   } catch (planSeedErr) {
     console.warn('[Plans Seed Error]', planSeedErr.message);
   }
@@ -1323,7 +1322,7 @@ app.post('/api/subscription/razorpay/verify-payment', requireAuth, async (req, r
     const amountPaid = Number(req.body.amount) || (plan?.price ? Math.round(plan.price * 0.75 * 10) / 10 : 524.3);
     const durationLabel = req.body.duration || plan?.duration || plan?.name || (days >= 365 ? '1 Year' : days >= 90 ? '3 Months' : '1 Month');
 
-    user.subscriptionPlan = 'pro';
+    user.subscriptionPlan = (planId === 'basic') ? 'basic' : 'pro';
     user.subscriptionStatus = 'active';
     user.subscriptionProvider = 'razorpay';
     user.subscriptionProviderCustomerId = String(user._id);
@@ -2073,7 +2072,7 @@ app.get('/api/admin/subscriptions', async (req, res) => {
   try {
     const subscribers = await User.find({
       $or: [
-        { subscriptionPlan: { $in: ['pro', 'plus'] } },
+        { subscriptionPlan: { $in: ['pro', 'plus', 'basic', '1month', '3months', '1year'] } },
         { subscriptionProviderPurchaseId: { $ne: null } },
         { subscriptionAmount: { $gt: 0 } },
       ],
@@ -2115,7 +2114,7 @@ app.post('/api/admin/subscriptions/grant', async (req, res) => {
     const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
     const durationLabel = plan?.duration || plan?.name || (days >= 365 ? '1 Year' : days >= 90 ? '3 Months' : '1 Month');
 
-    user.subscriptionPlan = 'pro';
+    user.subscriptionPlan = (planId === 'basic') ? 'basic' : (planId === 'plus') ? 'plus' : 'pro';
     user.subscriptionStatus = 'active';
     user.subscriptionProvider = 'admin_grant';
     user.subscriptionStartedAt = now;
@@ -2554,14 +2553,34 @@ io.on('connection', (socket) => {
       acknowledge({ error: 'This person is offline' });
       return;
     }
-    let restrictedForRecipient = false;
-    if (type === 'video') {
-      const [caller, callee] = await Promise.all([User.findById(userId), User.findById(to)]);
-      if (!caller || !callee || !canUseVideo(caller)) {
-        acknowledge({ error: 'Video calling requires an available premium video allowance for both participants.', code: 'video_plan_required' });
+    const [callerDoc, calleeDoc] = await Promise.all([User.findById(userId), User.findById(to)]);
+    if (!callerDoc || !calleeDoc) {
+      acknowledge({ error: 'User not found' });
+      return;
+    }
+
+    // Normal audio calls require at least an active Basic subscription plan
+    if (type === 'audio') {
+      if (!canUseAudio(callerDoc)) {
+        acknowledge({
+          error: 'Voice calling requires an active subscription plan. Please activate a Basic or PRO plan to start calling.',
+          code: 'subscription_required',
+        });
         return;
       }
-      restrictedForRecipient = !canUseVideo(callee);
+    }
+
+    // Video calls require Plus or Pro subscription
+    let restrictedForRecipient = false;
+    if (type === 'video') {
+      if (!canUseVideo(callerDoc)) {
+        acknowledge({
+          error: 'Video calling requires an active PRO subscription.',
+          code: 'video_plan_required',
+        });
+        return;
+      }
+      restrictedForRecipient = !canUseVideo(calleeDoc);
     }
     if (userCalls.has(userId) || userCalls.has(to)) {
       acknowledge({ error: 'One of you is already on another call' });
@@ -2615,6 +2634,18 @@ io.on('connection', (socket) => {
     if (!call || call.calleeId !== userId || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
+    }
+    if (call.type === 'audio') {
+      const [caller, callee] = await Promise.all([
+        User.findById(call.callerId),
+        User.findById(call.calleeId),
+      ]);
+      if (!caller || !callee || (!canUseAudio(caller) && !canUseAudio(callee))) {
+        acknowledge({ error: 'Voice calling requires an active subscription plan.', code: 'subscription_required' });
+        emitToUser(call.callerId, 'call:ended', { callId: call.id, status: 'restricted', reason: 'subscription_required' });
+        finishCall(call, 'restricted', userId);
+        return;
+      }
     }
     if (call.type === 'video') {
       const [caller, callee] = await Promise.all([

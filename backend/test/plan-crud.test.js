@@ -2,9 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_PRO_PLANS } from '../src/subscriptions.js';
 
-test('DEFAULT_PRO_PLANS has valid 1 Year, 3 Months, and 1 Month defaults', () => {
+test('DEFAULT_PRO_PLANS has valid Basic, 1 Month, 3 Months, and 1 Year defaults', () => {
   assert.equal(Array.isArray(DEFAULT_PRO_PLANS), true);
-  assert.equal(DEFAULT_PRO_PLANS.length, 3);
+  assert.equal(DEFAULT_PRO_PLANS.length, 4);
+
+  const basicPlan = DEFAULT_PRO_PLANS.find((p) => p.id === 'basic');
+  assert.ok(basicPlan);
+  assert.equal(basicPlan.durationDays, 30);
+  assert.equal(basicPlan.price, 199);
+  assert.equal(basicPlan.badge, 'Basic Calling');
 
   const oneYear = DEFAULT_PRO_PLANS.find((p) => p.id === '1year');
   assert.ok(oneYear);

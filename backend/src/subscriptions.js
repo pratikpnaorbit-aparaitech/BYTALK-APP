@@ -4,16 +4,24 @@ export const SUBSCRIPTION_PLANS = {
     name: 'Free',
     priceInr: 0,
     billingInterval: 'forever',
-    limits: { monthlyVoiceMinutes: 10, monthlyVideoCalls: 0 },
-    features: ['Profile and partner discovery', 'Text messaging', 'Public speaking rooms', 'Limited voice-call access'],
+    limits: { monthlyVoiceMinutes: 0, monthlyVideoCalls: 0 },
+    features: ['Profile and partner discovery', 'Text messaging', 'Public speaking rooms'],
+  },
+  basic: {
+    id: 'basic',
+    name: 'BYTALK Basic',
+    priceInr: 199,
+    billingInterval: 'month',
+    limits: { monthlyVoiceMinutes: null, monthlyVideoCalls: 0 },
+    features: ['Active 1-on-1 normal voice calling', 'Random partner matching', 'Unlimited ARYA AI speaking practice', 'Community discovery'],
   },
   plus: {
     id: 'plus',
     name: 'BYTALK Plus',
-    priceInr: 199,
+    priceInr: 299,
     billingInterval: 'month',
-    limits: { monthlyVoiceMinutes: 120, monthlyVideoCalls: null },
-    features: ['Everything in Free', 'Full video-call access', 'Advanced language and country filters', 'Expanded translation and vocabulary features', 'Standard premium rooms'],
+    limits: { monthlyVoiceMinutes: null, monthlyVideoCalls: 10 },
+    features: ['Everything in Basic', 'HD Video-call practice', 'Advanced language and country filters', 'Standard premium rooms'],
   },
   pro: {
     id: 'pro',
@@ -21,36 +29,56 @@ export const SUBSCRIPTION_PLANS = {
     priceInr: 399,
     billingInterval: 'month',
     limits: { monthlyVoiceMinutes: null, monthlyVideoCalls: null },
-    features: ['Everything in Plus', 'Premium speaking rooms', 'Priority discovery', 'Advanced learning statistics'],
+    features: ['Everything in Plus', 'Unlimited HD Video calling', 'Premium speaking rooms', 'Priority discovery', 'Advanced learning statistics'],
   },
 };
 
 export const DEFAULT_PRO_PLANS = [
   {
-    id: '1year',
-    name: '1 Year',
-    duration: '1 Year',
-    durationDays: 365,
-    price: 1399,
-    originalPrice: 6000,
-    savings: 'Save 77%',
-    badge: 'Most Valued',
-    badgeColor: '#D97706',
-    badgeBg: '#FEF3C7',
-    unitText: '/Year',
+    id: 'basic',
+    name: 'Basic Calling',
+    duration: '1 Month Basic',
+    durationDays: 30,
+    price: 199,
+    originalPrice: 499,
+    savings: 'Save 60%',
+    badge: 'Basic Calling',
+    badgeColor: '#10B981',
+    badgeBg: '#ECFDF5',
+    unitText: '/Month',
     order: 1,
     active: true,
     features: [
+      'Active 1-on-1 normal voice calling',
+      'Instant partner audio calls',
+      'Live random speaker matching',
       'Unlimited ARYA AI conversations',
-      'HD 1-on-1 Video Calling with native speakers',
-      'All interview preparation topics',
-      'No autopay, 1-year full access',
-      'Priority matching & zero wait time',
+    ],
+  },
+  {
+    id: '1month',
+    name: '1 Month Pro',
+    duration: '1 Month',
+    durationDays: 30,
+    price: 399,
+    originalPrice: 500,
+    savings: 'Save 20%',
+    badge: 'HD Video + Voice',
+    badgeColor: '#6B7280',
+    badgeBg: '#F3F4F6',
+    unitText: '/Month',
+    order: 2,
+    active: true,
+    features: [
+      'Unlimited normal voice calls & HD video calls',
+      'Unlimited ARYA AI conversations',
+      'All topics unlocked',
+      'One-time payment',
     ],
   },
   {
     id: '3months',
-    name: '3 Months',
+    name: '3 Months Pro',
     duration: '3 Months',
     durationDays: 90,
     price: 699,
@@ -60,44 +88,61 @@ export const DEFAULT_PRO_PLANS = [
     badgeColor: '#EA580C',
     badgeBg: '#FFEDD5',
     unitText: '/3 Months',
-    order: 2,
+    order: 3,
     active: true,
     features: [
+      'Unlimited normal voice calls & HD video calls',
       'Unlimited ARYA AI conversations',
-      'HD 1-on-1 Video Calling',
       'All daily & business topics',
       'One-time payment, no autopay',
       'Priority matching',
     ],
   },
   {
-    id: '1month',
-    name: '1 Month',
-    duration: '1 Month',
-    durationDays: 30,
-    price: 399,
-    originalPrice: 500,
-    savings: 'Save 20%',
-    badge: null,
-    badgeColor: '#6B7280',
-    badgeBg: '#F3F4F6',
-    unitText: '/Month',
-    order: 3,
+    id: '1year',
+    name: '1 Year Pro',
+    duration: '1 Year',
+    durationDays: 365,
+    price: 1399,
+    originalPrice: 6000,
+    savings: 'Save 77%',
+    badge: 'Most Valued',
+    badgeColor: '#D97706',
+    badgeBg: '#FEF3C7',
+    unitText: '/Year',
+    order: 4,
     active: true,
     features: [
+      'Unlimited normal voice calls & HD video calls',
       'Unlimited ARYA AI conversations',
-      'HD 1-on-1 Video Calling',
-      'All topics unlocked',
-      'One-time payment',
+      'All interview preparation topics',
+      'No autopay, 1-year full access',
+      'Priority matching & zero wait time',
     ],
   },
 ];
 
 export function getPlan(planId) {
+  if (planId === 'basic') return SUBSCRIPTION_PLANS.basic;
+  if (planId === 'plus') return SUBSCRIPTION_PLANS.plus;
+  if (['pro', '1month', '3months', '1year'].includes(planId)) return SUBSCRIPTION_PLANS.pro;
   return SUBSCRIPTION_PLANS[planId] || SUBSCRIPTION_PLANS.free;
 }
 
 export function activeSubscription(user) {
+  if (!user) {
+    return {
+      plan: SUBSCRIPTION_PLANS.free,
+      status: 'inactive',
+      expiresAt: null,
+      renewalStatus: 'not_applicable',
+      provider: null,
+      providerCustomerId: null,
+      providerPurchaseId: null,
+      startedAt: null,
+      entitlementId: null,
+    };
+  }
   const planId = user.subscriptionPlan || 'free';
   const expiresAt = user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt) : null;
   const providerStatus = user.subscriptionStatus || 'inactive';
@@ -123,6 +168,7 @@ export function monthKey(date = new Date()) {
 }
 
 export function resetUsageIfNeeded(user) {
+  if (!user) return;
   const currentMonth = monthKey();
   if (user.usageMonth !== currentMonth) {
     user.usageMonth = currentMonth;
@@ -131,10 +177,27 @@ export function resetUsageIfNeeded(user) {
   }
 }
 
-export function canUseVideo(user) {
+/**
+ * Normal voice/audio calling requires an active subscription (Basic, Plus, or Pro).
+ */
+export function canUseAudio(user) {
+  if (!user) return false;
   const subscription = activeSubscription(user);
+  if (subscription.plan.id === 'free') return false;
   resetUsageIfNeeded(user);
-  const limit = subscription.plan.limits.monthlyVideoCalls;
+  const limit = subscription.plan.limits?.monthlyVoiceMinutes;
+  return limit === null || (user.voiceMinutesUsed || 0) < limit;
+}
+
+/**
+ * Video calling requires an active Plus or Pro subscription (Basic is audio-only).
+ */
+export function canUseVideo(user) {
+  if (!user) return false;
+  const subscription = activeSubscription(user);
+  if (['free', 'basic'].includes(subscription.plan.id)) return false;
+  resetUsageIfNeeded(user);
+  const limit = subscription.plan.limits?.monthlyVideoCalls;
   return limit === null || (user.videoCallsUsed || 0) < limit;
 }
 
@@ -144,9 +207,9 @@ export function entitlementPayload(user) {
   return {
     ...subscription,
     usage: {
-      month: user.usageMonth,
-      voiceMinutesUsed: user.voiceMinutesUsed || 0,
-      videoCallsUsed: user.videoCallsUsed || 0,
+      month: user?.usageMonth || monthKey(),
+      voiceMinutesUsed: user?.voiceMinutesUsed || 0,
+      videoCallsUsed: user?.videoCallsUsed || 0,
     },
   };
 }

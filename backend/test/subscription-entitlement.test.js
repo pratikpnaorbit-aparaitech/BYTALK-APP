@@ -1,6 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canUseVideo, entitlementPayload, activeSubscription } from '../src/subscriptions.js';
+import { canUseAudio, canUseVideo, entitlementPayload, activeSubscription } from '../src/subscriptions.js';
+
+test('Basic, Plus and Pro subscriptions can use audio calling; Free cannot', () => {
+  const activeBasic = {
+    subscriptionPlan: 'basic',
+    subscriptionStatus: 'active',
+    subscriptionExpiresAt: new Date(Date.now() + 86400000),
+    voiceMinutesUsed: 0,
+    videoCallsUsed: 0,
+  };
+  const activePlus = { ...activeBasic, subscriptionPlan: 'plus' };
+  const activePro = { ...activeBasic, subscriptionPlan: 'pro' };
+  const freeUser = { subscriptionPlan: 'free', subscriptionStatus: 'inactive' };
+  const expiredBasic = { ...activeBasic, subscriptionExpiresAt: new Date(Date.now() - 1) };
+
+  // Audio calling checks
+  assert.equal(canUseAudio(activeBasic), true, 'Basic plan should allow audio calls');
+  assert.equal(canUseAudio(activePlus), true, 'Plus plan should allow audio calls');
+  assert.equal(canUseAudio(activePro), true, 'Pro plan should allow audio calls');
+  assert.equal(canUseAudio(freeUser), false, 'Free user should not be able to make normal calls');
+  assert.equal(canUseAudio(expiredBasic), false, 'Expired basic plan cannot make audio calls');
+
+  // Video calling checks (Basic is audio-only, Plus/Pro can use video)
+  assert.equal(canUseVideo(activeBasic), false, 'Basic plan is audio-only, cannot use video');
+  assert.equal(canUseVideo(activePlus), true, 'Plus plan can use video');
+  assert.equal(canUseVideo(activePro), true, 'Pro plan can use video');
+  assert.equal(canUseVideo(freeUser), false, 'Free user cannot use video');
+});
 
 test('only active Plus and Pro subscriptions can use video', () => {
   const activePlus = {
@@ -40,6 +67,7 @@ test('entitlementPayload accurately reflects admin PRO grant and expiry', () => 
   assert.equal(payload.plan.id, 'pro');
   assert.equal(payload.status, 'active');
   assert.equal(payload.provider, 'admin_grant');
+  assert.equal(canUseAudio(adminGrantedUser), true);
   assert.equal(canUseVideo(adminGrantedUser), true);
 });
 
@@ -53,5 +81,6 @@ test('entitlementPayload reverts to free when revoked or expired', () => {
   const payload = entitlementPayload(revokedUser);
   assert.equal(payload.plan.id, 'free');
   assert.equal(payload.status, 'inactive');
+  assert.equal(canUseAudio(revokedUser), false);
   assert.equal(canUseVideo(revokedUser), false);
 });

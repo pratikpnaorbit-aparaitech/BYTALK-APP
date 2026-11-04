@@ -19,6 +19,9 @@ export default function CallTabScreen({
   onStartCall,
   onStartRandomMatch,
   isMatching = false,
+  isSubscribed = false,
+  hasVideoEntitlement = false,
+  onPressUpgrade,
 }) {
   const [filterType, setFilterType] = useState('all'); // 'all' | 'history'
 
@@ -74,6 +77,35 @@ export default function CallTabScreen({
             )}
           </TouchableOpacity>
         </LinearGradient>
+
+        {/* Subscription Calling Status Banner */}
+        {!isSubscribed ? (
+          <TouchableOpacity
+            onPress={onPressUpgrade}
+            style={styles.activateCallBanner}
+            activeOpacity={0.88}
+          >
+            <View style={styles.activateLeftCol}>
+              <View style={styles.lockPill}>
+                <Ionicons name="lock-closed" size={12} color="#D97706" />
+                <Text style={styles.lockPillText}>Calling Inactive</Text>
+              </View>
+              <Text style={styles.activateTitle}>Activate Normal Voice & Video Calls</Text>
+              <Text style={styles.activateSub}>Get a Basic or PRO plan to call partners live</Text>
+            </View>
+            <View style={styles.activateBtn}>
+              <Text style={styles.activateBtnText}>Activate</Text>
+              <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.activeCallingBanner}>
+            <Ionicons name="checkmark-circle" size={18} color="#059669" />
+            <Text style={styles.activeCallingText}>
+              {hasVideoEntitlement ? '👑 PRO Member: Unlimited Voice & HD Video Calls Active' : '⚡ Basic Calling Active: 1-on-1 Voice Calling Unlocked'}
+            </Text>
+          </View>
+        )}
 
         {/* Section Tabs: All | Online | Recent Calls */}
         <View style={styles.sectionTabRow}>
@@ -154,20 +186,20 @@ export default function CallTabScreen({
                   <View style={styles.callButtonsGroup}>
                     <TouchableOpacity
                       onPress={() => onStartCall(partner, 'audio')}
-                      style={styles.audioCallBtn}
+                      style={[styles.audioCallBtn, !isSubscribed && { backgroundColor: '#F3F4F6' }]}
                       accessibilityRole="button"
                       accessibilityLabel={`Voice call ${partner.name}`}
                     >
-                      <Ionicons name="call" size={16} color="#5843E8" />
+                      <Ionicons name={isSubscribed ? "call" : "call-outline"} size={16} color={isSubscribed ? "#5843E8" : "#6B7280"} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={() => onStartCall(partner, 'video')}
-                      style={styles.videoCallBtn}
+                      style={[styles.videoCallBtn, !hasVideoEntitlement && { backgroundColor: '#64748B' }]}
                       accessibilityRole="button"
                       accessibilityLabel={`Video call ${partner.name}`}
                     >
-                      <Ionicons name="videocam" size={16} color="#FFFFFF" />
+                      <Ionicons name={hasVideoEntitlement ? "videocam" : "lock-closed"} size={15} color="#FFFFFF" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -236,12 +268,91 @@ const styles = StyleSheet.create({
   randomMatchCard: {
     borderRadius: 20,
     padding: 18,
-    marginBottom: 16,
+    marginBottom: 4,
     shadowColor: '#5843E8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 4,
+  },
+  activateCallBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 8,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  activateLeftCol: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  lockPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  lockPillText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  activateTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  activateSub: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 1,
+  },
+  activateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#D97706',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  activateBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  activeCallingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  activeCallingText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065F46',
   },
   matchCardTop: {
     flexDirection: 'row',

@@ -4,20 +4,31 @@
     "slug": "bytalk",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/logo_icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "BYTALK uses your microphone for private voice and video calls.",
         "NSCameraUsageDescription": "BYTALK uses your camera for private video calls."
-      }
+      },
+      "bitcode": false
     },
     "android": {
       "package": "com.bytalk.languageapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo_icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH"
       ]
     },
     "plugins": [
@@ -29,6 +40,11 @@
           "microphonePermission": "BYTALK uses your microphone for private calls."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c72be35a-8e70-4953-ae48-484db599940c"
+      }
+    }
   }
 }

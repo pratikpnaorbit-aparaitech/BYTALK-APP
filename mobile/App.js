@@ -161,7 +161,7 @@ function getApiUrl() {
     if (metroHost && metroHost !== 'localhost' && metroHost !== '127.0.0.1') {
       return `http://${metroHost}:4000`;
     }
-    return 'http://10.0.2.2:4000';
+    return 'http://192.168.1.25:4000';
   }
 
   // 4. iOS Simulator / Device
@@ -517,6 +517,11 @@ function App() {
   };
 
   const handleStartRandomMatch = async () => {
+    if (!hasAudioEntitlement()) {
+      setSubscriptionError('A subscription plan is required to activate live speaking partner matching. Choose a Basic or PRO plan to start calling!');
+      await openSubscription();
+      return;
+    }
     setIsMatchingCall(true);
     try {
       const candidates = partners.filter((p) => p.online && p.id !== userId);
@@ -714,10 +719,20 @@ function App() {
 
   }
 
+  function hasAudioEntitlement() {
+    if (!subscription) return false;
+    const planId = subscription.plan?.id;
+    const isSubscribed = ['basic', 'plus', 'pro', '1month', '3months', '1year'].includes(planId) || subscription.active === true;
+    if (!isSubscribed) return false;
+    const status = subscription.status || (subscription.active ? 'active' : 'inactive');
+    if (!['active', 'cancelled'].includes(status)) return false;
+    return !subscription.expiresAt || new Date(subscription.expiresAt) > new Date();
+  }
+
   function hasVideoEntitlement() {
     if (!subscription) return false;
     const planId = subscription.plan?.id;
-    const isProTier = ['plus', 'pro'].includes(planId) || subscription.active === true;
+    const isProTier = ['plus', 'pro', '1month', '3months', '1year'].includes(planId) || (subscription.active === true && planId !== 'basic');
     if (!isProTier) return false;
     const status = subscription.status || (subscription.active ? 'active' : 'inactive');
     if (!['active', 'cancelled'].includes(status)) return false;
@@ -1106,6 +1121,11 @@ function App() {
     console.log('[BYTALK call] button pressed', { partnerId: partner?.id, type });
     if (!activeAuthToken) {
       Alert.alert('Sign in required', 'Sign in before starting a private call.');
+      return;
+    }
+    if (type === 'audio' && !hasAudioEntitlement()) {
+      setSubscriptionError('A subscription plan is required to activate voice calling with partners. Choose a Basic or PRO plan to start calling!');
+      await openSubscription();
       return;
     }
     if (type === 'video' && !hasVideoEntitlement()) {
@@ -2522,6 +2542,9 @@ function App() {
               onStartCall={(partner, type) => startCall(partner, type)}
               onStartRandomMatch={handleStartRandomMatch}
               isMatching={isMatchingCall}
+              isSubscribed={hasAudioEntitlement()}
+              hasVideoEntitlement={hasVideoEntitlement()}
+              onPressUpgrade={openSubscription}
             />
           )}
 

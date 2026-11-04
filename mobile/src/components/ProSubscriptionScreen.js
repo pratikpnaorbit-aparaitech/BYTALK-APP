@@ -17,6 +17,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 export const PRO_PLANS = [
   {
+    id: 'basic',
+    name: 'Basic Calling',
+    duration: '1 Month Basic',
+    badge: 'Basic Calling',
+    badgeColor: '#10B981',
+    badgeBg: '#ECFDF5',
+    originalPrice: 499,
+    price: 199,
+    savings: 'Save 60%',
+    unitText: '/Month',
+  },
+  {
     id: '1year',
     duration: '1 Year',
     badge: 'Most Valued',
