@@ -523,8 +523,9 @@ function App() {
       setScreen('premium');
     } else if (tabId === 'call') {
       setScreen('call-tab');
-    } else if (tabId === 'discover') {
-      setScreen('discover');
+    } else if (tabId === 'messages' || tabId === 'discover') {
+      setActiveBottomTab('messages');
+      setScreen('messages');
     }
     loadSubscription().catch(() => {});
   };
@@ -602,6 +603,8 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [unreadByUser, setUnreadByUser] = useState({});
   const [conversations, setConversations] = useState([]);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [chatFilterTab, setChatFilterTab] = useState('all');
   const [messageBanner, setMessageBanner] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
@@ -2453,10 +2456,10 @@ function App() {
         return true;
       }
 
-      // 6. Messages screen -> Discover
+      // 6. Messages screen -> Home
       if (screen === 'messages') {
-        setActiveBottomTab('discover');
-        setScreen('discover');
+        setActiveBottomTab('home');
+        setScreen('home');
         return true;
       }
 
@@ -3424,45 +3427,357 @@ function App() {
             </>
           )}
 
+          {/* SCREEN: WHATSAPP-THEMED CHATS SCREEN (REPLACED DISCOVER) */}
           {screen === 'messages' && (
-            <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-              <Header title="Messages" subtitle="Your latest conversations" onBack={() => { setActiveBottomTab('discover'); setScreen('discover'); }} />
-              {!conversations.length ? (
-                <View style={{ padding: 24, alignItems: 'center' }}>
-                  <Txt color={muted}>No conversations yet. Start a chat from Discover.</Txt>
+            <View style={styles.waChatsContainer}>
+              {/* WhatsApp Green Header Bar */}
+              <View style={styles.waChatsHeader}>
+                <View style={styles.waChatsTitleRow}>
+                  <Text style={styles.waChatsTitle}>WhatsApp Chats</Text>
+                  <View style={styles.waChatsHeaderIcons}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setPendingAttachment(PRESET_ATTACHMENT_IMAGES[0]);
+                        setShowAttachmentModal(true);
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="camera-outline" size={22} color="#FFFFFF" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        setChatSearchQuery(' ');
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="search" size={21} color="#FFFFFF" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert('BYTALK WhatsApp Chats', 'Direct language practice chat with instant photo and document sharing.');
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="ellipsis-vertical" size={20} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              ) : conversations.map((conversation) => {
-                const partner = conversation.user;
-                const latest = conversation.latestMessage;
-                return (
+
+                {/* Integrated WhatsApp Search Bar */}
+                <View style={styles.waSearchBar}>
+                  <Ionicons name="search" size={18} color="#8696A0" />
+                  <TextInput
+                    placeholder="Search chats or find user by name..."
+                    placeholderTextColor="#8696A0"
+                    value={chatSearchQuery}
+                    onChangeText={setChatSearchQuery}
+                    style={styles.waSearchInput}
+                  />
+                  {chatSearchQuery.length > 0 ? (
+                    <TouchableOpacity onPress={() => setChatSearchQuery('')} style={{ padding: 4 }}>
+                      <Ionicons name="close-circle" size={17} color="#8696A0" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                {/* WhatsApp Filter Pills: All | Unread */}
+                <View style={styles.waFilterRow}>
                   <TouchableOpacity
-                    key={partner.id}
-                    onPress={() => openConversation(partner)}
-                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#EEF0F4' }}
+                    onPress={() => setChatFilterTab('all')}
+                    style={[styles.waFilterPill, chatFilterTab === 'all' && styles.waFilterPillActive]}
                   >
-                    <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3' }]}>
-                      {partner.avatarUrl ? (
-                        <Image source={{ uri: partner.avatarUrl }} style={styles.partnerAvatarImage} />
-                      ) : (
-                        <Txt size={19} bold color={orange}>{(partner.displayName || partner.name || '?').charAt(0).toUpperCase()}</Txt>
-                      )}
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Txt bold size={15}>{partner.displayName || partner.name}</Txt>
-                        <Txt size={10} color={muted}>{latest?.at ? new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</Txt>
-                      </View>
-                      <Txt size={12} color={muted} numberOfLines={1} style={{ marginTop: 4 }}>{latest?.text || ''}</Txt>
-                    </View>
-                    {conversation.unreadCount > 0 && (
-                      <View style={{ minWidth: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.error, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }}>
-                        <Txt color="#fff" size={10} bold>{conversation.unreadCount}</Txt>
-                      </View>
-                    )}
+                    <Text style={[styles.waFilterText, chatFilterTab === 'all' && styles.waFilterTextActive]}>
+                      All
+                    </Text>
                   </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+
+                  <TouchableOpacity
+                    onPress={() => setChatFilterTab('unread')}
+                    style={[styles.waFilterPill, chatFilterTab === 'unread' && styles.waFilterPillActive]}
+                  >
+                    <Text style={[styles.waFilterText, chatFilterTab === 'unread' && styles.waFilterTextActive]}>
+                      Unread {Object.values(unreadByUser).reduce((a, b) => a + b, 0) > 0 ? `(${Object.values(unreadByUser).reduce((a, b) => a + b, 0)})` : ''}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      setChatSearchQuery(' ');
+                    }}
+                    style={styles.waFilterPill}
+                  >
+                    <Text style={styles.waFilterText}>
+                      Find Users
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Chat & Search Results Scroll Area */}
+              <ScrollView
+                contentContainerStyle={{ paddingBottom: 90 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* 1. If Searching by Name */}
+                {chatSearchQuery.trim().length > 0 ? (
+                  <View>
+                    {/* Matching Active Conversations */}
+                    {conversations.filter((c) => (c.user.displayName || c.user.name || '').toLowerCase().includes(chatSearchQuery.trim().toLowerCase())).length > 0 ? (
+                      <>
+                        <Text style={styles.waSectionLabel}>Active Conversations</Text>
+                        {conversations
+                          .filter((c) => (c.user.displayName || c.user.name || '').toLowerCase().includes(chatSearchQuery.trim().toLowerCase()))
+                          .map((conversation) => {
+                            const partner = conversation.user;
+                            const latest = conversation.latestMessage;
+                            const isMe = latest?.from === userId;
+                            return (
+                              <TouchableOpacity
+                                key={`conv-${partner.id}`}
+                                onPress={() => openConversation(partner)}
+                                style={styles.waChatRow}
+                                activeOpacity={0.7}
+                              >
+                                <View style={styles.waChatAvatarWrapper}>
+                                  {partner.avatarUrl && partner.avatarUrl.startsWith('emoji:') ? (
+                                    <View style={[styles.waChatAvatar, { backgroundColor: partner.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
+                                      <Text style={{ fontSize: 24 }}>{partner.avatarUrl.split(':')[1] || '😎'}</Text>
+                                    </View>
+                                  ) : partner.avatarUrl ? (
+                                    <Image source={{ uri: partner.avatarUrl }} style={styles.waChatAvatar} />
+                                  ) : (
+                                    <View style={[styles.waChatAvatar, { backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }]}>
+                                      <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF' }}>{(partner.displayName || partner.name || '?').charAt(0).toUpperCase()}</Text>
+                                    </View>
+                                  )}
+                                  {partner.online ? <View style={styles.waChatOnlineDot} /> : null}
+                                </View>
+
+                                <View style={styles.waChatDetails}>
+                                  <View style={styles.waChatTopRow}>
+                                    <Text style={styles.waChatName} numberOfLines={1}>{partner.displayName || partner.name}</Text>
+                                    <Text style={styles.waChatTime}>
+                                      {latest?.at ? new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                    </Text>
+                                  </View>
+
+                                  <View style={styles.waChatBottomRow}>
+                                    <View style={styles.waChatPreviewRow}>
+                                      {isMe && (
+                                        <Ionicons
+                                          name="checkmark-done"
+                                          size={15}
+                                          color={latest?.readAt ? '#53BDEB' : '#8696A0'}
+                                          style={{ marginRight: 4 }}
+                                        />
+                                      )}
+                                      {latest?.attachmentType === 'image' && (
+                                        <Ionicons name="camera" size={14} color="#8696A0" style={{ marginRight: 4 }} />
+                                      )}
+                                      {latest?.attachmentType === 'file' && (
+                                        <Ionicons name="document-text" size={14} color="#8696A0" style={{ marginRight: 4 }} />
+                                      )}
+                                      <Text style={styles.waChatSnippet} numberOfLines={1}>
+                                        {latest?.attachmentType === 'image' ? 'Photo' : latest?.attachmentType === 'file' ? 'Document' : (latest?.text || 'No messages yet')}
+                                      </Text>
+                                    </View>
+
+                                    {conversation.unreadCount > 0 ? (
+                                      <View style={styles.waUnreadBadge}>
+                                        <Text style={styles.waUnreadText}>{conversation.unreadCount}</Text>
+                                      </View>
+                                    ) : null}
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
+                      </>
+                    ) : null}
+
+                    {/* Matching BYTALK Users (Search by Name) */}
+                    <Text style={styles.waSectionLabel}>Users on BYTALK</Text>
+                    {partners
+                      .filter((p) => [p.displayName, p.name, p.country, p.learningLanguage].join(' ').toLowerCase().includes(chatSearchQuery.trim().toLowerCase()))
+                      .map((p) => (
+                        <View key={`user-${p.id}`} style={styles.waUserResultCard}>
+                          <View style={styles.waChatAvatarWrapper}>
+                            {p.avatarUrl && p.avatarUrl.startsWith('emoji:') ? (
+                              <View style={[styles.waChatAvatar, { backgroundColor: p.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
+                                <Text style={{ fontSize: 24 }}>{p.avatarUrl.split(':')[1] || '😎'}</Text>
+                              </View>
+                            ) : p.avatarUrl ? (
+                              <Image source={{ uri: p.avatarUrl }} style={styles.waChatAvatar} />
+                            ) : (
+                              <View style={[styles.waChatAvatar, { backgroundColor: '#3B82F6', alignItems: 'center', justifyContent: 'center' }]}>
+                                <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF' }}>{(p.displayName || p.name || '?').charAt(0).toUpperCase()}</Text>
+                              </View>
+                            )}
+                            {p.online ? <View style={styles.waChatOnlineDot} /> : null}
+                          </View>
+
+                          <View style={{ flex: 1, marginLeft: 14 }}>
+                            <Text style={styles.waChatName}>{p.displayName || p.name}</Text>
+                            <Text style={{ fontSize: 12, color: '#667781', marginTop: 2 }}>
+                              {p.country || 'Global'} · {p.learningLanguage || 'English'}
+                            </Text>
+                          </View>
+
+                          <TouchableOpacity
+                            onPress={() => openConversation(p)}
+                            style={styles.waUserActionBtn}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="chatbubble-ellipses" size={14} color="#FFFFFF" />
+                            <Text style={styles.waUserActionText}>Chat</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+
+                    {conversations.filter((c) => (c.user.displayName || c.user.name || '').toLowerCase().includes(chatSearchQuery.trim().toLowerCase())).length === 0 &&
+                     partners.filter((p) => [p.displayName, p.name].join(' ').toLowerCase().includes(chatSearchQuery.trim().toLowerCase())).length === 0 ? (
+                      <View style={{ padding: 30, alignItems: 'center' }}>
+                        <Ionicons name="search-outline" size={40} color="#94A3B8" />
+                        <Text style={{ fontSize: 14, color: '#64748B', marginTop: 10 }}>No users found matching “{chatSearchQuery}”</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : (
+                  /* 2. Standard WhatsApp Chats List */
+                  <View>
+                    {(() => {
+                      const list = chatFilterTab === 'unread'
+                        ? conversations.filter((c) => c.unreadCount > 0)
+                        : conversations;
+
+                      if (!list.length) {
+                        return (
+                          <View style={{ padding: 36, alignItems: 'center', marginTop: 30 }}>
+                            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#E7FFDB', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                              <Ionicons name="chatbubbles" size={38} color="#008069" />
+                            </View>
+                            <Text style={{ fontSize: 18, fontWeight: '800', color: '#111B21' }}>
+                              {chatFilterTab === 'unread' ? 'No unread chats' : 'Start Chatting on WhatsApp'}
+                            </Text>
+                            <Text style={{ fontSize: 13, color: '#667781', textAlign: 'center', marginTop: 8, lineHeight: 19, paddingHorizontal: 20 }}>
+                              {chatFilterTab === 'unread'
+                                ? 'You have read all received messages.'
+                                : 'Search any partner by name above to send messages, photos, and practice files!'}
+                            </Text>
+                            {partners.length > 0 && (
+                              <View style={{ marginTop: 24, width: '100%', alignItems: 'center' }}>
+                                <Text style={{ fontSize: 11.5, fontWeight: '800', color: '#8696A0', textTransform: 'uppercase', marginBottom: 10 }}>
+                                  Suggested Partners to Chat With
+                                </Text>
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
+                                  {partners.slice(0, 6).map((p) => (
+                                    <TouchableOpacity
+                                      key={p.id}
+                                      onPress={() => openConversation(p)}
+                                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E7FFDB', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: '#A7F3D0', gap: 5 }}
+                                    >
+                                      <Ionicons name="chatbubble-outline" size={12} color="#008069" />
+                                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#008069' }}>{p.displayName || p.name}</Text>
+                                    </TouchableOpacity>
+                                  ))}
+                                </View>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      }
+
+                      return list.map((conversation) => {
+                        const partner = conversation.user;
+                        const latest = conversation.latestMessage;
+                        const isMe = latest?.from === userId;
+                        const hasUnread = conversation.unreadCount > 0;
+
+                        return (
+                          <TouchableOpacity
+                            key={partner.id}
+                            onPress={() => openConversation(partner)}
+                            style={styles.waChatRow}
+                            activeOpacity={0.7}
+                          >
+                            <View style={styles.waChatAvatarWrapper}>
+                              {partner.avatarUrl && partner.avatarUrl.startsWith('emoji:') ? (
+                                <View style={[styles.waChatAvatar, { backgroundColor: partner.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
+                                  <Text style={{ fontSize: 24 }}>{partner.avatarUrl.split(':')[1] || '😎'}</Text>
+                                </View>
+                              ) : partner.avatarUrl ? (
+                                <Image source={{ uri: partner.avatarUrl }} style={styles.waChatAvatar} />
+                              ) : (
+                                <View style={[styles.waChatAvatar, { backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }]}>
+                                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF' }}>{(partner.displayName || partner.name || '?').charAt(0).toUpperCase()}</Text>
+                                </View>
+                              )}
+                              {partner.online ? <View style={styles.waChatOnlineDot} /> : null}
+                            </View>
+
+                            <View style={styles.waChatDetails}>
+                              <View style={styles.waChatTopRow}>
+                                <Text style={styles.waChatName} numberOfLines={1}>{partner.displayName || partner.name}</Text>
+                                <Text style={[styles.waChatTime, hasUnread && styles.waChatTimeUnread]}>
+                                  {latest?.at ? new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                </Text>
+                              </View>
+
+                              <View style={styles.waChatBottomRow}>
+                                <View style={styles.waChatPreviewRow}>
+                                  {isMe && (
+                                    <Ionicons
+                                      name="checkmark-done"
+                                      size={15}
+                                      color={latest?.readAt ? '#53BDEB' : '#8696A0'}
+                                      style={{ marginRight: 4 }}
+                                    />
+                                  )}
+                                  {latest?.attachmentType === 'image' && (
+                                    <Ionicons name="camera" size={14} color="#8696A0" style={{ marginRight: 4 }} />
+                                  )}
+                                  {latest?.attachmentType === 'file' && (
+                                    <Ionicons name="document-text" size={14} color="#8696A0" style={{ marginRight: 4 }} />
+                                  )}
+                                  <Text style={styles.waChatSnippet} numberOfLines={1}>
+                                    {latest?.attachmentType === 'image' ? 'Photo' : latest?.attachmentType === 'file' ? 'Document' : (latest?.text || 'No messages yet')}
+                                  </Text>
+                                </View>
+
+                                {hasUnread ? (
+                                  <View style={styles.waUnreadBadge}>
+                                    <Text style={styles.waUnreadText}>{conversation.unreadCount}</Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      });
+                    })()}
+                  </View>
+                )}
+              </ScrollView>
+
+              {/* WhatsApp Floating Action Button (FAB) */}
+              <TouchableOpacity
+                onPress={() => {
+                  if (partners.length > 0) {
+                    openConversation(partners[0]);
+                  } else {
+                    Alert.alert('Search Partner', 'Type any name in the top search bar to find partners!');
+                  }
+                }}
+                style={styles.waFabButton}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Start new chat"
+              >
+                <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* SCREEN 7: WHATSAPP-THEMED PROFESSIONAL CHAT */}
@@ -6216,6 +6531,210 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#667781',
     marginTop: 1,
+  },
+  waChatsContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    position: 'relative',
+  },
+  waChatsHeader: {
+    backgroundColor: '#008069',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 44 : 14,
+    paddingBottom: 10,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  waChatsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  waChatsTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  waChatsHeaderIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 18,
+  },
+  waSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 7 : 3,
+    marginBottom: 8,
+  },
+  waSearchInput: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#111B21',
+    paddingVertical: 5,
+    marginLeft: 6,
+  },
+  waFilterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  waFilterPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  waFilterPillActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  waFilterText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  waFilterTextActive: {
+    color: '#008069',
+  },
+  waChatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F2F5',
+    backgroundColor: '#FFFFFF',
+  },
+  waChatAvatarWrapper: {
+    position: 'relative',
+    width: 50,
+    height: 50,
+  },
+  waChatAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    overflow: 'hidden',
+  },
+  waChatOnlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    backgroundColor: '#25D366',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  waChatDetails: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  waChatTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  waChatName: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#111B21',
+  },
+  waChatTime: {
+    fontSize: 11.5,
+    color: '#8696A0',
+  },
+  waChatTimeUnread: {
+    color: '#25D366',
+    fontWeight: '700',
+  },
+  waChatBottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  waChatPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 6,
+  },
+  waChatSnippet: {
+    fontSize: 13,
+    color: '#667781',
+    flex: 1,
+  },
+  waUnreadBadge: {
+    minWidth: 19,
+    height: 19,
+    borderRadius: 10,
+    backgroundColor: '#25D366',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  waUnreadText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  waFabButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#00A884',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  waUserResultCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F2F5',
+    backgroundColor: '#FFFFFF',
+  },
+  waUserActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#008069',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+    gap: 4,
+  },
+  waUserActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  waSectionLabel: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#8696A0',
+    textTransform: 'uppercase',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
+    backgroundColor: '#F8FAFC',
   },
 });
 

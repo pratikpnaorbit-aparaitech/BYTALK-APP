@@ -13,13 +13,13 @@ export default function AryaBottomNav({
     { id: 'learn', label: 'Learn', icon: 'book-outline', iconActive: 'book' },
     { id: 'pro', label: isPro ? 'PRO 👑' : 'Get Pro', icon: 'crown', iconActive: 'crown' },
     { id: 'call', label: 'Call', icon: 'call-outline', iconActive: 'call' },
-    { id: 'discover', label: 'Discover', icon: 'compass-outline', iconActive: 'compass' },
+    { id: 'messages', label: 'Messages', icon: 'chatbubbles-outline', iconActive: 'chatbubbles' },
   ];
 
   return (
     <View style={styles.navContainer}>
       {tabs.map((tab) => {
-        const isActive = activeTab === tab.id;
+        const isActive = activeTab === tab.id || (tab.id === 'messages' && (activeTab === 'discover' || activeTab === 'messages' || activeTab === 'chat'));
         return (
           <TouchableOpacity
             key={tab.id}
@@ -50,8 +50,8 @@ export default function AryaBottomNav({
               {tab.label}
             </Text>
 
-            {/* Unread badge if on discover/call */}
-            {tab.id === 'discover' && unreadCount > 0 && (
+            {/* Unread badge on messages */}
+            {tab.id === 'messages' && unreadCount > 0 && (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadText}>
                   {unreadCount > 99 ? '99+' : unreadCount}
