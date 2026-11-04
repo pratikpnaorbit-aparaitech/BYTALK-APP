@@ -1273,9 +1273,53 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
 
     console.log(`Razorpay order created: ${orderData.id} for user ${user._id} (${duration} - ₹${finalAmountRupees})`);
 
+    // Create official Razorpay Payment Link (rzp.io) with direct PhonePe, Paytm, Google Pay UPI intent support
+    let paymentLinkUrl = null;
+    let paymentLinkId = null;
+    try {
+      const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amountInPaise,
+          currency: 'INR',
+          accept_partial: false,
+          description: `BYTALK PRO - ${duration}`,
+          customer: {
+            name: user.displayName || user.name || 'BYTALK Learner',
+            email: user.email || 'learner@bytalk.com',
+            contact: user.phone || '9999999999',
+          },
+          notify: { sms: false, email: false },
+          reminder_enable: false,
+          notes: {
+            userId: String(user._id),
+            orderId: orderData.id,
+            planId,
+            duration,
+          },
+          callback_url: `${req.protocol}://${req.get('host')}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}`,
+          callback_method: 'get',
+        }),
+      });
+      const plinkData = await plinkRes.json();
+      if (plinkRes.ok && plinkData.short_url) {
+        paymentLinkUrl = plinkData.short_url;
+        paymentLinkId = plinkData.id;
+        console.log(`Razorpay payment link created: ${paymentLinkUrl} (${paymentLinkId})`);
+      }
+    } catch (plinkErr) {
+      console.warn('[Razorpay Payment Link Warning]', plinkErr.message);
+    }
+
     res.json({
       ok: true,
       orderId: orderData.id,
+      paymentLinkId,
+      paymentLink: paymentLinkUrl,
       amount: orderData.amount,
       currency: orderData.currency,
       keyId: RAZORPAY_KEY_ID,
@@ -1376,6 +1420,183 @@ app.post('/api/subscription/razorpay/verify-payment', requireAuth, async (req, r
     console.error('[Razorpay Verify Error]', error);
     res.status(500).json({ error: error.message || 'Payment verification failed' });
   }
+});
+
+app.post('/api/subscription/razorpay/check-payment-status', requireAuth, async (req, res) => {
+  try {
+    const { paymentLinkId, orderId, planId = '3months', duration = '3 Months' } = req.body || {};
+    const user = await User.findById(req.authenticatedUser.id);
+    if (!user) return res.status(401).json({ error: 'User not found' });
+
+    const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+    let isPaid = false;
+    let paymentId = null;
+    let capturedAmount = 0;
+
+    // 1. Check by Razorpay Payment Link ID
+    if (paymentLinkId) {
+      try {
+        const plinkRes = await fetch(`https://api.razorpay.com/v1/payment_links/${paymentLinkId}`, {
+          headers: { 'Authorization': `Basic ${auth}` },
+        });
+        const plink = await plinkRes.json();
+        if (plink && (plink.status === 'paid' || plink.amount_paid > 0)) {
+          isPaid = true;
+          capturedAmount = (plink.amount_paid || plink.amount) / 100;
+          if (Array.isArray(plink.payments) && plink.payments.length > 0) {
+            paymentId = plink.payments[0].payment_id;
+          }
+        }
+      } catch (e) {
+        console.warn('[Check Plink Error]', e.message);
+      }
+    }
+
+    // 2. Check by Razorpay Order ID
+    if (!isPaid && orderId) {
+      try {
+        const orderRes = await fetch(`https://api.razorpay.com/v1/orders/${orderId}/payments`, {
+          headers: { 'Authorization': `Basic ${auth}` },
+        });
+        const orderPayments = await orderRes.json();
+        if (orderPayments && Array.isArray(orderPayments.items)) {
+          const successful = orderPayments.items.find((p) => p.status === 'captured');
+          if (successful) {
+            isPaid = true;
+            paymentId = successful.id;
+            capturedAmount = successful.amount / 100;
+          }
+        }
+      } catch (e) {
+        console.warn('[Check Order Error]', e.message);
+      }
+    }
+
+    if (isPaid) {
+      const plan = await Plan.findOne({ id: planId }).lean();
+      const days = plan?.durationDays || (planId === '1year' ? 365 : planId === '1month' ? 30 : 90);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+      user.subscriptionPlan = (planId === 'basic') ? 'basic' : 'pro';
+      user.subscriptionStatus = 'active';
+      user.subscriptionProvider = 'razorpay';
+      user.subscriptionProviderCustomerId = String(user._id);
+      user.subscriptionProviderPurchaseId = paymentId || `pay_link_${Date.now()}`;
+      user.subscriptionEntitlementId = `bytalk_pro_${planId}`;
+      user.subscriptionStartedAt = now;
+      user.subscriptionExpiresAt = expiresAt;
+      user.subscriptionRenewalStatus = 'not_renewing';
+      user.subscriptionAmount = capturedAmount || plan?.price || 199;
+      user.subscriptionDuration = duration;
+      await user.save();
+
+      try {
+        await SubscriptionEvent.create({
+          eventType: 'PURCHASE',
+          provider: 'razorpay',
+          providerEventId: paymentId || `ev_${Date.now()}`,
+          userId: user._id,
+          planId: user.subscriptionPlan,
+          amount: user.subscriptionAmount,
+          currency: 'INR',
+          expiresAt,
+          rawPayload: { paymentLinkId, orderId, paymentId },
+        });
+      } catch {}
+
+      emitToUser(String(user._id), 'subscription:updated', {
+        plan: { id: user.subscriptionPlan, name: duration },
+        status: 'active',
+        expiresAt: expiresAt.toISOString(),
+        subscription: entitlementPayload(user),
+        message: `🎉 Payment confirmed! Your BYTALK subscription (${duration}) is now active.`,
+      });
+
+      return res.json({
+        ok: true,
+        active: true,
+        isPaid: true,
+        message: 'Payment confirmed and subscription activated!',
+        subscription: entitlementPayload(user),
+      });
+    }
+
+    return res.json({
+      ok: true,
+      active: user.subscriptionStatus === 'active',
+      isPaid: false,
+      message: 'Payment has not completed yet.',
+    });
+  } catch (error) {
+    console.error('[Check Payment Status Exception]', error);
+    res.status(500).json({ error: error.message || 'Could not verify payment status' });
+  }
+});
+
+app.get('/api/subscription/razorpay/callback', async (req, res) => {
+  const { userId, planId, duration = 'PRO' } = req.query;
+  const paymentId = req.query.razorpay_payment_id || req.query.razorpay_payment_link_id;
+
+  if (userId) {
+    try {
+      const user = await User.findById(userId);
+      if (user) {
+        const plan = await Plan.findOne({ id: planId }).lean();
+        const days = plan?.durationDays || (planId === '1year' ? 365 : planId === '1month' ? 30 : 90);
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+        user.subscriptionPlan = (planId === 'basic') ? 'basic' : 'pro';
+        user.subscriptionStatus = 'active';
+        user.subscriptionProvider = 'razorpay';
+        user.subscriptionProviderCustomerId = String(user._id);
+        if (paymentId) user.subscriptionProviderPurchaseId = paymentId;
+        user.subscriptionEntitlementId = `bytalk_pro_${planId}`;
+        user.subscriptionStartedAt = now;
+        user.subscriptionExpiresAt = expiresAt;
+        user.subscriptionRenewalStatus = 'not_renewing';
+        await user.save();
+      }
+    } catch (e) {
+      console.warn('[Callback User Update Error]', e.message);
+    }
+  }
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Successful - BYTALK</title>
+  <style>
+    body {
+      margin: 0; padding: 24px; background: #0B0F19; color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 85vh; text-align: center;
+    }
+    .card { background: #1A1D2E; border: 1px solid #10B981; border-radius: 20px; padding: 32px 24px; max-width: 380px; width: 100%; box-shadow: 0 10px 30px rgba(16,185,129,0.2); }
+    .icon { font-size: 58px; margin-bottom: 12px; }
+    h2 { color: #10B981; margin: 0 0 8px 0; font-size: 24px; }
+    p { color: #9CA3AF; font-size: 14px; line-height: 1.5; margin: 0 0 24px 0; }
+    .btn { background: #5843E8; color: white; display: block; padding: 14px 20px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 16px; transition: background 0.2s; }
+    .btn:hover { background: #4732D6; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🎉</div>
+    <h2>Payment Successful!</h2>
+    <p>Your <strong>${duration}</strong> subscription is active. All premium features, voice calling, and ARYA AI are unlocked.</p>
+    <a href="bytalk://payment-success" class="btn">Return to BYTALK App</a>
+  </div>
+  <script>
+    setTimeout(function() {
+      try { window.location.href = 'bytalk://payment-success'; } catch(e) {}
+    }, 1200);
+  </script>
+</body>
+</html>`;
+  res.send(html);
 });
 
 app.get('/api/subscription/razorpay/checkout-page', async (req, res) => {

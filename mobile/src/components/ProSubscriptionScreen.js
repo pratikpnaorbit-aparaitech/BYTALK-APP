@@ -11,6 +11,7 @@ import {
   Modal,
   Platform,
   Linking,
+  AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -148,6 +149,41 @@ export default function ProSubscriptionScreen({
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPaymentBanner, setShowPaymentBanner] = useState(false);
   const pendingSubscriptionRef = useRef(null);
+  const pendingPaymentSessionRef = useRef(null);
+
+  // Auto-verify when returning to app from PhonePe / Paytm / GPay / Browser
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState) => {
+      if (nextAppState === 'active' && pendingPaymentSessionRef.current) {
+        const session = pendingPaymentSessionRef.current;
+        try {
+          if (onRequest) {
+            const statusRes = await onRequest('subscription/razorpay/check-payment-status', {
+              method: 'POST',
+              body: JSON.stringify({
+                paymentLinkId: session.paymentLinkId,
+                orderId: session.orderId,
+                planId: session.planId,
+                duration: session.duration,
+              }),
+            });
+            if (statusRes?.active || statusRes?.isPaid) {
+              pendingPaymentSessionRef.current = null;
+              pendingSubscriptionRef.current = statusRes?.subscription;
+              setShowSuccessModal(true);
+            }
+          }
+        } catch (e) {
+          console.log('[Auto-check payment status]', e.message);
+        }
+      }
+    };
+
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => {
+      sub.remove();
+    };
+  }, [onRequest]);
 
   const selectedPlan = activePlans.find((p) => p.id === selectedPlanId) || activePlans[0] || PRO_PLANS[0];
   const discountRate = couponApplied ? 0.25 : 0;
@@ -261,36 +297,75 @@ export default function ProSubscriptionScreen({
         }
       }
 
-      // 3. Native Mobile (iOS/Android) secure checkout page
-      if (apiBase && orderId) {
+      // 3. Native Mobile (iOS/Android) secure Razorpay link (Direct PhonePe, Paytm, Google Pay, UPI)
+      const payUrl = orderData?.paymentLink || (apiBase && orderId ? `${apiBase}/api/subscription/razorpay/checkout-page?orderId=${encodeURIComponent(orderId)}&amount=${orderData.amount}&name=${encodeURIComponent(user?.displayName || 'BYTALK Learner')}&email=${encodeURIComponent(user?.email || '')}&planId=${encodeURIComponent(selectedPlanId)}&token=${encodeURIComponent(activeAuthToken || '')}` : null);
+
+      if (payUrl) {
         setShowPaymentBanner(true);
-        const returnUrl = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost:8081';
-        const checkoutUrl = `${apiBase}/api/subscription/razorpay/checkout-page?orderId=${encodeURIComponent(orderId)}&amount=${orderData.amount}&name=${encodeURIComponent(user?.displayName || 'BYTALK Learner')}&email=${encodeURIComponent(user?.email || '')}&planId=${encodeURIComponent(selectedPlanId)}&token=${encodeURIComponent(activeAuthToken || '')}&redirectUrl=${encodeURIComponent(returnUrl)}`;
-        await Linking.openURL(checkoutUrl);
+        pendingPaymentSessionRef.current = {
+          paymentLinkId: orderData?.paymentLinkId,
+          orderId: orderData?.orderId,
+          planId: selectedPlanId,
+          duration: selectedPlan.duration,
+        };
+
+        // Open secure Razorpay payment URL in browser (supports PhonePe, Paytm, GPay, UPI intent)
+        await Linking.openURL(payUrl);
+
         Alert.alert(
-          'Complete Razorpay Payment',
-          `We opened Razorpay secure checkout in your browser for ₹${finalPrice}. Once payment completes, tap "I Completed Payment" below.`,
+          'Complete Payment',
+          `We opened Razorpay gateway for ₹${finalPrice}.\n\nSelect PhonePe, Paytm, Google Pay, or any UPI app to pay.\n\nOnce completed, tap "Verify & Activate PRO" below.`,
           [
-            { text: 'Cancel', style: 'cancel' },
             {
-              text: 'I Completed Payment',
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                pendingPaymentSessionRef.current = null;
+              },
+            },
+            {
+              text: 'Verify & Activate PRO',
               onPress: async () => {
                 setIsProcessing(true);
                 try {
+                  let verified = false;
                   if (onRequest) {
-                    const statusRes = await onRequest('subscription');
-                    if (statusRes?.plan?.id === 'pro') {
-                      Alert.alert('🎉 PRO Activated!', 'Your payment was confirmed. All features are now unlocked!');
-                      if (onPurchaseSuccess) onPurchaseSuccess(selectedPlan);
-                      if (onBack) onBack();
+                    const statusRes = await onRequest('subscription/razorpay/check-payment-status', {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        paymentLinkId: orderData?.paymentLinkId,
+                        orderId: orderData?.orderId,
+                        planId: selectedPlanId,
+                        duration: selectedPlan.duration,
+                      }),
+                    });
+
+                    if (statusRes?.active || statusRes?.isPaid) {
+                      verified = true;
+                      pendingPaymentSessionRef.current = null;
+                      pendingSubscriptionRef.current = statusRes?.subscription;
+                      setShowSuccessModal(true);
+                      return;
+                    }
+
+                    const subRes = await onRequest('subscription');
+                    if (subRes?.plan?.id === 'pro' || subRes?.plan?.id === 'basic') {
+                      verified = true;
+                      pendingPaymentSessionRef.current = null;
+                      setShowSuccessModal(true);
                       return;
                     }
                   }
-                  if (onPurchaseSuccess) onPurchaseSuccess(selectedPlan);
-                  if (onBack) onBack();
-                } catch {
-                  if (onPurchaseSuccess) onPurchaseSuccess(selectedPlan);
-                  if (onBack) onBack();
+
+                  if (!verified) {
+                    Alert.alert(
+                      'Payment Pending',
+                      'We have not yet received payment confirmation from Razorpay. If you already completed payment in PhonePe/Paytm, please wait a few seconds and tap "Verify & Activate PRO" again.',
+                      [{ text: 'OK' }]
+                    );
+                  }
+                } catch (verifyErr) {
+                  Alert.alert('Verification Notice', verifyErr.message || 'Please try tapping "Verify & Activate PRO" again.');
                 } finally {
                   setIsProcessing(false);
                 }
@@ -316,7 +391,16 @@ export default function ProSubscriptionScreen({
         ]
       );
     } catch (err) {
-      Alert.alert('Payment Error', err.message || 'Unable to complete transaction. Please try again.');
+      const isNet = err?.isNetworkError || err?.message?.includes('Cannot connect to backend server') || err?.message?.includes('Network request failed');
+      if (isNet) {
+        Alert.alert(
+          'Server Connection Error',
+          `Cannot reach the BYTALK backend server at ${apiBase || 'http://192.168.1.25:4000'}.\n\nPlease ensure:\n1. Your computer's backend server is running (run 'npm start' in BYTALK\\backend).\n2. Your mobile phone is connected to the same Wi-Fi network.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Payment Error', err.message || 'Unable to complete transaction. Please try again.');
+      }
     } finally {
       setIsProcessing(false);
     }

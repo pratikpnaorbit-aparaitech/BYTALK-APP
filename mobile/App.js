@@ -146,7 +146,7 @@ function getApiUrl() {
         return `http://${host}:4000`;
       }
     }
-    return 'http://localhost:4000';
+    return process.env.EXPO_PUBLIC_API_URL || 'https://bytalk-app.onrender.com';
   }
 
   // 3. Android Emulator / Device
@@ -161,7 +161,7 @@ function getApiUrl() {
     if (metroHost && metroHost !== 'localhost' && metroHost !== '127.0.0.1') {
       return `http://${metroHost}:4000`;
     }
-    return 'http://192.168.1.25:4000';
+    return process.env.EXPO_PUBLIC_API_URL || 'https://bytalk-app.onrender.com';
   }
 
   // 4. iOS Simulator / Device
@@ -176,10 +176,10 @@ function getApiUrl() {
     if (metroHost && metroHost !== 'localhost' && metroHost !== '127.0.0.1') {
       return `http://${metroHost}:4000`;
     }
-    return 'http://localhost:4000';
+    return process.env.EXPO_PUBLIC_API_URL || 'https://bytalk-app.onrender.com';
   }
 
-  return 'http://localhost:4000';
+  return process.env.EXPO_PUBLIC_API_URL || 'https://bytalk-app.onrender.com';
 }
 
 const API = getApiUrl();
@@ -1519,6 +1519,27 @@ function App() {
       socket?.disconnect();
     };
   }, [sessionChecking, sessionVersion, userId]);
+
+  useEffect(() => {
+    const handleDeepLink = async (event) => {
+      const url = event?.url;
+      if (url && (url.includes('payment-success') || url.includes('payment_id'))) {
+        try {
+          await loadSubscription();
+          Alert.alert('🎉 PRO Activated!', 'Your payment was confirmed. All features are now unlocked!');
+        } catch {}
+      }
+    };
+
+    const sub = Linking.addEventListener('url', handleDeepLink);
+    Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink({ url });
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionChecking && (screen === 'discover' || screen === 'call-tab' || screen === 'home') && activeAuthToken) loadDiscoverUsers();

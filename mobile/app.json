@@ -3,6 +3,7 @@
     "name": "BYTALK",
     "slug": "bytalk",
     "version": "1.0.0",
+    "scheme": "bytalk",
     "orientation": "portrait",
     "newArchEnabled": false,
     "icon": "./assets/logo_icon.png",
@@ -17,6 +18,7 @@
     },
     "android": {
       "package": "com.bytalk.languageapp",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo_icon.png",
         "backgroundColor": "#FFFFFF"
@@ -27,9 +29,9 @@
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.INTERNET",
-        "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WAKE_LOCK",
-        "android.permission.BLUETOOTH"
+        "android.permission.BLUETOOTH",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ]
     },
     "plugins": [
@@ -44,8 +46,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "c72be35a-8e70-4953-ae48-484db599940c"
+        "projectId": "23d7c91a-e508-465c-aa77-53b667ccb81e"
       }
-    }
+    },
+    "owner": "ak212921s-team"
   }
 }
