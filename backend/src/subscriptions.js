@@ -149,10 +149,15 @@ export function activeSubscription(user) {
   const active = planId !== 'free'
     && ['active', 'cancelled'].includes(providerStatus)
     && (!expiresAt || expiresAt > new Date());
+  const remainingDays = active
+    ? (expiresAt ? Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 30)
+    : 0;
+
   return {
     plan: active ? getPlan(planId) : SUBSCRIPTION_PLANS.free,
     status: active ? (user.subscriptionStatus || 'active') : planId === 'free' ? 'inactive' : 'expired',
     expiresAt: active ? user.subscriptionExpiresAt || null : null,
+    remainingDays,
     renewalStatus: user.subscriptionRenewalStatus || 'not_applicable',
     provider: user.subscriptionProvider || null,
     providerCustomerId: user.subscriptionProviderCustomerId || null,

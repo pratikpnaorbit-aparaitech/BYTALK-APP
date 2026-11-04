@@ -546,6 +546,7 @@ function App() {
   const [userId, setUserId] = useState(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState(null);
   const [country, setCountry] = useState('');
   const [nativeLanguage, setNativeLanguage] = useState('');
   const [learningLanguage, setLearningLanguage] = useState('English');
@@ -1288,6 +1289,7 @@ function App() {
           if (meRes.user.id) setUserId(meRes.user.id);
           if (meRes.user.name) setName(meRes.user.name);
           if (meRes.user.email) setEmail(meRes.user.email);
+          if (meRes.user.profilePhotoUrl) setAvatarUrl(meRes.user.profilePhotoUrl);
           if (meRes.user.country) setCountry(meRes.user.country);
           if (meRes.user.nativeLanguage) setNativeLanguage(meRes.user.nativeLanguage);
           if (meRes.user.learningLanguage) setLearningLanguage(meRes.user.learningLanguage);
@@ -1679,6 +1681,7 @@ function App() {
         if (res.user.id) setUserId(res.user.id);
         if (res.user.name) setName(res.user.name);
         if (res.user.email) setEmail(res.user.email);
+        if (res.user.profilePhotoUrl) setAvatarUrl(res.user.profilePhotoUrl);
         if (res.user.country) setCountry(res.user.country);
         if (res.user.nativeLanguage) setNativeLanguage(res.user.nativeLanguage);
         if (res.user.learningLanguage) setLearningLanguage(res.user.learningLanguage);
@@ -1801,6 +1804,7 @@ function App() {
       setUserId(null);
       setName('');
       setEmail('');
+      setAvatarUrl(null);
       setCountry('');
       setNativeLanguage('');
       setLearningLanguage('English');
@@ -2498,7 +2502,7 @@ function App() {
           {/* Top unified ARYA Header on main screens (Images 1 & 4) */}
           {!['welcome', 'login', 'register', 'onboard', 'level', 'call', 'call-complete', 'profile', 'premium', 'aiPractice'].includes(screen) && (
             <AryaTopBar
-              user={{ displayName: name || 'Prateek Pawar', streak: streak || 0 }}
+              user={{ displayName: name || 'Prateek Pawar', streak: streak || 0, profilePhotoUrl: avatarUrl }}
               userStats={{ streak: streak || 0 }}
               currentScreen={screen}
               onPressBack={() => {
@@ -2572,7 +2576,12 @@ function App() {
           {/* SCREEN: PROFILE (IMAGE 3) */}
           {screen === 'profile' && (
             <ProfileScreen
-              user={{ displayName: name, email: email || 'pratikumeshpawar@gmail.com' }}
+              user={{
+                displayName: name,
+                name,
+                email: email || 'pratikumeshpawar@gmail.com',
+                profilePhotoUrl: avatarUrl,
+              }}
               onBack={() => {
                 setActiveBottomTab('home');
                 setScreen('home');
@@ -2581,13 +2590,26 @@ function App() {
                 setActiveBottomTab('pro');
                 setScreen('premium');
               }}
-              onUpdateProfile={({ name: newName }) => {
-                setName(newName);
+              onUpdateProfile={async ({ name: newName, profilePhotoUrl: newAvatar }) => {
+                if (newName) setName(newName);
+                if (newAvatar !== undefined) setAvatarUrl(newAvatar);
+                try {
+                  await request('profile', {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                      name: newName || name,
+                      profilePhotoUrl: newAvatar !== undefined ? newAvatar : avatarUrl,
+                    }),
+                  });
+                } catch (e) {
+                  console.warn('[Profile update error]', e.message);
+                }
               }}
               onLogout={handleLogout}
               aryaSettings={aryaSettings}
               onUpdateAryaSettings={(newSettings) => setAryaSettings(newSettings)}
               isPro={subscription?.plan?.id === 'pro' || subscription?.plan?.id === 'plus' || subscription?.active === true}
+              subscription={subscription}
             />
           )}
 

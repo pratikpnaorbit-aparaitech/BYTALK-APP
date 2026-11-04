@@ -40,7 +40,13 @@ export default function AryaTopBar({
           accessibilityRole="button"
           accessibilityLabel="Open Profile"
         >
-          <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+          {typeof avatarUrl === 'string' && avatarUrl.startsWith('emoji:') ? (
+            <View style={[styles.avatarImage, { backgroundColor: avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
+              <Text style={{ fontSize: 18 }}>{avatarUrl.split(':')[1] || '😎'}</Text>
+            </View>
+          ) : (
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+          )}
           <View style={styles.avatarBadge}>
             <Ionicons name="menu" size={11} color="#5843E8" />
           </View>

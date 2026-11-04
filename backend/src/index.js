@@ -800,6 +800,30 @@ app.get('/api/settings', requireAuth, async (req, res) => {
   });
 });
 
+app.patch('/api/profile', requireAuth, async (req, res) => {
+  try {
+    const { name, profilePhotoUrl, bio, country, nativeLanguage } = req.body || {};
+    const updates = {};
+    if (typeof name === 'string' && name.trim()) updates.name = name.trim();
+    if (profilePhotoUrl !== undefined) updates.profilePhotoUrl = profilePhotoUrl;
+    if (typeof bio === 'string') updates.bio = bio.trim();
+    if (typeof country === 'string') updates.country = country.trim();
+    if (typeof nativeLanguage === 'string') updates.nativeLanguage = nativeLanguage.trim();
+
+    const user = await User.findByIdAndUpdate(
+      req.authenticatedUser.id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    store.users = (await User.find().lean()).map(cacheUser);
+    res.json({ ok: true, user: { ...publicUser(user), email: user.email } });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to update profile' });
+  }
+});
+
 app.patch('/api/settings', requireAuth, async (req, res) => {
   const update = normalizeSettings(req.body);
   if (!update) return res.status(400).json({ error: 'One or more settings values are invalid.' });
