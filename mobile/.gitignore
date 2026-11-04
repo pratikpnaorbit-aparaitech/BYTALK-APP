@@ -1,6 +1,8 @@
 node_modules/
 .expo/
 dist/
+android/
+ios/
 npm-debug.*
 *.jks
 *.p8
@@ -9,4 +11,3 @@ npm-debug.*
 *.mobileprovision
 *.orig.*
 .env*.local
-
