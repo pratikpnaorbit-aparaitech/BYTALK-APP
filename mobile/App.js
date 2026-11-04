@@ -19,6 +19,7 @@ import {
   Linking,
   Switch,
   BackHandler,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -41,6 +42,18 @@ import LeaderboardModal from './src/components/LeaderboardModal';
 import HistoryModal from './src/components/HistoryModal';
 
 const welcomeImage = require('./assets/bytalk-welcome-art.png');
+
+const PRESET_ATTACHMENT_IMAGES = [
+  { id: 'img1', name: 'Vocab_Flashcard.jpg', label: 'Daily Vocab Card', size: '1.2 MB', url: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=600&q=80', type: 'image' },
+  { id: 'img2', name: 'Dialogue_Scene.jpg', label: 'Coffee Shop Scene', size: '1.8 MB', url: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=600&q=80', type: 'image' },
+  { id: 'img3', name: 'Study_Notes.jpg', label: 'Study Notes Sheet', size: '950 KB', url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=600&q=80', type: 'image' },
+];
+
+const PRESET_ATTACHMENT_FILES = [
+  { id: 'doc1', name: 'English_Grammar_CheatSheet.pdf', size: '1.4 MB', type: 'file' },
+  { id: 'doc2', name: 'Daily_50_Idioms_Guide.pdf', size: '850 KB', type: 'file' },
+  { id: 'doc3', name: 'Speaking_Practice_Notes.docx', size: '420 KB', type: 'file' },
+];
 
 // Secure storage adapter:
 // Uses Expo SecureStore on native builds (iOS / Android) and AsyncStorage on Web
@@ -596,6 +609,8 @@ function App() {
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [subscriptionBusy, setSubscriptionBusy] = useState(false);
   const [draft, setDraft] = useState('');
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [showAttachmentModal, setShowAttachmentModal] = useState(false);
   const [vocab, setVocab] = useState([]);
   const [word, setWord] = useState('');
   const [backendUp, setBackendUp] = useState(false);
@@ -738,6 +753,10 @@ function App() {
     const status = subscription.status || (subscription.active ? 'active' : 'inactive');
     if (!['active', 'cancelled'].includes(status)) return false;
     return !subscription.expiresAt || new Date(subscription.expiresAt) > new Date();
+  }
+
+  function hasMessageEntitlement() {
+    return hasAudioEntitlement();
   }
 
   async function openSubscription() {
@@ -896,6 +915,17 @@ function App() {
   }
 
   function openConversation(partner) {
+    if (!hasMessageEntitlement()) {
+      Alert.alert(
+        'Subscription Required',
+        'Direct 1-on-1 messaging is a BYTALK Premium feature. Upgrade your plan to chat, send photos and files with language partners!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'View Plans', onPress: openSubscription },
+        ]
+      );
+      return;
+    }
     setSelected(partner);
     setChatError('');
     setMessageBanner(null);
@@ -1898,14 +1928,35 @@ function App() {
     }
   }
 
-  async function send() {
-    if (!draft.trim()) return;
+  async function send(attachmentOverride = null) {
+    const attach = attachmentOverride || pendingAttachment;
+    if (!draft.trim() && !attach) return;
+    if (!hasMessageEntitlement()) {
+      Alert.alert(
+        'Subscription Required',
+        'Direct messaging is a BYTALK Premium feature. Upgrade your plan to send messages, photos, and files!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'View Plans', onPress: openSubscription },
+        ]
+      );
+      return;
+    }
     const text = draft.trim();
+    const payload = {
+      to: selected.id,
+      text,
+      attachmentType: attach?.type || null,
+      attachmentUrl: attach?.url || null,
+      attachmentName: attach?.name || null,
+      attachmentSize: attach?.size || null,
+    };
     setDraft('');
+    setPendingAttachment(null);
     try {
       const result = await request('messages', {
         method: 'POST',
-        body: JSON.stringify({ to: selected.id, text }),
+        body: JSON.stringify(payload),
       });
       setMessages((prev) => (prev.some((x) => x.id === result.id) ? prev : [...prev, result]));
       setConversations((previous) => {
@@ -1918,6 +1969,7 @@ function App() {
     } catch (error) {
       setChatError(error.message || 'Message could not be sent. Check your connection and try again.');
       setDraft(text);
+      if (attach) setPendingAttachment(attach);
     }
   }
 
@@ -2312,12 +2364,15 @@ function App() {
     ['chat', 'chatbubbles', 'Messages'],
     ['dashboard', 'bar-chart', 'Profile'],
   ];
-  const filteredPartners = partners.filter((partner) =>
-    [partner.displayName, partner.name, partner.country, partner.nativeLanguage, partner.learningLanguage, partner.level]
-      .join(' ')
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  const isSearching = Boolean(search && search.trim().length > 0);
+  const filteredPartners = isSearching
+    ? partners.filter((partner) =>
+        [partner.displayName, partner.name, partner.country, partner.nativeLanguage, partner.learningLanguage, partner.level]
+          .join(' ')
+          .toLowerCase()
+          .includes(search.trim().toLowerCase())
+      )
+    : [];
   const practicePartners = partners;
 
   const Header = ({ title, subtitle, onBack }) => (
@@ -3242,29 +3297,61 @@ function App() {
                     <Txt size={13} color={muted} style={{ marginTop: 10 }}>Finding registered users…</Txt>
                   </View>
                 ) : null}
-                {!discoverLoading && !discoverError && partners.length === 0 ? (
-                  <View style={styles.discoverMessage}>
-                    <Ionicons name="people-outline" size={34} color={muted} />
-                    <Txt size={14} color={muted} style={{ marginTop: 10, textAlign: 'center' }}>
-                      No other registered users yet. Pull down to refresh.
+                {!isSearching && (
+                  <View style={styles.discoverPromptCard}>
+                    <View style={styles.discoverPromptIconCircle}>
+                      <Ionicons name="search" size={32} color="#5843E8" />
+                    </View>
+                    <Txt bold size={17} color={navy} style={{ marginTop: 14, textAlign: 'center' }}>
+                      Search Partners by Name
                     </Txt>
+                    <Txt size={13} color={muted} style={{ marginTop: 6, textAlign: 'center', lineHeight: 20, paddingHorizontal: 14 }}>
+                      Type a name in the search bar above to find language partners. Only searched users will be displayed.
+                    </Txt>
+                    {partners.length > 0 && (
+                      <View style={{ marginTop: 20, width: '100%', alignItems: 'center' }}>
+                        <Txt size={11} bold color={muted} style={{ letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
+                          Suggested Partners
+                        </Txt>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
+                          {partners.slice(0, 6).map((p) => (
+                            <TouchableOpacity
+                              key={p.id}
+                              onPress={() => setSearch(p.displayName || p.name)}
+                              style={styles.searchChip}
+                              activeOpacity={0.8}
+                            >
+                              <Ionicons name="person-outline" size={12} color="#5843E8" />
+                              <Txt size={12} bold color="#5843E8">{p.displayName || p.name}</Txt>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
                   </View>
-                ) : null}
-                {!discoverLoading && !discoverError && partners.length > 0 && filteredPartners.length === 0 ? (
+                )}
+                {isSearching && !discoverLoading && !discoverError && filteredPartners.length === 0 ? (
                   <View style={styles.discoverMessage}>
-                    <Txt size={14} color={muted} style={{ textAlign: 'center' }}>No users match “{search}”. Try a different search.</Txt>
+                    <Ionicons name="search-outline" size={36} color={muted} />
+                    <Txt size={14} color={muted} style={{ textAlign: 'center', marginTop: 10 }}>No users match “{search}”. Try a different search.</Txt>
                   </View>
                 ) : null}
-                {filteredPartners.map((p) => (
+                {isSearching && filteredPartners.map((p) => (
                     <View key={p.id} style={styles.partnerCard}>
                       <View style={styles.partnerInfoRow}>
-                        <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3' }]}>
+                        <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3', overflow: 'hidden' }]}>
                           {p.avatarUrl ? (
-                            <Image
-                              source={{ uri: p.avatarUrl }}
-                              accessibilityLabel={`${p.displayName || p.name} profile photo`}
-                              style={styles.partnerAvatarImage}
-                            />
+                            typeof p.avatarUrl === 'string' && p.avatarUrl.startsWith('emoji:') ? (
+                              <View style={{ width: '100%', height: '100%', backgroundColor: p.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 20 }}>{p.avatarUrl.split(':')[1] || '😎'}</Text>
+                              </View>
+                            ) : (
+                              <Image
+                                source={{ uri: p.avatarUrl }}
+                                accessibilityLabel={`${p.displayName || p.name} profile photo`}
+                                style={styles.partnerAvatarImage}
+                              />
+                            )
                           ) : (
                             <Txt size={20} bold color={orange}>{(p.displayName || p.name || '?').trim().charAt(0).toUpperCase()}</Txt>
                           )}
@@ -3378,79 +3465,269 @@ function App() {
             </ScrollView>
           )}
 
-          {/* SCREEN 7: CHAT */}
+          {/* SCREEN 7: WHATSAPP-THEMED PROFESSIONAL CHAT */}
           {screen === 'chat' && (
-            <>
-              <TouchableOpacity
-                onPress={() => setScreen('messages')}
-                style={styles.chatHeader}
-              >
-                <Ionicons name="arrow-back" size={22} color={navy} />
-                <View>
-                  <Txt size={17} bold>{selected.name}  <Txt size={12} color={selected.online ? '#18b576' : muted}>● {selected.online ? 'Online' : 'Offline'}</Txt></Txt>
-                  <Txt size={11} color={muted}>{selected.country} · {selected.learningLanguage}</Txt>
+            <View style={{ flex: 1, backgroundColor: '#EFEAE2' }}>
+              {/* WhatsApp Professional Header */}
+              <View style={styles.waHeader}>
+                <TouchableOpacity
+                  onPress={() => setScreen('messages')}
+                  style={styles.waHeaderBack}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to messages"
+                >
+                  <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                <View style={styles.waHeaderUser}>
+                  <View style={styles.waAvatarContainer}>
+                    {selected.avatarUrl && selected.avatarUrl.startsWith('emoji:') ? (
+                      <View style={[styles.waAvatarImg, { backgroundColor: selected.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={{ fontSize: 18 }}>{selected.avatarUrl.split(':')[1] || '😎'}</Text>
+                      </View>
+                    ) : selected.avatarUrl ? (
+                      <Image source={{ uri: selected.avatarUrl }} style={styles.waAvatarImg} />
+                    ) : (
+                      <View style={[styles.waAvatarImg, { backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }]}>
+                        <Txt size={16} bold color="#FFFFFF">{(selected.displayName || selected.name || '?').charAt(0).toUpperCase()}</Txt>
+                      </View>
+                    )}
+                    {selected.online ? <View style={styles.waOnlineDot} /> : null}
+                  </View>
+
+                  <View style={{ marginLeft: 10, flex: 1 }}>
+                    <Txt size={16} bold color="#FFFFFF" numberOfLines={1}>
+                      {selected.displayName || selected.name}
+                    </Txt>
+                    <Txt size={11.5} color="#D1F4CC" numberOfLines={1}>
+                      {selected.online ? '● Online' : `${selected.country || 'Global'} · ${selected.learningLanguage || 'English'}`}
+                    </Txt>
+                  </View>
                 </View>
-              </TouchableOpacity>
+
+                <View style={styles.waHeaderActions}>
+                  <TouchableOpacity
+                    onPress={() => startCall(selected, 'audio')}
+                    style={styles.waHeaderActionBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Voice call"
+                  >
+                    <Ionicons name="call" size={19} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => startCall(selected, 'video')}
+                    style={styles.waHeaderActionBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Video call"
+                  >
+                    <Ionicons name="videocam" size={21} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {chatError ? (
                 <TouchableOpacity
                   accessibilityRole="button"
-                  accessibilityLabel="Return to Discover"
-                  onPress={() => setScreen('discover')}
-                  style={{ padding: 12, backgroundColor: '#FFF1F0' }}
+                  accessibilityLabel="Dismiss error"
+                  onPress={() => setChatError('')}
+                  style={{ padding: 10, backgroundColor: '#FEF2F2', borderBottomWidth: 1, borderColor: '#FCA5A5' }}
                 >
-                  <Txt color={COLORS.error} size={12}>{chatError}  Return to Discover and reopen this conversation to retry.</Txt>
+                  <Txt color="#DC2626" size={12} style={{ textAlign: 'center' }}>
+                    {chatError}
+                  </Txt>
                 </TouchableOpacity>
               ) : null}
+
               {typing && (
-                <Txt size={11} color={muted} style={{ paddingHorizontal: 18, paddingTop: 8 }}>{selected.name} is typing...</Txt>
+                <View style={{ paddingHorizontal: 16, paddingVertical: 4, backgroundColor: 'rgba(255,255,255,0.7)' }}>
+                  <Txt size={11} color="#008069" bold>
+                    {selected.displayName || selected.name} is typing...
+                  </Txt>
+                </View>
               )}
-              <ScrollView contentContainerStyle={{ padding: 16, flexGrow: 1, justifyContent: 'flex-end' }}>
-                {messageLoading && <ActivityIndicator color={orange} style={{ margin: 18 }} />}
+
+              {/* Chat Scroll Area with WhatsApp Background */}
+              <ScrollView
+                contentContainerStyle={{ padding: 12, flexGrow: 1, justifyContent: 'flex-end' }}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* WhatsApp Centered Date Pill */}
+                <View style={styles.waDatePillRow}>
+                  <View style={styles.waDatePill}>
+                    <Txt size={11} bold color="#54656F">TODAY</Txt>
+                  </View>
+                </View>
+
+                {messageLoading && <ActivityIndicator color="#008069" style={{ margin: 18 }} />}
+
                 {!messageLoading && hasOlderMessages && (
-                  <TouchableOpacity onPress={loadEarlierMessages} disabled={loadingOlderMessages} style={{ alignSelf: 'center', padding: 10 }}>
+                  <TouchableOpacity onPress={loadEarlierMessages} disabled={loadingOlderMessages} style={{ alignSelf: 'center', padding: 8 }}>
                     {loadingOlderMessages
-                      ? <ActivityIndicator color={orange} />
-                      : <Txt size={12} color={orange} bold>Load earlier messages</Txt>}
+                      ? <ActivityIndicator color="#008069" />
+                      : <Txt size={12} color="#008069" bold>Load earlier messages</Txt>}
                   </TouchableOpacity>
                 )}
+
                 {!messageLoading && messages
                   .filter((m) => (m.from === selected.id && m.to === userId) || (m.from === userId && m.to === selected.id))
-                  .map((m) => (
-                    <View
-                      key={m.id}
-                      style={{
-                        alignSelf: m.from === userId ? 'flex-end' : 'flex-start',
-                        maxWidth: '82%',
-                        marginBottom: 12,
-                        backgroundColor: m.from === userId ? COLORS.softSurface : light,
-                        borderColor: m.from === userId ? '#FFD8C9' : '#ECEFF3',
-                        borderWidth: 1,
-                        padding: 14,
-                        borderRadius: 16,
-                      }}
-                    >
-                      <Txt color={muted} size={10} style={{ marginBottom: 4 }}>{m.from === userId ? 'You' : selected.name}</Txt>
-                      <Txt color={navy} size={14}>{m.text}</Txt>
-                      <Txt color={muted} size={10} style={{ marginTop: 5, alignSelf: 'flex-end' }}>
-                        {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {m.from === userId ? ` · ${m.readAt ? 'Read' : m.deliveredAt ? 'Delivered' : 'Sent'}` : ''}
-                      </Txt>
-                    </View>
-                  ))}
+                  .map((m) => {
+                    const isMe = m.from === userId;
+                    return (
+                      <View
+                        key={m.id}
+                        style={[
+                          styles.waBubble,
+                          isMe ? styles.waBubbleMe : styles.waBubbleThem,
+                        ]}
+                      >
+                        {/* Image Attachment Card */}
+                        {m.attachmentType === 'image' && m.attachmentUrl ? (
+                          <View style={styles.waImageAttachmentBox}>
+                            <Image
+                              source={{ uri: m.attachmentUrl }}
+                              style={styles.waImageThumbnail}
+                              resizeMode="cover"
+                            />
+                            {m.attachmentName ? (
+                              <Txt size={11} color="#54656F" style={{ marginTop: 4, paddingHorizontal: 4 }}>
+                                📷 {m.attachmentName}
+                              </Txt>
+                            ) : null}
+                          </View>
+                        ) : null}
+
+                        {/* File Attachment Card */}
+                        {m.attachmentType === 'file' ? (
+                          <View style={styles.waFileAttachmentBox}>
+                            <View style={styles.waFileIconCircle}>
+                              <Ionicons name="document-text" size={24} color="#EF4444" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 10 }}>
+                              <Txt size={13} bold color="#111B21" numberOfLines={1}>
+                                {m.attachmentName || 'Document.pdf'}
+                              </Txt>
+                              <Txt size={10.5} color="#667781">
+                                {m.attachmentSize || 'Study Document'} · PDF
+                              </Txt>
+                            </View>
+                            <Ionicons name="arrow-down-circle" size={22} color="#008069" />
+                          </View>
+                        ) : null}
+
+                        {/* Text Content */}
+                        {Boolean(m.text && m.text.trim()) ? (
+                          <Txt size={14.5} color="#111B21" style={styles.waBubbleText}>
+                            {m.text}
+                          </Txt>
+                        ) : null}
+
+                        {/* Time & Double Checkmarks */}
+                        <View style={styles.waMetaRow}>
+                          <Txt size={10} color="#667781" style={{ marginRight: 3 }}>
+                            {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Txt>
+                          {isMe && (
+                            <Ionicons
+                              name="checkmark-done"
+                              size={15}
+                              color={m.readAt ? '#53BDEB' : '#8696A0'}
+                            />
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
               </ScrollView>
-              <View style={styles.chatInputRow}>
-                <TextInput
-                  placeholder="Type a message..."
-                  placeholderTextColor="#9CA3AF"
-                  value={draft}
-                  onChangeText={updateDraft}
-                  style={styles.chatInput}
-                />
-                <TouchableOpacity onPress={send} style={styles.sendButton}>
-                  <Ionicons name="send" color="#fff" size={18} />
-                </TouchableOpacity>
-              </View>
-            </>
+
+              {/* WhatsApp Bottom Input & Action Bar */}
+              {hasMessageEntitlement() ? (
+                <View style={styles.waBottomContainer}>
+                  {/* Pending Attachment Banner */}
+                  {pendingAttachment ? (
+                    <View style={styles.waPendingAttachBanner}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                        <Ionicons
+                          name={pendingAttachment.type === 'image' ? 'image' : 'document-attach'}
+                          size={20}
+                          color="#008069"
+                          style={{ marginRight: 8 }}
+                        />
+                        <Txt size={12} bold color="#111B21" numberOfLines={1} style={{ flex: 1 }}>
+                          {pendingAttachment.name}
+                        </Txt>
+                      </View>
+                      <TouchableOpacity onPress={() => setPendingAttachment(null)} style={{ padding: 4 }}>
+                        <Ionicons name="close-circle" size={19} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.waInputRow}>
+                    <View style={styles.waInputCapsule}>
+                      <TouchableOpacity
+                        onPress={() => setDraft((d) => d + ' 😊')}
+                        style={{ paddingRight: 6 }}
+                      >
+                        <Ionicons name="happy-outline" size={23} color="#8696A0" />
+                      </TouchableOpacity>
+
+                      <TextInput
+                        placeholder="Message..."
+                        placeholderTextColor="#8696A0"
+                        value={draft}
+                        onChangeText={updateDraft}
+                        style={styles.waTextInput}
+                        multiline
+                      />
+
+                      <TouchableOpacity
+                        onPress={() => setShowAttachmentModal(true)}
+                        style={{ paddingHorizontal: 6 }}
+                        accessibilityLabel="Attach photo or document"
+                      >
+                        <Ionicons name="attach" size={24} color="#8696A0" style={{ transform: [{ rotate: '-45deg' }] }} />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => {
+                          setPendingAttachment(PRESET_ATTACHMENT_IMAGES[0]);
+                        }}
+                        style={{ paddingLeft: 4 }}
+                        accessibilityLabel="Take photo"
+                      >
+                        <Ionicons name="camera" size={22} color="#8696A0" />
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => send()}
+                      style={styles.waSendCircle}
+                      activeOpacity={0.8}
+                      accessibilityLabel="Send message"
+                    >
+                      <Ionicons
+                        name={draft.trim() || pendingAttachment ? 'send' : 'mic'}
+                        size={19}
+                        color="#FFFFFF"
+                        style={draft.trim() || pendingAttachment ? { marginLeft: 2 } : {}}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.waLockedContainer}>
+                  <Ionicons name="lock-closed" size={22} color="#008069" />
+                  <View style={{ flex: 1, marginHorizontal: 10 }}>
+                    <Txt size={13} bold color="#1A1D2E">Subscription Required</Txt>
+                    <Txt size={11} color="#64748B">Subscribe to send messages, photos & files to partners.</Txt>
+                  </View>
+                  <TouchableOpacity onPress={openSubscription} style={styles.waUpgradeBtn}>
+                    <Txt size={12} bold color="#FFFFFF">Unlock</Txt>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           )}
 
           {screen === 'call-complete' && callCompletion && (
@@ -4556,6 +4833,69 @@ function App() {
             onClose={() => setShowHistoryModal(false)}
             callHistory={callHistory}
           />
+
+          {/* WHATSAPP ATTACHMENT MODAL */}
+          <Modal
+            visible={showAttachmentModal}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setShowAttachmentModal(false)}
+          >
+            <View style={styles.waModalOverlay}>
+              <View style={styles.waModalCard}>
+                <View style={styles.waModalHeader}>
+                  <Text style={styles.waModalTitle}>Share Attachment</Text>
+                  <TouchableOpacity onPress={() => setShowAttachmentModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="close-circle" size={24} color="#94A3B8" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* SECTION 1: PHOTOS & SCENES */}
+                <Text style={styles.waSectionHeading}>📷 Share Practice Photo</Text>
+                <View style={styles.waAttachGrid}>
+                  {PRESET_ATTACHMENT_IMAGES.map((img) => (
+                    <TouchableOpacity
+                      key={img.id}
+                      onPress={() => {
+                        setPendingAttachment(img);
+                        setShowAttachmentModal(false);
+                      }}
+                      style={styles.waAttachItem}
+                      activeOpacity={0.8}
+                    >
+                      <Image source={{ uri: img.url }} style={styles.waAttachThumb} />
+                      <Text style={styles.waAttachLabel} numberOfLines={1}>{img.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* SECTION 2: DOCUMENTS & FILES */}
+                <Text style={[styles.waSectionHeading, { marginTop: 16 }]}>📄 Share Practice Notes & File</Text>
+                <View style={{ gap: 8 }}>
+                  {PRESET_ATTACHMENT_FILES.map((doc) => (
+                    <TouchableOpacity
+                      key={doc.id}
+                      onPress={() => {
+                        setPendingAttachment(doc);
+                        setShowAttachmentModal(false);
+                      }}
+                      style={styles.waDocRow}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.waDocIconCircle}>
+                        <Ionicons name="document-text" size={20} color="#DC2626" />
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={styles.waDocTitle} numberOfLines={1}>{doc.name}</Text>
+                        <Text style={styles.waDocSub}>{doc.size} · PDF / Document</Text>
+                      </View>
+                      <Ionicons name="arrow-up-circle-outline" size={20} color="#008069" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </Modal>
         </KeyboardAvoidingView>
       </View>
     </SafeAreaView>
@@ -5561,6 +5901,321 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: 4,
+  },
+  discoverPromptCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ECEBF5',
+    marginTop: 8,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  discoverPromptIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EEECFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEECFE',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#D8D4FD',
+    gap: 4,
+  },
+  waHeader: {
+    backgroundColor: '#008069',
+    paddingHorizontal: 10,
+    paddingTop: Platform.OS === 'ios' ? 44 : 12,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  waHeaderBack: {
+    padding: 6,
+    marginRight: 2,
+  },
+  waHeaderUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginLeft: 2,
+  },
+  waAvatarContainer: {
+    position: 'relative',
+    width: 38,
+    height: 38,
+  },
+  waAvatarImg: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    overflow: 'hidden',
+  },
+  waOnlineDot: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: '#25D366',
+    borderWidth: 2,
+    borderColor: '#008069',
+  },
+  waHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginRight: 4,
+  },
+  waHeaderActionBtn: {
+    padding: 6,
+  },
+  waDatePillRow: {
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  waDatePill: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  waBubble: {
+    maxWidth: '82%',
+    padding: 9,
+    borderRadius: 12,
+    marginBottom: 8,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  waBubbleMe: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#E7FFDB',
+    borderBottomRightRadius: 2,
+  },
+  waBubbleThem: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 2,
+  },
+  waImageAttachmentBox: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  waImageThumbnail: {
+    width: 220,
+    height: 150,
+    borderRadius: 8,
+  },
+  waFileAttachmentBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F2F5',
+    padding: 9,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  waFileIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waBubbleText: {
+    lineHeight: 20,
+  },
+  waMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    marginTop: 3,
+  },
+  waBottomContainer: {
+    paddingHorizontal: 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    paddingTop: 6,
+    backgroundColor: 'transparent',
+  },
+  waPendingAttachBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 6,
+    elevation: 2,
+    borderLeftWidth: 3.5,
+    borderLeftColor: '#008069',
+  },
+  waInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  waInputCapsule: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  waTextInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#111B21',
+    maxHeight: 100,
+    paddingVertical: 6,
+  },
+  waSendCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#008069',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  waLockedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+    borderRadius: 14,
+    margin: 10,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+    elevation: 2,
+  },
+  waUpgradeBtn: {
+    backgroundColor: '#008069',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  waModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  waModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  waModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  waModalTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: '#111B21',
+  },
+  waSectionHeading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#667781',
+    marginBottom: 10,
+  },
+  waAttachGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  waAttachItem: {
+    width: '31%',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    backgroundColor: '#F8FAFC',
+    paddingBottom: 6,
+  },
+  waAttachThumb: {
+    width: '100%',
+    height: 68,
+  },
+  waAttachLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#111B21',
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: 2,
+  },
+  waDocRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  waDocIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waDocTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111B21',
+  },
+  waDocSub: {
+    fontSize: 11,
+    color: '#667781',
+    marginTop: 1,
   },
 });
 

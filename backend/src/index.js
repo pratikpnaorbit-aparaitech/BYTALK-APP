@@ -2043,9 +2043,21 @@ app.get('/api/messages/:a/:b', requireAuth, async (req, res) => {
 });
 
 app.post('/api/messages', requireAuth, async (req, res) => {
-  const { to, text } = req.body;
+  const { to, text = '', attachmentType, attachmentUrl, attachmentName, attachmentSize } = req.body || {};
   const senderId = req.authenticatedUser.id;
-  if (typeof to !== 'string' || to === senderId || !store.users.some((user) => user.id === to) || typeof text !== 'string' || !text.trim() || text.length > 1500) {
+
+  // Enforce subscription: Only customer who purchased a subscription can send messages
+  const userSub = activeSubscription(req.authenticatedUser);
+  const isSubscribed = userSub.plan?.id !== 'free' && userSub.status === 'active';
+  if (!isSubscribed) {
+    return res.status(403).json({
+      error: 'Subscription required to send messages. Please subscribe to chat!',
+      code: 'SUBSCRIPTION_REQUIRED',
+    });
+  }
+
+  const hasContent = (typeof text === 'string' && text.trim().length > 0) || Boolean(attachmentUrl);
+  if (typeof to !== 'string' || to === senderId || !store.users.some((user) => user.id === to) || !hasContent || (text && text.length > 1500)) {
     return res.status(400).json({ error: 'Invalid message' });
   }
   const recipient = await User.findById(to).select('blockedUsers').lean();
@@ -2057,7 +2069,11 @@ app.post('/api/messages', requireAuth, async (req, res) => {
     id: crypto.randomUUID(),
     from: String(senderId),
     to,
-    text: text.trim(),
+    text: (text || '').trim(),
+    attachmentType: attachmentType || null,
+    attachmentUrl: attachmentUrl || null,
+    attachmentName: attachmentName || null,
+    attachmentSize: attachmentSize || null,
     at: new Date(),
     createdAt: new Date(),
     deliveredAt,

@@ -86,13 +86,14 @@ export default function ProfileScreen({
   const [selectedEmoji, setSelectedEmoji] = useState('😎');
   const [selectedEmojiBg, setSelectedEmojiBg] = useState('#6C5CE7');
 
+  // Avatar resolution
+  const currentAvatar = user?.profilePhotoUrl || DEFAULT_AVATAR;
+  const [selectedAvatarUrl, setSelectedAvatarUrl] = useState(currentAvatar);
+
   const [editName, setEditName] = useState(user?.displayName || user?.name || 'Prateek Pawar');
   const [editEmail, setEditEmail] = useState(user?.email || 'pratikumeshpawar@gmail.com');
   const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [giftClaimed, setGiftClaimed] = useState(false);
-
-  // Avatar resolution
-  const currentAvatar = user?.profilePhotoUrl || DEFAULT_AVATAR;
 
   // Subscription remaining days calculation
   const hasActiveSub = isPro || subscription?.active === true || ['basic', 'plus', 'pro', '1month', '3months', '1year'].includes(subscription?.plan?.id);
@@ -156,8 +157,12 @@ export default function ProfileScreen({
   };
 
   const handleSelectPresetAvatar = (url) => {
+    setSelectedAvatarUrl(url);
+  };
+
+  const handleSavePresetAvatar = () => {
     if (onUpdateProfile) {
-      onUpdateProfile({ profilePhotoUrl: url });
+      onUpdateProfile({ profilePhotoUrl: selectedAvatarUrl });
     }
     setShowAvatarModal(false);
   };
@@ -497,7 +502,7 @@ export default function ProfileScreen({
                     <Text style={{ fontSize: 44 }}>{selectedEmoji}</Text>
                   </View>
                 ) : (
-                  renderAvatarContent(currentAvatar, styles.avatarImg, { fontSize: 38 })
+                  renderAvatarContent(selectedAvatarUrl, styles.avatarImg, { fontSize: 38 })
                 )}
               </View>
               <View style={{ marginLeft: 16, flex: 1 }}>
@@ -531,29 +536,41 @@ export default function ProfileScreen({
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0, maxHeight: 340 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0, maxHeight: 360 }}>
               {avatarTab === 'avatars' ? (
                 /* TAB 1: 3D & Characters Grid */
-                <View style={styles.avatarsGrid}>
-                  {PRESET_AVATARS.map((av) => {
-                    const isSelected = currentAvatar === av.url;
-                    return (
-                      <TouchableOpacity
-                        key={av.id}
-                        onPress={() => handleSelectPresetAvatar(av.url)}
-                        style={[styles.avatarGridItem, isSelected && styles.avatarGridItemSelected]}
-                        activeOpacity={0.7}
-                      >
-                        <Image source={{ uri: av.url }} style={styles.gridAvatarImg} />
-                        {isSelected && (
-                          <View style={styles.checkCircle}>
-                            <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-                          </View>
-                        )}
-                        <Text style={styles.avatarGridLabel} numberOfLines={1}>{av.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                <View>
+                  <View style={styles.avatarsGrid}>
+                    {PRESET_AVATARS.map((av) => {
+                      const isSelected = selectedAvatarUrl === av.url;
+                      return (
+                        <TouchableOpacity
+                          key={av.id}
+                          onPress={() => handleSelectPresetAvatar(av.url)}
+                          style={[styles.avatarGridItem, isSelected && styles.avatarGridItemSelected]}
+                          activeOpacity={0.7}
+                        >
+                          <Image source={{ uri: av.url }} style={styles.gridAvatarImg} />
+                          {isSelected && (
+                            <View style={styles.checkCircle}>
+                              <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                            </View>
+                          )}
+                          <Text style={styles.avatarGridLabel} numberOfLines={1}>{av.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={handleSavePresetAvatar}
+                    style={[styles.saveProfileBtn, { marginTop: 16, backgroundColor: '#5843E8' }]}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.saveProfileBtnText}>
+                      ✓ Save Profile Avatar
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               ) : (
                 /* TAB 2: Expressive Emojis & Background Color Palette */
@@ -625,7 +642,7 @@ export default function ProfileScreen({
                     activeOpacity={0.85}
                   >
                     <Text style={styles.saveProfileBtnText}>
-                      Set {selectedEmoji} As My Avatar
+                      ✓ Save {selectedEmoji} As Profile Emoji
                     </Text>
                   </TouchableOpacity>
                 </View>
