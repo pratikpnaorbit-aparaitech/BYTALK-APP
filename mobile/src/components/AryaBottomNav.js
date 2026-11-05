@@ -9,17 +9,21 @@ export default function AryaBottomNav({
   isPro = false,
 }) {
   const tabs = [
-    { id: 'home', label: 'Home', icon: 'home', iconActive: 'home' },
-    { id: 'learn', label: 'Learn', icon: 'book-outline', iconActive: 'book' },
-    { id: 'pro', label: isPro ? 'PRO 👑' : 'Get Pro', icon: 'crown', iconActive: 'crown' },
-    { id: 'call', label: 'Call', icon: 'call-outline', iconActive: 'call' },
+    { id: 'discover', label: 'Discover', icon: 'compass-outline', iconActive: 'compass' },
+    { id: 'practice', label: 'Practice', icon: 'book-outline', iconActive: 'book' },
     { id: 'messages', label: 'Messages', icon: 'chatbubbles-outline', iconActive: 'chatbubbles' },
+    { id: 'profile', label: 'Profile', icon: 'stats-chart-outline', iconActive: 'stats-chart' },
   ];
 
   return (
     <View style={styles.navContainer}>
       {tabs.map((tab) => {
-        const isActive = activeTab === tab.id || (tab.id === 'messages' && (activeTab === 'discover' || activeTab === 'messages' || activeTab === 'chat'));
+        const isActive = activeTab === tab.id
+          || (tab.id === 'discover' && ['discover', 'home'].includes(activeTab))
+          || (tab.id === 'practice' && ['practice', 'call', 'call-tab', 'learn'].includes(activeTab))
+          || (tab.id === 'messages' && ['messages', 'chat'].includes(activeTab))
+          || (tab.id === 'profile' && ['profile'].includes(activeTab));
+
         return (
           <TouchableOpacity
             key={tab.id}
@@ -31,19 +35,11 @@ export default function AryaBottomNav({
           >
             {/* Active Pill indicator behind icon */}
             <View style={[styles.iconWrapper, isActive && styles.iconWrapperActive]}>
-              {tab.id === 'pro' ? (
-                <MaterialCommunityIcons
-                  name="crown"
-                  size={24}
-                  color={isActive ? '#5843E8' : '#737F96'}
-                />
-              ) : (
-                <Ionicons
-                  name={isActive ? tab.iconActive : tab.icon}
-                  size={22}
-                  color={isActive ? '#5843E8' : '#737F96'}
-                />
-              )}
+              <Ionicons
+                name={isActive ? tab.iconActive : tab.icon}
+                size={22}
+                color={isActive ? '#FF5A36' : '#8E8E93'}
+              />
             </View>
 
             <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
@@ -74,7 +70,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#ECEEF5',
     paddingTop: 6,
-    paddingBottom: Platform.OS === 'ios' ? 22 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.04,
@@ -89,43 +85,40 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   iconWrapper: {
-    width: 46,
-    height: 30,
-    borderRadius: 16,
+    width: 44,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
   },
   iconWrapperActive: {
-    backgroundColor: '#EDE9FE',
+    backgroundColor: 'transparent',
   },
   tabLabel: {
     fontSize: 11,
     fontWeight: '500',
-    color: '#737F96',
-    letterSpacing: 0.1,
+    color: '#8E8E93',
   },
   tabLabelActive: {
     fontWeight: '700',
-    color: '#5843E8',
+    color: '#FF5A36',
   },
   unreadBadge: {
     position: 'absolute',
-    top: 0,
-    right: '24%',
-    minWidth: 17,
-    height: 17,
-    borderRadius: 9,
+    top: 2,
+    right: 14,
     backgroundColor: '#EF4444',
+    borderRadius: 9,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
   },
   unreadText: {
+    color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '800',
-    color: '#FFFFFF',
   },
 });

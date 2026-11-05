@@ -56,6 +56,7 @@ const userSchema = new mongoose.Schema(
     falseReportCount: { type: Number, default: 0 },
     usageMonth: { type: String, default: null },
     voiceMinutesUsed: { type: Number, default: 0 },
+    voiceSecondsUsed: { type: Number, default: 0 },
     videoCallsUsed: { type: Number, default: 0 },
   },
   { timestamps: true, versionKey: false }

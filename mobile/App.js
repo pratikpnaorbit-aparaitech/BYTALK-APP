@@ -55,6 +55,80 @@ const PRESET_ATTACHMENT_FILES = [
   { id: 'doc3', name: 'Speaking_Practice_Notes.docx', size: '420 KB', type: 'file' },
 ];
 
+export const getPartnerAvatarUrl = (partner) => {
+  if (partner?.avatarUrl && !partner.avatarUrl.startsWith('emoji:')) {
+    return partner.avatarUrl;
+  }
+  if (partner?.profilePhotoUrl && !partner.profilePhotoUrl.startsWith('emoji:')) {
+    return partner.profilePhotoUrl;
+  }
+  const seed = encodeURIComponent(partner?.displayName || partner?.name || 'User');
+  return `https://api.dicebear.com/7.x/adventurer/png?seed=${seed}&backgroundColor=ffd5dc,b6e3f4,c0aede,d1d4f9`;
+};
+
+const SAMPLE_STORIES = [
+  { id: 'st1', name: 'Mr. Ayo', avatar: 'https://api.dicebear.com/7.x/personas/png?seed=Ayo', status: 'Practicing English idioms today! 📚' },
+  { id: 'st2', name: 'Hero Anne', avatar: 'https://api.dicebear.com/7.x/adventurer/png?seed=Anne', status: 'Ready for IELTS speaking practice 🎯' },
+  { id: 'st3', name: 'Porkoo H.', avatar: 'https://api.dicebear.com/7.x/adventurer/png?seed=Porkoo', status: 'Listening to BBC English podcast 🎧' },
+  { id: 'st4', name: 'Aura Ak...', avatar: 'https://api.dicebear.com/7.x/adventurer/png?seed=Aura', status: 'Who wants to do a 10-min voice call? 📞' },
+  { id: 'st5', name: 'Walter H...', avatar: 'https://api.dicebear.com/7.x/adventurer/png?seed=Walter', status: 'Improving vocabulary day by day! 🚀' },
+];
+
+const SAMPLE_CONVERSATIONS = [
+  {
+    user: { id: 'sample-1', name: 'Mr. Tayo Ade', displayName: 'Mr. Tayo Ade', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Tayo', online: true, country: 'Nigeria', learningLanguage: 'English' },
+    latestMessage: { text: "Good morning, Mr. Tayo. I'll help create a dialogue between the accountant and the supervisor on the situation of the warehouse.", from: 'me', at: new Date(Date.now() - 5 * 60 * 1000).toISOString(), readAt: new Date().toISOString() },
+    unreadCount: 0,
+    timeDisplay: '15:05',
+    hasCheckmark: true,
+  },
+  {
+    user: { id: 'sample-2', name: 'Babe ❤️', displayName: 'Babe ❤️', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Babe', online: true, country: 'United Kingdom', learningLanguage: 'English' },
+    latestMessage: { text: 'Typing...', from: 'sample-2', isTyping: true, at: new Date(Date.now() - 10 * 60 * 1000).toISOString() },
+    unreadCount: 2,
+    timeDisplay: '15:00',
+  },
+  {
+    user: { id: 'sample-3', name: 'Hero Anne', displayName: 'Hero Anne', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Anne', online: false, country: 'Canada', learningLanguage: 'English' },
+    latestMessage: { text: 'Kindly check your mail for the necessary document for the project.', from: 'sample-3', at: new Date(Date.now() - 25 * 60 * 1000).toISOString() },
+    unreadCount: 2,
+    timeDisplay: '14:44',
+  },
+  {
+    user: { id: 'sample-4', name: 'Drey', displayName: 'Drey', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Drey', online: true, country: 'United States', learningLanguage: 'English' },
+    latestMessage: { text: 'Do well to reach out to him on my behalf. I would be expecting your feedback. Thank you.', from: 'sample-4', at: new Date(Date.now() - 120 * 60 * 1000).toISOString() },
+    unreadCount: 0,
+    timeDisplay: '13:00',
+  },
+  {
+    user: { id: 'sample-5', name: 'Baby Sis 🦋', displayName: 'Baby Sis 🦋', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Sis', online: false, country: 'Australia', learningLanguage: 'English' },
+    latestMessage: { text: 'Okay, no problem.', from: 'me', at: new Date(Date.now() - 150 * 60 * 1000).toISOString(), readAt: new Date().toISOString() },
+    unreadCount: 0,
+    timeDisplay: '12:37',
+    hasCheckmark: true,
+  },
+  {
+    user: { id: 'sample-6', name: 'Akin A.A', displayName: 'Akin A.A', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Akin', online: false, country: 'Kenya', learningLanguage: 'English' },
+    latestMessage: { text: 'Probably when you get back.', from: 'sample-6', at: new Date(Date.now() - 240 * 60 * 1000).toISOString() },
+    unreadCount: 0,
+    timeDisplay: '11:00',
+    hasCheckmark: true,
+  },
+  {
+    user: { id: 'sample-7', name: 'Kenny Gurl', displayName: 'Kenny Gurl', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Kenny', online: true, country: 'South Africa', learningLanguage: 'English' },
+    latestMessage: { text: 'Your articles are well articulated. The message was concise and straight to the point. I will definitely recommend to my c...', from: 'sample-7', at: new Date(Date.now() - 300 * 60 * 1000).toISOString() },
+    unreadCount: 0,
+    timeDisplay: '10:00',
+    hasCheckmark: true,
+  },
+  {
+    user: { id: 'sample-8', name: 'Pam Pam', displayName: 'Pam Pam', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Pam', online: false, country: 'India', learningLanguage: 'English' },
+    latestMessage: { text: 'I have seen the latest series, you have to check it out, you will definitely love it.', from: 'sample-8', at: new Date(Date.now() - 360 * 60 * 1000).toISOString() },
+    unreadCount: 0,
+    timeDisplay: '09:41',
+  },
+];
+
 // Secure storage adapter:
 // Uses Expo SecureStore on native builds (iOS / Android) and AsyncStorage on Web
 let ExpoSecureStore = null;
@@ -311,6 +385,401 @@ const PRACTICE_TOPICS = [
   },
 ];
 
+export const ACTIVE_PRACTICE_PARTNERS = [
+  {
+    id: 'partner_sarah',
+    name: 'sarah',
+    displayName: 'sarah',
+    gender: 'female',
+    level: 'Level : 1',
+    country: 'United States',
+    region: 'americas',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&clothingColor=yellow&top=longHairStraight',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&clothingColor=yellow&top=longHairStraight',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hello {userName}! I'm Sarah from the US. Nice to meet you! Pick any activity below or let's practice speaking.",
+  },
+  {
+    id: 'partner_liam',
+    name: 'liam',
+    displayName: 'liam',
+    gender: 'male',
+    level: 'Level : 1',
+    country: 'Australia',
+    region: 'americas',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Liam&clothingColor=blue02&top=shortFlat',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Liam&clothingColor=blue02&top=shortFlat',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "G'day {userName}! I'm Liam from Sydney. Great to connect! Which of the 6 activities should we start with?",
+  },
+  {
+    id: 'partner_emma',
+    name: 'emma',
+    displayName: 'emma',
+    gender: 'female',
+    level: 'Level : 2',
+    country: 'Canada',
+    region: 'americas',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Emma&clothingColor=pink&top=longHairBob',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Emma&clothingColor=pink&top=longHairBob',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hi {userName}! I'm Emma from Toronto. Excited to practice English speaking with you! What topic would you like to explore today?",
+  },
+  {
+    id: 'partner_daniel',
+    name: 'daniel',
+    displayName: 'daniel',
+    gender: 'male',
+    level: 'Level : 1',
+    country: 'United States',
+    region: 'americas',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Daniel&clothingColor=gray01&top=shortCurly',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Daniel&clothingColor=gray01&top=shortCurly',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hey {userName}! I'm Daniel from California. Great to meet you! Let's pick a fun topic from the 6 activities below.",
+  },
+  {
+    id: 'partner_maya',
+    name: 'maya',
+    displayName: 'maya',
+    gender: 'female',
+    level: 'Level : 1',
+    country: 'Singapore',
+    region: 'asia',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Maya&clothingColor=red&top=longHairStraight2',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Maya&clothingColor=red&top=longHairStraight2',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hi {userName}! I'm Maya from Singapore. Welcome to speaking practice! Choose any activity below to get started.",
+  },
+  {
+    id: 'partner_lucas',
+    name: 'lucas',
+    displayName: 'lucas',
+    gender: 'male',
+    level: 'Level : 3',
+    country: 'Germany',
+    region: 'europe',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Lucas&clothingColor=heather&top=shortWaved',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Lucas&clothingColor=heather&top=shortWaved',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hello {userName}! I'm Lucas from Berlin. Pleasure to meet you! Pick any of our 6 activities below, or let's have a conversation.",
+  },
+  {
+    id: 'partner_chloe',
+    name: 'chloe',
+    displayName: 'chloe',
+    gender: 'female',
+    level: 'Level : 2',
+    country: 'France',
+    region: 'europe',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Chloe&clothingColor=blue01&top=longHairCurvy',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Chloe&clothingColor=blue01&top=longHairCurvy',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Bonjour {userName}! I'm Chloe from Paris. Wonderful to speak with you today! What shall we talk about?",
+  },
+  {
+    id: 'partner_david',
+    name: 'david',
+    displayName: 'david',
+    gender: 'male',
+    level: 'Level : 2',
+    country: 'United Kingdom',
+    region: 'europe',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=David&facialHair=beardLight&top=shortFlat',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=David&facialHair=beardLight&top=shortFlat',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hello {userName}! I'm David from London. Lovely to meet you! Feel free to pick any activity below.",
+  },
+  {
+    id: 'partner_priya',
+    name: 'priya',
+    displayName: 'priya',
+    gender: 'female',
+    level: 'Level : 2',
+    country: 'India',
+    region: 'asia',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Priya&clothingColor=yellow&top=longHairStraight',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Priya&clothingColor=yellow&top=longHairStraight',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Namaste {userName}! I'm Priya from Mumbai. Delighted to practice English with you! Which activity would you like to try?",
+  },
+  {
+    id: 'partner_marcus',
+    name: 'marcus',
+    displayName: 'marcus',
+    gender: 'male',
+    level: 'Level : 2',
+    country: 'South Africa',
+    region: 'africa',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Marcus&clothingColor=black&top=shortFlat',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Marcus&clothingColor=black&top=shortFlat',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hello {userName}! I'm Marcus from Cape Town. Glad to be your speaking partner today! Let's dive into an activity.",
+  },
+  {
+    id: 'partner_aaliyah',
+    name: 'aaliyah',
+    displayName: 'aaliyah',
+    gender: 'female',
+    level: 'Level : 2',
+    country: 'United Arab Emirates',
+    region: 'middle-east',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Aaliyah&clothingColor=pastelGreen&top=hijab',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Aaliyah&clothingColor=pastelGreen&top=hijab',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hello {userName}! I'm Aaliyah from Dubai. So happy to practice English with you today! Let's get started.",
+  },
+  {
+    id: 'partner_tariq',
+    name: 'tariq',
+    displayName: 'tariq',
+    gender: 'male',
+    level: 'Level : 3',
+    country: 'Egypt',
+    region: 'middle-east',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Tariq&facialHair=beardMajestic&top=shortFlat',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Tariq&facialHair=beardMajestic&top=shortFlat',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Marhaba {userName}! I'm Tariq from Cairo. Excited to talk and practice English with you today!",
+  },
+  {
+    id: 'partner_elena',
+    name: 'elena',
+    displayName: 'elena',
+    gender: 'female',
+    level: 'Level : 1',
+    country: 'Spain',
+    region: 'europe',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Elena&clothingColor=pink&top=longHairStraight',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Elena&clothingColor=pink&top=longHairStraight',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hola {userName}! I'm Elena from Madrid. Very nice to meet you! Pick any card below to begin.",
+  },
+  {
+    id: 'partner_kenji',
+    name: 'kenji',
+    displayName: 'kenji',
+    gender: 'male',
+    level: 'Level : 1',
+    country: 'Japan',
+    region: 'asia',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Kenji&clothingColor=blue01&top=shortFlat',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Kenji&clothingColor=blue01&top=shortFlat',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Konnichiwa {userName}! I'm Kenji from Tokyo. Looking forward to our speaking practice today!",
+  },
+  {
+    id: 'partner_hana',
+    name: 'hana',
+    displayName: 'hana',
+    gender: 'female',
+    level: 'Level : 1',
+    country: 'Japan',
+    region: 'asia',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Hana&clothingColor=pastelOrange&top=longHairBob',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Hana&clothingColor=pastelOrange&top=longHairBob',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Hello {userName}! I'm Hana from Tokyo. So glad to connect with you today! Let's have a great conversation.",
+  },
+  {
+    id: 'partner_mateo',
+    name: 'mateo',
+    displayName: 'mateo',
+    gender: 'male',
+    level: 'Level : 2',
+    country: 'Brazil',
+    region: 'americas',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Mateo&clothingColor=green&top=shortCurly',
+    profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Mateo&clothingColor=green&top=shortCurly',
+    isAi: true,
+    online: true,
+    status: 'online',
+    greeting: "Oi {userName}! I'm Mateo from São Paulo. Excited to speak English with you today!",
+  },
+];
+
+export const SARAH_PARTNER = ACTIVE_PRACTICE_PARTNERS[0];
+
+export function pickRandomPracticePartner(filters = {}, recentHistory = [], lastId = null) {
+  let pool = [...ACTIVE_PRACTICE_PARTNERS];
+
+  // Gender filter
+  if (filters.gender && filters.gender !== 'all') {
+    const targetGender = filters.gender.toLowerCase();
+    const byGender = pool.filter((p) => (p.gender || '').toLowerCase() === targetGender);
+    if (byGender.length > 0) pool = byGender;
+  }
+
+  // Level filter
+  if (filters.level && filters.level !== 'all') {
+    const isBeginner = filters.level.toLowerCase().includes('begin');
+    const byLevel = pool.filter((p) => {
+      const pLevel = (p.level || '').toLowerCase();
+      return isBeginner
+        ? (pLevel.includes('1') || pLevel.includes('begin'))
+        : (pLevel.includes('2') || pLevel.includes('3') || pLevel.includes('adv') || pLevel.includes('inter'));
+    });
+    if (byLevel.length > 0) pool = byLevel;
+  }
+
+  // Region filter
+  if (filters.region && filters.region !== 'all') {
+    const targetRegion = filters.region.toLowerCase();
+    const byRegion = pool.filter((p) =>
+      (p.region || '').toLowerCase().includes(targetRegion) ||
+      (p.country || '').toLowerCase().includes(targetRegion)
+    );
+    if (byRegion.length > 0) pool = byRegion;
+  }
+
+  // "Not same person" algorithm:
+  // Exclude partners in recent history
+  let candidates = pool.filter((p) => !recentHistory.includes(p.id));
+
+  // If all matching partners have been called, exclude at least the immediate last one
+  if (candidates.length === 0 && lastId) {
+    candidates = pool.filter((p) => p.id !== lastId);
+  }
+
+  if (candidates.length === 0) {
+    candidates = pool;
+  }
+
+  const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+  return chosen || pool[0];
+}
+
+export const CALL_ACTIVITIES = [
+  {
+    id: 'act_icebreaker',
+    title: 'Icebreaker Q&A',
+    emoji: '💬',
+    bgColor: '#FAF5FF',
+    borderColor: '#E9D5FF',
+    textColor: '#7E22CE',
+    subColor: '#9333EA',
+    subtitle: 'Daily routine & favorites',
+    prompts: [
+      'What was the most exciting or surprising thing that happened to you this week?',
+      'If you could travel to any city or country in the world tomorrow, where would you go and why?',
+      'What is your favorite hobby or thing you enjoy doing when you have free time?',
+      'What type of music, movies, or books help you relax best after a busy day?',
+    ],
+    vocab: ['highlight', 'coincidentally', 'routine', 'fascinating'],
+  },
+  {
+    id: 'act_roleplay',
+    title: 'Roleplay',
+    emoji: '🎭',
+    bgColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    textColor: '#1D4ED8',
+    subColor: '#2563EB',
+    subtitle: 'Ordering at a cafe / Travel',
+    prompts: [
+      'Roleplay: You are ordering coffee and a pastry at a bustling cafe. Partner is the barista taking your order.',
+      'Roleplay: You just landed at the airport and need to ask the information desk for directions to the train station.',
+      'Roleplay: You are checking into a hotel, but your booking name is slightly misspelled. Resolve it with the receptionist.',
+    ],
+    vocab: ['recommendation', 'specialty', 'reservation', 'receipt'],
+  },
+  {
+    id: 'act_would_you_rather',
+    title: 'Would You Rather?',
+    emoji: '🤔',
+    bgColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+    textColor: '#B45309',
+    subColor: '#D97706',
+    subtitle: 'Time travel vs Flying',
+    prompts: [
+      'Would you rather travel 100 years into the past or 100 years into the future?',
+      'Would you rather speak all human languages fluently or be able to communicate with animals?',
+      'Would you rather have unlimited free flights anywhere in the world or free food for life?',
+      'Would you rather live in a bustling big city penthouse or a quiet seaside cabin?',
+    ],
+    vocab: ['dilemma', 'preferable', 'consequence', 'unquestionably'],
+  },
+  {
+    id: 'act_guess_word',
+    title: 'Guess The Word',
+    emoji: '🎯',
+    bgColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+    textColor: '#047857',
+    subColor: '#059669',
+    subtitle: '20 questions secret item',
+    prompts: [
+      'Secret Word: "Bicycle" (Partner asks yes/no questions: Is it an object? Can you ride it? Does it use fuel?)',
+      'Secret Word: "Pineapple" (Partner asks: Is it food? Is it sweet? Does it grow on trees?)',
+      'Secret Word: "Guitar" (Partner asks: Is it an instrument? Does it have strings? Is it electric?)',
+    ],
+    vocab: ['category', 'property', 'tangible', 'instrument'],
+  },
+  {
+    id: 'act_story',
+    title: 'Story Challenge',
+    emoji: '📖',
+    bgColor: '#FFF1F2',
+    borderColor: '#FECDD3',
+    textColor: '#BE123C',
+    subColor: '#E11D48',
+    subtitle: 'Describe dream vacation',
+    prompts: [
+      'Describe your dream vacation spot in vivid detail: describe the sights, sounds, smells, and delicious local food.',
+      'Tell a 1-minute story about a funny, unexpected adventure or misunderstanding you experienced.',
+      'Describe how your typical morning looks from the moment you wake up to when your day starts.',
+    ],
+    vocab: ['breathtaking', 'picturesque', 'unforgettable', 'atmosphere'],
+  },
+  {
+    id: 'act_rapid_fire',
+    title: 'Rapid Fire',
+    emoji: '⚡',
+    bgColor: '#ECFEFF',
+    borderColor: '#A5F3FC',
+    textColor: '#0E7490',
+    subColor: '#0891B2',
+    subtitle: 'Fast 5 answers in 3 sec',
+    prompts: [
+      'Answer in 3 seconds: Coffee or Tea? Morning or Night? Mountains or Beach? Sweet or Savory? Dogs or Cats?',
+      'Answer in 3 seconds: Books or Movies? Road trip or Flight? Call or Text? Cook at home or Dine out?',
+      'Answer in 3 seconds: Early bird or Night owl? City or Countryside? iOS or Android? Singing or Dancing?',
+    ],
+    vocab: ['instantly', 'hands down', 'no hesitation', 'definitive'],
+  },
+];
+
 const COUNTRY_CODES = [
   'AF', 'AL', 'DZ', 'AD', 'AO', 'AG', 'AR', 'AM', 'AU', 'AT', 'AZ', 'BS', 'BH', 'BD', 'BB', 'BY', 'BE',
   'BZ', 'BJ', 'BT', 'BO', 'BA', 'BW', 'BR', 'BN', 'BG', 'BF', 'BI', 'CV', 'KH', 'CM', 'CA', 'CF', 'TD',
@@ -515,45 +984,90 @@ function App() {
 
   const handleBottomTabPress = (tabId) => {
     setActiveBottomTab(tabId);
-    if (tabId === 'home') {
+    if (tabId === 'home' || tabId === 'discover') {
+      setActiveBottomTab('discover');
       setScreen('home');
-    } else if (tabId === 'learn') {
-      setScreen('learn');
+    } else if (tabId === 'practice' || tabId === 'call' || tabId === 'learn') {
+      setActiveBottomTab('practice');
+      setScreen('call-tab');
     } else if (tabId === 'pro') {
       setScreen('premium');
-    } else if (tabId === 'call') {
-      setScreen('call-tab');
-    } else if (tabId === 'messages' || tabId === 'discover') {
+    } else if (tabId === 'messages') {
       setActiveBottomTab('messages');
       setScreen('messages');
+      if (chatFilterTab === 'calls') setChatFilterTab('all');
+    } else if (tabId === 'profile') {
+      setActiveBottomTab('profile');
+      setScreen('profile');
     }
     loadSubscription().catch(() => {});
   };
 
-  const handleStartRandomMatch = async () => {
+  const handleStartRandomMatch = async (filters = {}) => {
     if (!hasAudioEntitlement()) {
-      setSubscriptionError('A subscription plan is required to activate live speaking partner matching. Choose a Basic or PRO plan to start calling!');
+      setSubscriptionError('Your first 5 minutes free trial has ended. Please purchase a subscription to continue speaking practice.');
       await openSubscription();
       return;
     }
+
+    // Only PRO subscribers can choose specific gender (Female/Male) for calls
+    if (!isPaidSubscriber()) {
+      filters = { ...filters, gender: 'all' };
+    }
+
     setIsMatchingCall(true);
     try {
-      const candidates = partners.filter((p) => p.online && p.id !== userId);
-      const pool = candidates.length > 0 ? candidates : partners.filter((p) => p.id !== userId);
-      if (pool.length > 0) {
-        const randomPartner = pool[Math.floor(Math.random() * pool.length)];
-        setTimeout(() => {
-          setIsMatchingCall(false);
-          startCall(randomPartner, 'audio');
-        }, 800);
-      } else {
-        setTimeout(() => {
-          setIsMatchingCall(false);
-          Alert.alert('No Partners Available', 'All partners are currently offline or busy. Try practicing with ARYA AI on the Home tab!');
-        }, 1200);
+      // 1. Check if any real human online users match the filters strictly and were not recently called
+      let onlineHumans = partners.filter((p) => p.id !== userId && p.online);
+      if (filters.gender && filters.gender !== 'all') {
+        const targetGender = filters.gender.toLowerCase().trim();
+        onlineHumans = onlineHumans.filter((p) => (p.gender || '').toLowerCase().trim() === targetGender);
       }
-    } catch {
+      if (filters.level && filters.level !== 'all') {
+        const byLevel = onlineHumans.filter((p) => (p.level || '').toLowerCase().includes(filters.level.toLowerCase()));
+        if (byLevel.length > 0) onlineHumans = byLevel;
+      }
+      if (filters.region && filters.region !== 'all') {
+        const byRegion = onlineHumans.filter((p) => (p.country || '').toLowerCase().includes(filters.region.toLowerCase()) || (p.region || '').toLowerCase().includes(filters.region.toLowerCase()));
+        if (byRegion.length > 0) onlineHumans = byRegion;
+      }
+
+      const recentHistory = recentPartnerHistoryRef.current || [];
+      const freshHumans = onlineHumans.filter((p) => !recentHistory.includes(p.id));
+      const eligibleHumans = freshHumans.length > 0 ? freshHumans : onlineHumans.filter((p) => p.id !== lastCalledPartnerIdRef.current);
+
+      let chosenPartner = null;
+      if (eligibleHumans.length > 0) {
+        chosenPartner = eligibleHumans[Math.floor(Math.random() * eligibleHumans.length)];
+      } else {
+        // Pick a random active practice partner (strictly matching gender, never same person)
+        chosenPartner = pickRandomPracticePartner(filters, recentHistory, lastCalledPartnerIdRef.current);
+      }
+
+      if (chosenPartner) {
+        lastCalledPartnerIdRef.current = chosenPartner.id;
+        recentPartnerHistoryRef.current = [
+          chosenPartner.id,
+          ...recentHistory.filter((id) => id !== chosenPartner.id),
+        ].slice(0, 10);
+      }
+
+      setTimeout(() => {
+        setIsMatchingCall(false);
+        startCall(chosenPartner, 'audio');
+      }, 600);
+    } catch (err) {
+      console.warn('[BYTALK matching error]', err);
       setIsMatchingCall(false);
+      const fallbackPartner = pickRandomPracticePartner(filters, recentPartnerHistoryRef.current || [], lastCalledPartnerIdRef.current);
+      if (fallbackPartner) {
+        lastCalledPartnerIdRef.current = fallbackPartner.id;
+        recentPartnerHistoryRef.current = [
+          fallbackPartner.id,
+          ...(recentPartnerHistoryRef.current || []).filter((id) => id !== fallbackPartner.id),
+        ].slice(0, 10);
+      }
+      startCall(fallbackPartner, 'audio');
     }
   };
   const [sessionChecking, setSessionChecking] = useState(true);
@@ -605,6 +1119,7 @@ function App() {
   const [conversations, setConversations] = useState([]);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [chatFilterTab, setChatFilterTab] = useState('all');
+  const [chatSearchVisible, setChatSearchVisible] = useState(false);
   const [messageBanner, setMessageBanner] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
@@ -642,6 +1157,13 @@ function App() {
   const [speakerEnabled, setSpeakerEnabled] = useState(false);
   const [callNotice, setCallNotice] = useState('');
   const [callStarting, setCallStarting] = useState(null);
+  const [activeCallActivity, setActiveCallActivity] = useState(null);
+  const [callActivityPromptIdx, setCallActivityPromptIdx] = useState(0);
+  const [usedFreeSeconds, setUsedFreeSeconds] = useState(0);
+  const initialUsedFreeSecondsRef = useRef(0);
+  const lastCalledPartnerIdRef = useRef(null);
+  const recentPartnerHistoryRef = useRef([]);
+  const FREE_TRIAL_TOTAL_SECONDS = 300;
   const socketRef = useRef(null);
   const peerRef = useRef(null);
   const callRef = useRef(null);
@@ -729,6 +1251,14 @@ function App() {
       }
       if (current) {
         setSubscription(current);
+        if (current.freeTrial?.remainingSeconds !== undefined && current.freeTrial?.remainingSeconds !== null) {
+          const backendUsed = Math.max(0, 300 - Number(current.freeTrial.remainingSeconds));
+          setUsedFreeSeconds((prev) => {
+            const next = Math.max(prev, backendUsed);
+            saveUsedFreeSeconds(next);
+            return next;
+          });
+        }
       }
     } catch (error) {
       setSubscriptionError(error.userMessage || error.message || 'Subscription status is unavailable.');
@@ -738,7 +1268,7 @@ function App() {
 
   }
 
-  function hasAudioEntitlement() {
+  function isPaidSubscriber() {
     if (!subscription) return false;
     const planId = subscription.plan?.id;
     const isSubscribed = ['basic', 'plus', 'pro', '1month', '3months', '1year'].includes(planId) || subscription.active === true;
@@ -747,6 +1277,31 @@ function App() {
     if (!['active', 'cancelled'].includes(status)) return false;
     return !subscription.expiresAt || new Date(subscription.expiresAt) > new Date();
   }
+
+  function getFreeTrialSecondsRemaining() {
+    if (isPaidSubscriber()) return Infinity;
+    return Math.max(0, FREE_TRIAL_TOTAL_SECONDS - usedFreeSeconds);
+  }
+
+  function hasAudioEntitlement() {
+    if (isPaidSubscriber()) return true;
+    return getFreeTrialSecondsRemaining() > 0;
+  }
+
+  const loadFreeTrialUsage = async (uid) => {
+    try {
+      const stored = await authStorage.getItem(`bytalk_used_free_seconds_${uid || 'guest'}`);
+      if (stored !== null && !isNaN(Number(stored))) {
+        setUsedFreeSeconds(Number(stored));
+      }
+    } catch {}
+  };
+
+  const saveUsedFreeSeconds = (seconds) => {
+    setUsedFreeSeconds(seconds);
+    const uid = userId || 'guest';
+    authStorage.setItem(`bytalk_used_free_seconds_${uid}`, String(seconds)).catch(() => {});
+  };
 
   function hasVideoEntitlement() {
     if (!subscription) return false;
@@ -759,7 +1314,7 @@ function App() {
   }
 
   function hasMessageEntitlement() {
-    return hasAudioEntitlement();
+    return isPaidSubscriber();
   }
 
   async function openSubscription() {
@@ -856,6 +1411,11 @@ function App() {
   }
 
   function updateCall(next) {
+    if (typeof next !== 'function') {
+      callRef.current = next;
+    } else if (callRef.current) {
+      callRef.current = next(callRef.current);
+    }
     setCall((previous) => {
       const value = typeof next === 'function' ? next(previous) : next;
       callRef.current = value;
@@ -933,6 +1493,25 @@ function App() {
     setChatError('');
     setMessageBanner(null);
     setScreen('chat');
+
+    // If opening Mr. Tayo Ade (matching referral screenshot), seed initial dialogue
+    if (partner.id === 'sample-1' || partner.name === 'Mr. Tayo Ade' || partner.displayName === 'Mr. Tayo Ade') {
+      const sampleDialogue = [
+        { id: 'm1', from: partner.id, to: userId, text: 'I need you to help me with the file.', at: new Date(Date.now() - 3600000).toISOString() },
+        { id: 'm2', from: userId, to: partner.id, text: 'Which of the file? The one you gave me yesterday?', at: new Date(Date.now() - 3500000).toISOString(), readAt: new Date().toISOString() },
+        { id: 'm3', from: partner.id, to: userId, text: 'No. The case file for the field project we proposed last week', at: new Date(Date.now() - 3400000).toISOString() },
+        { id: 'm4', from: partner.id, to: userId, text: "Welcome, we're glad to see you here.", at: new Date(Date.now() - 3300000).toISOString() },
+        { id: 'm5', from: userId, to: partner.id, text: 'I think the file is either with the Accountant or the supervisor. I will ask both of them.', at: new Date(Date.now() - 3200000).toISOString(), readAt: new Date().toISOString() },
+        { id: 'm6', from: partner.id, to: userId, text: 'Oh great! Thank you. I look forward to a positive response.', at: new Date(Date.now() - 3100000).toISOString() },
+        { id: 'm7', from: userId, to: partner.id, text: 'You are welcome.', at: new Date(Date.now() - 3000000).toISOString(), readAt: new Date().toISOString() },
+        { id: 'm8', from: partner.id, to: userId, text: 'Good morning. Any update?', at: new Date(Date.now() - 600000).toISOString() },
+        { id: 'm9', from: userId, to: partner.id, text: "Good morning, Mr. Tayo. I'll help create a dialogue between the accountant and the supervisor on the situation of the warehouse.", at: new Date(Date.now() - 300000).toISOString(), readAt: new Date().toISOString() },
+      ];
+      setMessages((prev) => {
+        const withoutPartner = prev.filter((m) => !(m.from === partner.id || m.to === partner.id));
+        return [...sampleDialogue, ...withoutPartner];
+      });
+    }
   }
 
   async function requestNotificationPermission() {
@@ -1069,6 +1648,7 @@ function App() {
   }
 
   function finishCallLocally(status, notice = '', details = {}) {
+    stopSpeech();
     const currentCall = callRef.current;
     if (!currentCall || callCompletion) return;
     if (callExitTimerRef.current) clearTimeout(callExitTimerRef.current);
@@ -1158,7 +1738,7 @@ function App() {
       return;
     }
     if (type === 'audio' && !hasAudioEntitlement()) {
-      setSubscriptionError('A subscription plan is required to activate voice calling with partners. Choose a Basic or PRO plan to start calling!');
+      setSubscriptionError('Your first 5 minutes free trial has ended. Please purchase a subscription to continue speaking practice.');
       await openSubscription();
       return;
     }
@@ -1167,10 +1747,62 @@ function App() {
       await openSubscription();
       return;
     }
-    if (!socketRef.current?.connected) {
-      Alert.alert('Call unavailable', 'The real-time service is disconnected. Please reconnect and try again.');
+
+    // Direct active practice partner connection (matches Image 2: Oliver & partner)
+    if (partner.isAi || partner.id?.startsWith('partner_')) {
+      setCallStarting({ partnerId: partner.id, type });
+      try {
+        const stream = await getLocalMediaStream(type).catch(() => null);
+        if (stream) {
+          localStreamRef.current = stream;
+          setLocalStream(stream);
+        }
+        const partnerCall = {
+          id: 'call_partner_' + partner.id + '_' + Date.now(),
+          peer: partner,
+          type,
+          direction: 'outgoing',
+          status: 'Connected',
+          connectedAt: new Date().toISOString(),
+        };
+        callRef.current = partnerCall;
+        updateCall(partnerCall);
+        setSelected(partner);
+        setScreen('call');
+        setSpeakerEnabled(true);
+        startAudioRoute(type, true);
+        ringtoneManager.stopRinging();
+
+        const userName = name || 'Oliver';
+        const greetingText = partner.greeting
+          ? partner.greeting.replace('{userName}', userName)
+          : `Hello ${userName}! I'm ${partner.displayName || partner.name}. Great to meet you! Pick any of the 6 activities below, or let's practice speaking.`;
+
+        setTimeout(() => {
+          speakEnglish(greetingText);
+        }, 700);
+      } catch (err) {
+        console.warn('[BYTALK partner call]', err);
+      } finally {
+        setCallStarting(null);
+      }
       return;
     }
+
+    if (!socketRef.current?.connected) {
+      console.log('[BYTALK call] Realtime socket disconnected, falling back to random active partner');
+      const fallback = pickRandomPracticePartner({}, recentPartnerHistoryRef.current || [], lastCalledPartnerIdRef.current);
+      if (fallback) {
+        lastCalledPartnerIdRef.current = fallback.id;
+        recentPartnerHistoryRef.current = [
+          fallback.id,
+          ...(recentPartnerHistoryRef.current || []).filter((id) => id !== fallback.id),
+        ].slice(0, 10);
+      }
+      startCall(fallback, type);
+      return;
+    }
+
     setCallStarting({ partnerId: partner.id, type });
     setCallNotice('Requesting microphone and camera permission…');
     try {
@@ -1185,6 +1817,7 @@ function App() {
       localStreamRef.current = stream;
       setLocalStream(stream);
       const initialCall = { id: null, peer: partner, type, direction: 'outgoing', status: 'Calling' };
+      callRef.current = initialCall;
       updateCall(initialCall);
       setCallNotice(type === 'video' && !stream.getVideoTracks().length
         ? 'Camera unavailable; this call will continue with audio only.'
@@ -1204,6 +1837,10 @@ function App() {
         return;
       }
       peerRef.current.callId = result.callId;
+      const ringingCall = { ...(callRef.current || initialCall), id: result.callId, status: 'Ringing' };
+      callRef.current = ringingCall;
+      updateCall(ringingCall);
+      ringtoneManager.startRinging({ direction: 'outgoing' });
       const queuedCandidates = pendingOutgoingIceRef.current.splice(0);
       for (const candidate of queuedCandidates) {
         socketRef.current?.emit('call:signal', {
@@ -1216,17 +1853,27 @@ function App() {
           }
         });
       }
-      ringtoneManager.startRinging({ direction: 'outgoing' });
-      updateCall((previous) => previous ? { ...previous, id: result.callId, status: 'Ringing' } : previous);
     } catch (error) {
       console.warn('[BYTALK call] failed', error.message || error);
       releaseCallMedia();
       updateCall(null);
-      setScreen(activeBottomTab === 'pro' ? 'call-tab' : (activeBottomTab || 'call-tab'));
-      if (error.code === 'video_plan_required') {
+      if (error.code === 'video_plan_required' || error.code === 'subscription_required') {
         setSubscriptionError(error.message);
         setScreen('premium');
+      } else if (type === 'audio') {
+        // Fall back seamlessly to next random active partner so the user is never stuck
+        console.log('[BYTALK call] Human partner unavailable, connecting to next random active partner');
+        const fallback = pickRandomPracticePartner({}, recentPartnerHistoryRef.current || [], lastCalledPartnerIdRef.current);
+        if (fallback) {
+          lastCalledPartnerIdRef.current = fallback.id;
+          recentPartnerHistoryRef.current = [
+            fallback.id,
+            ...(recentPartnerHistoryRef.current || []).filter((id) => id !== fallback.id),
+          ].slice(0, 10);
+        }
+        startCall(fallback, 'audio');
       } else {
+        setScreen(activeBottomTab === 'pro' ? 'call-tab' : (activeBottomTab || 'call-tab'));
         Alert.alert('Could not start call', error.message || 'Check your connection and permissions.');
       }
     } finally {
@@ -1274,15 +1921,16 @@ function App() {
   }
 
   async function endCall(notice = '') {
+    stopSpeech();
     const currentCall = callRef.current;
     if (!currentCall) return;
-    if (currentCall.id) {
+    if (currentCall.id && !currentCall.peer?.isAi && !currentCall.id.startsWith('call_sarah_') && !currentCall.id.startsWith('call_partner_')) {
       try {
         const result = await emitWithAck('call:end', { callId: currentCall.id });
         finishCallLocally('Ended', notice, result.call || result);
         return;
       } catch (error) {
-        notice = notice ? `${notice} ${error.message}` : error.message;
+        notice = notice ? (notice + ' ' + error.message) : error.message;
       }
     }
     finishCallLocally('Ended', notice);
@@ -1475,7 +2123,14 @@ function App() {
       socket.on('call:accepted', ({ callId }) => {
         console.log('[BYTALK call] call accepted', { callId, userId });
         ringtoneManager.stopRinging();
-        if (callRef.current?.id === callId) createCallOffer(callId);
+        if (peerRef.current) peerRef.current.callId = callId;
+        const current = callRef.current;
+        if (!current?.id || current.id === callId) {
+          const connectingCall = { ...(current || {}), id: callId, status: 'Connecting' };
+          callRef.current = connectingCall;
+          updateCall(connectingCall);
+          createCallOffer(callId);
+        }
       });
       socket.on('call:signal', (signal) => handleCallSignal(signal));
       socket.on('call:state', ({ callId, status, connectedAt }) => {
@@ -1677,7 +2332,28 @@ function App() {
       setCallDuration(0);
       return undefined;
     }
-    const updateDuration = () => setCallDuration(Math.max(0, Math.floor((Date.now() - Date.parse(call.connectedAt)) / 1000)));
+    initialUsedFreeSecondsRef.current = usedFreeSeconds;
+    const updateDuration = () => {
+      const dur = Math.max(0, Math.floor((Date.now() - Date.parse(call.connectedAt)) / 1000));
+      setCallDuration(dur);
+      if (!isPaidSubscriber()) {
+        const totalUsed = (initialUsedFreeSecondsRef.current || 0) + dur;
+        if (totalUsed >= FREE_TRIAL_TOTAL_SECONDS) {
+          saveUsedFreeSeconds(FREE_TRIAL_TOTAL_SECONDS);
+          endCall();
+          Alert.alert(
+            '5 Minutes Free Trial Ended',
+            'Your first 5 minutes free trial has ended. Please purchase a subscription to continue speaking practice.',
+            [
+              { text: 'Buy Subscription', onPress: () => openSubscription() },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          );
+        } else {
+          saveUsedFreeSeconds(totalUsed);
+        }
+      }
+    };
     updateDuration();
     const timer = setInterval(updateDuration, 1000);
     return () => clearInterval(timer);
@@ -1956,6 +2632,29 @@ function App() {
     };
     setDraft('');
     setPendingAttachment(null);
+
+    // If chatting with sample partner from referral design, append locally
+    if (selected.id && String(selected.id).startsWith('sample-')) {
+      const sampleMsg = {
+        id: 'msg-' + Date.now(),
+        from: userId,
+        to: selected.id,
+        text,
+        attachmentType: attach?.type || null,
+        attachmentUrl: attach?.url || null,
+        attachmentName: attach?.name || null,
+        attachmentSize: attach?.size || null,
+        at: new Date().toISOString(),
+        readAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, sampleMsg]);
+      setConversations((previous) => {
+        const entry = { user: selected, latestMessage: sampleMsg, unreadCount: 0 };
+        return [entry, ...previous.filter((item) => item.user.id !== selected.id)];
+      });
+      return;
+    }
+
     try {
       const result = await request('messages', {
         method: 'POST',
@@ -2558,7 +3257,7 @@ function App() {
           style={{ flex: 1 }}
         >
           {/* Top unified ARYA Header on main screens (Images 1 & 4) */}
-          {!['welcome', 'login', 'register', 'onboard', 'level', 'call', 'call-complete', 'profile', 'premium', 'aiPractice'].includes(screen) && (
+          {!['welcome', 'login', 'register', 'onboard', 'level', 'call', 'call-complete', 'profile', 'premium', 'aiPractice', 'messages', 'chat'].includes(screen) && (
             <AryaTopBar
               user={{ displayName: name || 'Prateek Pawar', streak: streak || 0, profilePhotoUrl: avatarUrl }}
               userStats={{ streak: streak || 0 }}
@@ -2620,14 +3319,15 @@ function App() {
           {/* SCREEN: CALL TAB */}
           {screen === 'call-tab' && (
             <CallTabScreen
-              partners={partners}
-              callHistory={callHistory}
-              onStartCall={(partner, type) => startCall(partner, type)}
               onStartRandomMatch={handleStartRandomMatch}
               isMatching={isMatchingCall}
-              isSubscribed={hasAudioEntitlement()}
-              hasVideoEntitlement={hasVideoEntitlement()}
+              isSubscribed={isPaidSubscriber()}
+              freeTrialSecondsRemaining={getFreeTrialSecondsRemaining()}
               onPressUpgrade={openSubscription}
+              onBack={() => {
+                setActiveBottomTab('home');
+                setScreen('home');
+              }}
             />
           )}
 
@@ -3427,526 +4127,287 @@ function App() {
             </>
           )}
 
-          {/* SCREEN: WHATSAPP-THEMED CHATS SCREEN (REPLACED DISCOVER) */}
-          {screen === 'messages' && (
-            <View style={styles.waChatsContainer}>
-              {/* WhatsApp Green Header Bar */}
-              <View style={styles.waChatsHeader}>
-                <View style={styles.waChatsTitleRow}>
-                  <Text style={styles.waChatsTitle}>WhatsApp Chats</Text>
-                  <View style={styles.waChatsHeaderIcons}>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setPendingAttachment(PRESET_ATTACHMENT_IMAGES[0]);
-                        setShowAttachmentModal(true);
-                      }}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="camera-outline" size={22} color="#FFFFFF" />
-                    </TouchableOpacity>
+                    {/* SCREEN: UNIFIED CHATS & CALLS HUB (MATCHING USER'S REFERRAL THEME) */}
+          {/* SCREEN: MESSAGES (MATCHING USER'S THEME FROM SCREENSHOT) */}
+          {screen === 'messages' && (() => {
+            const renderConvRow = (conversation) => {
+              const partner = conversation.user;
+              const latest = conversation.latestMessage;
+              const isMe = latest?.from === userId || latest?.from === 'me';
+              const isTyping = latest?.isTyping;
+              const hasUnread = conversation.unreadCount > 0;
+              const timeDisplay = conversation.timeDisplay || (latest?.at ? new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
 
-                    <TouchableOpacity
-                      onPress={() => {
-                        setChatSearchQuery(' ');
-                      }}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="search" size={21} color="#FFFFFF" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => {
-                        Alert.alert('BYTALK WhatsApp Chats', 'Direct language practice chat with instant photo and document sharing.');
-                      }}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="ellipsis-vertical" size={20} color="#FFFFFF" />
-                    </TouchableOpacity>
+              return (
+                <TouchableOpacity
+                  key={`msg-conv-${partner.id}`}
+                  onPress={() => openConversation(partner)}
+                  style={styles.msgConvRow}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.msgConvAvatarBox}>
+                    <Image
+                      source={{ uri: getPartnerAvatarUrl(partner) }}
+                      style={styles.msgConvAvatar}
+                    />
+                    {partner.online && <View style={styles.msgOnlineDot} />}
                   </View>
-                </View>
 
-                {/* Integrated WhatsApp Search Bar */}
-                <View style={styles.waSearchBar}>
-                  <Ionicons name="search" size={18} color="#8696A0" />
-                  <TextInput
-                    placeholder="Search chats or find user by name..."
-                    placeholderTextColor="#8696A0"
-                    value={chatSearchQuery}
-                    onChangeText={setChatSearchQuery}
-                    style={styles.waSearchInput}
-                  />
-                  {chatSearchQuery.length > 0 ? (
-                    <TouchableOpacity onPress={() => setChatSearchQuery('')} style={{ padding: 4 }}>
-                      <Ionicons name="close-circle" size={17} color="#8696A0" />
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
+                  <View style={styles.msgConvDetails}>
+                    <View style={styles.msgConvTopRow}>
+                      <Text style={styles.msgConvName} numberOfLines={1}>
+                        {partner.displayName || partner.name}
+                      </Text>
+                      <Text style={[styles.msgConvTime, hasUnread && styles.msgConvTimeUnread]}>
+                        {timeDisplay}
+                      </Text>
+                    </View>
 
-                {/* WhatsApp Filter Pills: All | Unread */}
-                <View style={styles.waFilterRow}>
-                  <TouchableOpacity
-                    onPress={() => setChatFilterTab('all')}
-                    style={[styles.waFilterPill, chatFilterTab === 'all' && styles.waFilterPillActive]}
-                  >
-                    <Text style={[styles.waFilterText, chatFilterTab === 'all' && styles.waFilterTextActive]}>
-                      All
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => setChatFilterTab('unread')}
-                    style={[styles.waFilterPill, chatFilterTab === 'unread' && styles.waFilterPillActive]}
-                  >
-                    <Text style={[styles.waFilterText, chatFilterTab === 'unread' && styles.waFilterTextActive]}>
-                      Unread {Object.values(unreadByUser).reduce((a, b) => a + b, 0) > 0 ? `(${Object.values(unreadByUser).reduce((a, b) => a + b, 0)})` : ''}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => {
-                      setChatSearchQuery(' ');
-                    }}
-                    style={styles.waFilterPill}
-                  >
-                    <Text style={styles.waFilterText}>
-                      Find Users
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Chat & Search Results Scroll Area */}
-              <ScrollView
-                contentContainerStyle={{ paddingBottom: 90 }}
-                showsVerticalScrollIndicator={false}
-              >
-                {/* 1. If Searching by Name */}
-                {chatSearchQuery.trim().length > 0 ? (
-                  <View>
-                    {/* Matching Active Conversations */}
-                    {conversations.filter((c) => (c.user.displayName || c.user.name || '').toLowerCase().includes(chatSearchQuery.trim().toLowerCase())).length > 0 ? (
-                      <>
-                        <Text style={styles.waSectionLabel}>Active Conversations</Text>
-                        {conversations
-                          .filter((c) => (c.user.displayName || c.user.name || '').toLowerCase().includes(chatSearchQuery.trim().toLowerCase()))
-                          .map((conversation) => {
-                            const partner = conversation.user;
-                            const latest = conversation.latestMessage;
-                            const isMe = latest?.from === userId;
-                            return (
-                              <TouchableOpacity
-                                key={`conv-${partner.id}`}
-                                onPress={() => openConversation(partner)}
-                                style={styles.waChatRow}
-                                activeOpacity={0.7}
-                              >
-                                <View style={styles.waChatAvatarWrapper}>
-                                  {partner.avatarUrl && partner.avatarUrl.startsWith('emoji:') ? (
-                                    <View style={[styles.waChatAvatar, { backgroundColor: partner.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
-                                      <Text style={{ fontSize: 24 }}>{partner.avatarUrl.split(':')[1] || '😎'}</Text>
-                                    </View>
-                                  ) : partner.avatarUrl ? (
-                                    <Image source={{ uri: partner.avatarUrl }} style={styles.waChatAvatar} />
-                                  ) : (
-                                    <View style={[styles.waChatAvatar, { backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }]}>
-                                      <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF' }}>{(partner.displayName || partner.name || '?').charAt(0).toUpperCase()}</Text>
-                                    </View>
-                                  )}
-                                  {partner.online ? <View style={styles.waChatOnlineDot} /> : null}
-                                </View>
-
-                                <View style={styles.waChatDetails}>
-                                  <View style={styles.waChatTopRow}>
-                                    <Text style={styles.waChatName} numberOfLines={1}>{partner.displayName || partner.name}</Text>
-                                    <Text style={styles.waChatTime}>
-                                      {latest?.at ? new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                                    </Text>
-                                  </View>
-
-                                  <View style={styles.waChatBottomRow}>
-                                    <View style={styles.waChatPreviewRow}>
-                                      {isMe && (
-                                        <Ionicons
-                                          name="checkmark-done"
-                                          size={15}
-                                          color={latest?.readAt ? '#53BDEB' : '#8696A0'}
-                                          style={{ marginRight: 4 }}
-                                        />
-                                      )}
-                                      {latest?.attachmentType === 'image' && (
-                                        <Ionicons name="camera" size={14} color="#8696A0" style={{ marginRight: 4 }} />
-                                      )}
-                                      {latest?.attachmentType === 'file' && (
-                                        <Ionicons name="document-text" size={14} color="#8696A0" style={{ marginRight: 4 }} />
-                                      )}
-                                      <Text style={styles.waChatSnippet} numberOfLines={1}>
-                                        {latest?.attachmentType === 'image' ? 'Photo' : latest?.attachmentType === 'file' ? 'Document' : (latest?.text || 'No messages yet')}
-                                      </Text>
-                                    </View>
-
-                                    {conversation.unreadCount > 0 ? (
-                                      <View style={styles.waUnreadBadge}>
-                                        <Text style={styles.waUnreadText}>{conversation.unreadCount}</Text>
-                                      </View>
-                                    ) : null}
-                                  </View>
-                                </View>
-                              </TouchableOpacity>
-                            );
-                          })}
-                      </>
-                    ) : null}
-
-                    {/* Matching BYTALK Users (Search by Name) */}
-                    <Text style={styles.waSectionLabel}>Users on BYTALK</Text>
-                    {partners
-                      .filter((p) => [p.displayName, p.name, p.country, p.learningLanguage].join(' ').toLowerCase().includes(chatSearchQuery.trim().toLowerCase()))
-                      .map((p) => (
-                        <View key={`user-${p.id}`} style={styles.waUserResultCard}>
-                          <View style={styles.waChatAvatarWrapper}>
-                            {p.avatarUrl && p.avatarUrl.startsWith('emoji:') ? (
-                              <View style={[styles.waChatAvatar, { backgroundColor: p.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
-                                <Text style={{ fontSize: 24 }}>{p.avatarUrl.split(':')[1] || '😎'}</Text>
-                              </View>
-                            ) : p.avatarUrl ? (
-                              <Image source={{ uri: p.avatarUrl }} style={styles.waChatAvatar} />
-                            ) : (
-                              <View style={[styles.waChatAvatar, { backgroundColor: '#3B82F6', alignItems: 'center', justifyContent: 'center' }]}>
-                                <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF' }}>{(p.displayName || p.name || '?').charAt(0).toUpperCase()}</Text>
-                              </View>
+                    <View style={styles.msgConvBottomRow}>
+                      <View style={styles.msgConvPreviewRow}>
+                        {isTyping ? (
+                          <Text style={styles.msgTypingText}>Typing...</Text>
+                        ) : (
+                          <>
+                            {isMe && (
+                              <Ionicons
+                                name="checkmark-done"
+                                size={15}
+                                color={latest?.readAt ? '#2563EB' : '#94A3B8'}
+                                style={{ marginRight: 4 }}
+                              />
                             )}
-                            {p.online ? <View style={styles.waChatOnlineDot} /> : null}
-                          </View>
-
-                          <View style={{ flex: 1, marginLeft: 14 }}>
-                            <Text style={styles.waChatName}>{p.displayName || p.name}</Text>
-                            <Text style={{ fontSize: 12, color: '#667781', marginTop: 2 }}>
-                              {p.country || 'Global'} · {p.learningLanguage || 'English'}
+                            <Text style={styles.msgConvSnippet} numberOfLines={1}>
+                              {latest?.text || 'No messages yet'}
                             </Text>
-                          </View>
-
-                          <TouchableOpacity
-                            onPress={() => openConversation(p)}
-                            style={styles.waUserActionBtn}
-                            activeOpacity={0.8}
-                          >
-                            <Ionicons name="chatbubble-ellipses" size={14} color="#FFFFFF" />
-                            <Text style={styles.waUserActionText}>Chat</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-
-                    {conversations.filter((c) => (c.user.displayName || c.user.name || '').toLowerCase().includes(chatSearchQuery.trim().toLowerCase())).length === 0 &&
-                     partners.filter((p) => [p.displayName, p.name].join(' ').toLowerCase().includes(chatSearchQuery.trim().toLowerCase())).length === 0 ? (
-                      <View style={{ padding: 30, alignItems: 'center' }}>
-                        <Ionicons name="search-outline" size={40} color="#94A3B8" />
-                        <Text style={{ fontSize: 14, color: '#64748B', marginTop: 10 }}>No users found matching “{chatSearchQuery}”</Text>
+                          </>
+                        )}
                       </View>
-                    ) : null}
+
+                      {hasUnread ? (
+                        <View style={styles.msgUnreadBadge}>
+                          <Text style={styles.msgUnreadText}>{conversation.unreadCount}</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
-                ) : (
-                  /* 2. Standard WhatsApp Chats List */
-                  <View>
-                    {(() => {
-                      const list = chatFilterTab === 'unread'
-                        ? conversations.filter((c) => c.unreadCount > 0)
-                        : conversations;
+                </TouchableOpacity>
+              );
+            };
 
-                      if (!list.length) {
-                        return (
-                          <View style={{ padding: 36, alignItems: 'center', marginTop: 30 }}>
-                            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#E7FFDB', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-                              <Ionicons name="chatbubbles" size={38} color="#008069" />
-                            </View>
-                            <Text style={{ fontSize: 18, fontWeight: '800', color: '#111B21' }}>
-                              {chatFilterTab === 'unread' ? 'No unread chats' : 'Start Chatting on WhatsApp'}
-                            </Text>
-                            <Text style={{ fontSize: 13, color: '#667781', textAlign: 'center', marginTop: 8, lineHeight: 19, paddingHorizontal: 20 }}>
-                              {chatFilterTab === 'unread'
-                                ? 'You have read all received messages.'
-                                : 'Search any partner by name above to send messages, photos, and practice files!'}
-                            </Text>
-                            {partners.length > 0 && (
-                              <View style={{ marginTop: 24, width: '100%', alignItems: 'center' }}>
-                                <Text style={{ fontSize: 11.5, fontWeight: '800', color: '#8696A0', textTransform: 'uppercase', marginBottom: 10 }}>
-                                  Suggested Partners to Chat With
-                                </Text>
-                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
-                                  {partners.slice(0, 6).map((p) => (
-                                    <TouchableOpacity
-                                      key={p.id}
-                                      onPress={() => openConversation(p)}
-                                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E7FFDB', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: '#A7F3D0', gap: 5 }}
-                                    >
-                                      <Ionicons name="chatbubble-outline" size={12} color="#008069" />
-                                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#008069' }}>{p.displayName || p.name}</Text>
-                                    </TouchableOpacity>
-                                  ))}
-                                </View>
-                              </View>
-                            )}
-                          </View>
-                        );
-                      }
+            return (
+              <View style={styles.msgScreenContainer}>
+                {/* Top Bar: BT BYTALK, ● API Online, Logout button (Image theme) */}
+                <View style={styles.messagesThemeTopBar}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={styles.messagesLogoBt}>BT </Text>
+                    <Text style={styles.messagesLogoBytalk}>BYTALK</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={styles.apiOnlinePill}>
+                      <View style={styles.apiOnlineDot} />
+                      <Text style={styles.apiOnlineText}>API Online</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Sign Out', style: 'destructive', onPress: handleLogout },
+                        ]);
+                      }}
+                      style={styles.messagesSignOutBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Sign out"
+                    >
+                      <Ionicons name="log-out-outline" size={20} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
-                      return list.map((conversation) => {
-                        const partner = conversation.user;
-                        const latest = conversation.latestMessage;
-                        const isMe = latest?.from === userId;
-                        const hasUnread = conversation.unreadCount > 0;
+                {/* Page Title & Subtitle: Messages / Your latest conversations */}
+                <View style={styles.messagesThemeTitleArea}>
+                  <Text style={styles.messagesThemeTitle}>Messages</Text>
+                  <Text style={styles.messagesThemeSub}>Your latest conversations</Text>
+                </View>
 
-                        return (
-                          <TouchableOpacity
-                            key={partner.id}
-                            onPress={() => openConversation(partner)}
-                            style={styles.waChatRow}
-                            activeOpacity={0.7}
-                          >
-                            <View style={styles.waChatAvatarWrapper}>
-                              {partner.avatarUrl && partner.avatarUrl.startsWith('emoji:') ? (
-                                <View style={[styles.waChatAvatar, { backgroundColor: partner.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
-                                  <Text style={{ fontSize: 24 }}>{partner.avatarUrl.split(':')[1] || '😎'}</Text>
-                                </View>
-                              ) : partner.avatarUrl ? (
-                                <Image source={{ uri: partner.avatarUrl }} style={styles.waChatAvatar} />
-                              ) : (
-                                <View style={[styles.waChatAvatar, { backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }]}>
-                                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF' }}>{(partner.displayName || partner.name || '?').charAt(0).toUpperCase()}</Text>
-                                </View>
-                              )}
-                              {partner.online ? <View style={styles.waChatOnlineDot} /> : null}
-                            </View>
-
-                            <View style={styles.waChatDetails}>
-                              <View style={styles.waChatTopRow}>
-                                <Text style={styles.waChatName} numberOfLines={1}>{partner.displayName || partner.name}</Text>
-                                <Text style={[styles.waChatTime, hasUnread && styles.waChatTimeUnread]}>
-                                  {latest?.at ? new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                                </Text>
-                              </View>
-
-                              <View style={styles.waChatBottomRow}>
-                                <View style={styles.waChatPreviewRow}>
-                                  {isMe && (
-                                    <Ionicons
-                                      name="checkmark-done"
-                                      size={15}
-                                      color={latest?.readAt ? '#53BDEB' : '#8696A0'}
-                                      style={{ marginRight: 4 }}
-                                    />
-                                  )}
-                                  {latest?.attachmentType === 'image' && (
-                                    <Ionicons name="camera" size={14} color="#8696A0" style={{ marginRight: 4 }} />
-                                  )}
-                                  {latest?.attachmentType === 'file' && (
-                                    <Ionicons name="document-text" size={14} color="#8696A0" style={{ marginRight: 4 }} />
-                                  )}
-                                  <Text style={styles.waChatSnippet} numberOfLines={1}>
-                                    {latest?.attachmentType === 'image' ? 'Photo' : latest?.attachmentType === 'file' ? 'Document' : (latest?.text || 'No messages yet')}
-                                  </Text>
-                                </View>
-
-                                {hasUnread ? (
-                                  <View style={styles.waUnreadBadge}>
-                                    <Text style={styles.waUnreadText}>{conversation.unreadCount}</Text>
-                                  </View>
-                                ) : null}
-                              </View>
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      });
-                    })()}
+                {/* Subscription Restriction Notice: Only subscribers can message */}
+                {!isPaidSubscriber() && (
+                  <View style={styles.messagesSubNoticeCard}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <Ionicons name="lock-closed" size={18} color="#EA580C" />
+                      <Text style={styles.messagesSubNoticeTitle}>Subscribers Only</Text>
+                    </View>
+                    <Text style={styles.messagesSubNoticeText}>
+                      Direct 1-on-1 messaging is an exclusive feature for BYTALK subscribers. Upgrade your plan to chat and connect with language partners worldwide!
+                    </Text>
+                    <TouchableOpacity onPress={openSubscription} style={styles.messagesSubNoticeBtn} activeOpacity={0.85}>
+                      <Text style={styles.messagesSubNoticeBtnText}>Upgrade to PRO 👑</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
-              </ScrollView>
 
-              {/* WhatsApp Floating Action Button (FAB) */}
-              <TouchableOpacity
-                onPress={() => {
-                  if (partners.length > 0) {
-                    openConversation(partners[0]);
-                  } else {
-                    Alert.alert('Search Partner', 'Type any name in the top search bar to find partners!');
-                  }
-                }}
-                style={styles.waFabButton}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel="Start new chat"
-              >
-                <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          )}
+                {/* Main Content: Either Empty State or Real Conversations */}
+                {conversations.length === 0 ? (
+                  <View style={styles.messagesThemeEmptyContainer}>
+                    <Text style={styles.messagesThemeEmptyText}>
+                      No conversations yet. Start a chat from Discover.
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ paddingBottom: 100 }}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {conversations.map((c) => renderConvRow(c))}
+                  </ScrollView>
+                )}
+              </View>
+            );
+          })()}
 
-          {/* SCREEN 7: WHATSAPP-THEMED PROFESSIONAL CHAT */}
+
           {screen === 'chat' && (
-            <View style={{ flex: 1, backgroundColor: '#EFEAE2' }}>
-              {/* WhatsApp Professional Header */}
-              <View style={styles.waHeader}>
+            <View style={styles.chatWrapper}>
+              {/* Clean White Top Header */}
+              <View style={styles.chatHeader}>
                 <TouchableOpacity
                   onPress={() => setScreen('messages')}
-                  style={styles.waHeaderBack}
+                  style={styles.chatBackBtn}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
-                  accessibilityLabel="Back to messages"
+                  accessibilityLabel="Back to Chats & Calls"
                 >
-                  <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                  <Ionicons name="chevron-back" size={26} color="#0F172A" />
                 </TouchableOpacity>
 
-                <View style={styles.waHeaderUser}>
-                  <View style={styles.waAvatarContainer}>
-                    {selected.avatarUrl && selected.avatarUrl.startsWith('emoji:') ? (
-                      <View style={[styles.waAvatarImg, { backgroundColor: selected.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }]}>
-                        <Text style={{ fontSize: 18 }}>{selected.avatarUrl.split(':')[1] || '😎'}</Text>
-                      </View>
-                    ) : selected.avatarUrl ? (
-                      <Image source={{ uri: selected.avatarUrl }} style={styles.waAvatarImg} />
-                    ) : (
-                      <View style={[styles.waAvatarImg, { backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }]}>
-                        <Txt size={16} bold color="#FFFFFF">{(selected.displayName || selected.name || '?').charAt(0).toUpperCase()}</Txt>
-                      </View>
-                    )}
-                    {selected.online ? <View style={styles.waOnlineDot} /> : null}
-                  </View>
-
+                <View style={styles.chatHeaderUser}>
+                  <Image
+                    source={{ uri: getPartnerAvatarUrl(selected) }}
+                    style={styles.chatHeaderAvatar}
+                  />
                   <View style={{ marginLeft: 10, flex: 1 }}>
-                    <Txt size={16} bold color="#FFFFFF" numberOfLines={1}>
+                    <Text style={styles.chatHeaderName} numberOfLines={1}>
                       {selected.displayName || selected.name}
-                    </Txt>
-                    <Txt size={11.5} color="#D1F4CC" numberOfLines={1}>
+                    </Text>
+                    <Text style={styles.chatHeaderStatus} numberOfLines={1}>
                       {selected.online ? '● Online' : `${selected.country || 'Global'} · ${selected.learningLanguage || 'English'}`}
-                    </Txt>
+                    </Text>
                   </View>
                 </View>
 
-                <View style={styles.waHeaderActions}>
-                  <TouchableOpacity
-                    onPress={() => startCall(selected, 'audio')}
-                    style={styles.waHeaderActionBtn}
-                    accessibilityRole="button"
-                    accessibilityLabel="Voice call"
-                  >
-                    <Ionicons name="call" size={19} color="#FFFFFF" />
-                  </TouchableOpacity>
+                <View style={styles.chatHeaderActions}>
                   <TouchableOpacity
                     onPress={() => startCall(selected, 'video')}
-                    style={styles.waHeaderActionBtn}
+                    style={styles.chatHeaderIconBtn}
                     accessibilityRole="button"
                     accessibilityLabel="Video call"
                   >
-                    <Ionicons name="videocam" size={21} color="#FFFFFF" />
+                    <Ionicons name="videocam-outline" size={23} color="#1E293B" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => startCall(selected, 'audio')}
+                    style={styles.chatHeaderIconBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Voice call"
+                  >
+                    <Ionicons name="call-outline" size={21} color="#1E293B" />
                   </TouchableOpacity>
                 </View>
               </View>
 
               {chatError ? (
                 <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Dismiss error"
                   onPress={() => setChatError('')}
-                  style={{ padding: 10, backgroundColor: '#FEF2F2', borderBottomWidth: 1, borderColor: '#FCA5A5' }}
+                  style={styles.chatErrorBanner}
                 >
-                  <Txt color="#DC2626" size={12} style={{ textAlign: 'center' }}>
-                    {chatError}
-                  </Txt>
+                  <Text style={styles.chatErrorText}>{chatError}</Text>
                 </TouchableOpacity>
               ) : null}
 
               {typing && (
-                <View style={{ paddingHorizontal: 16, paddingVertical: 4, backgroundColor: 'rgba(255,255,255,0.7)' }}>
-                  <Txt size={11} color="#008069" bold>
+                <View style={styles.chatTypingBanner}>
+                  <Text style={styles.chatTypingBannerText}>
                     {selected.displayName || selected.name} is typing...
-                  </Txt>
+                  </Text>
                 </View>
               )}
 
-              {/* Chat Scroll Area with WhatsApp Background */}
+              {/* Chat Scroll Area with Soft Lavender Tint Wallpaper */}
               <ScrollView
-                contentContainerStyle={{ padding: 12, flexGrow: 1, justifyContent: 'flex-end' }}
+                contentContainerStyle={{ padding: 14, flexGrow: 1, justifyContent: 'flex-end' }}
                 showsVerticalScrollIndicator={false}
               >
-                {/* WhatsApp Centered Date Pill */}
-                <View style={styles.waDatePillRow}>
-                  <View style={styles.waDatePill}>
-                    <Txt size={11} bold color="#54656F">TODAY</Txt>
+                {/* Centered Date Pill (Today) */}
+                <View style={styles.chatDatePillRow}>
+                  <View style={styles.chatDatePill}>
+                    <Text style={styles.chatDatePillText}>Today</Text>
                   </View>
                 </View>
 
-                {messageLoading && <ActivityIndicator color="#008069" style={{ margin: 18 }} />}
-
-                {!messageLoading && hasOlderMessages && (
-                  <TouchableOpacity onPress={loadEarlierMessages} disabled={loadingOlderMessages} style={{ alignSelf: 'center', padding: 8 }}>
-                    {loadingOlderMessages
-                      ? <ActivityIndicator color="#008069" />
-                      : <Txt size={12} color="#008069" bold>Load earlier messages</Txt>}
-                  </TouchableOpacity>
-                )}
+                {messageLoading && <ActivityIndicator color="#7C3AED" style={{ margin: 18 }} />}
 
                 {!messageLoading && messages
                   .filter((m) => (m.from === selected.id && m.to === userId) || (m.from === userId && m.to === selected.id))
                   .map((m) => {
-                    const isMe = m.from === userId;
+                    const isMe = m.from === userId || m.from === 'me';
+                    const timeStr = m.at ? new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '15:05';
+
                     return (
-                      <View
-                        key={m.id}
-                        style={[
-                          styles.waBubble,
-                          isMe ? styles.waBubbleMe : styles.waBubbleThem,
-                        ]}
-                      >
-                        {/* Image Attachment Card */}
-                        {m.attachmentType === 'image' && m.attachmentUrl ? (
-                          <View style={styles.waImageAttachmentBox}>
-                            <Image
-                              source={{ uri: m.attachmentUrl }}
-                              style={styles.waImageThumbnail}
-                              resizeMode="cover"
-                            />
-                            {m.attachmentName ? (
-                              <Txt size={11} color="#54656F" style={{ marginTop: 4, paddingHorizontal: 4 }}>
-                                📷 {m.attachmentName}
-                              </Txt>
-                            ) : null}
-                          </View>
-                        ) : null}
-
-                        {/* File Attachment Card */}
-                        {m.attachmentType === 'file' ? (
-                          <View style={styles.waFileAttachmentBox}>
-                            <View style={styles.waFileIconCircle}>
-                              <Ionicons name="document-text" size={24} color="#EF4444" />
+                      <View key={m.id} style={[styles.chatBubbleContainer, isMe ? { alignItems: 'flex-end' } : { alignItems: 'flex-start' }]}>
+                        <View style={[styles.chatBubble, isMe ? styles.chatBubbleMe : styles.chatBubbleThem]}>
+                          {/* Image Attachment Card */}
+                          {m.attachmentType === 'image' && m.attachmentUrl ? (
+                            <View style={styles.chatImgBox}>
+                              <Image
+                                source={{ uri: m.attachmentUrl }}
+                                style={styles.chatImgPreview}
+                                resizeMode="cover"
+                              />
+                              {m.attachmentName ? (
+                                <Text style={styles.chatAttachCaption}>
+                                  📷 {m.attachmentName}
+                                </Text>
+                              ) : null}
                             </View>
-                            <View style={{ flex: 1, marginLeft: 10 }}>
-                              <Txt size={13} bold color="#111B21" numberOfLines={1}>
-                                {m.attachmentName || 'Document.pdf'}
-                              </Txt>
-                              <Txt size={10.5} color="#667781">
-                                {m.attachmentSize || 'Study Document'} · PDF
-                              </Txt>
+                          ) : null}
+
+                          {/* File Attachment Card */}
+                          {m.attachmentType === 'file' ? (
+                            <View style={styles.chatFileBox}>
+                              <View style={styles.chatFileIconCircle}>
+                                <Ionicons name="document-text" size={22} color="#EF4444" />
+                              </View>
+                              <View style={{ flex: 1, marginLeft: 10 }}>
+                                <Text style={styles.chatFileName} numberOfLines={1}>
+                                  {m.attachmentName || 'Document.pdf'}
+                                </Text>
+                                <Text style={styles.chatFileSize}>
+                                  {m.attachmentSize || 'Study Notes'} · PDF
+                                </Text>
+                              </View>
+                              <Ionicons name="arrow-down-circle" size={22} color="#7C3AED" />
                             </View>
-                            <Ionicons name="arrow-down-circle" size={22} color="#008069" />
-                          </View>
-                        ) : null}
+                          ) : null}
 
-                        {/* Text Content */}
-                        {Boolean(m.text && m.text.trim()) ? (
-                          <Txt size={14.5} color="#111B21" style={styles.waBubbleText}>
-                            {m.text}
-                          </Txt>
-                        ) : null}
+                          {/* Text Content */}
+                          {Boolean(m.text && m.text.trim()) ? (
+                            <Text style={[styles.chatBubbleText, isMe ? styles.chatBubbleTextMe : styles.chatBubbleTextThem]}>
+                              {m.text}
+                            </Text>
+                          ) : null}
+                        </View>
 
-                        {/* Time & Double Checkmarks */}
-                        <View style={styles.waMetaRow}>
-                          <Txt size={10} color="#667781" style={{ marginRight: 3 }}>
-                            {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </Txt>
+                        {/* Timestamp & Double Checkmarks BELOW the bubble (Identical to referral image) */}
+                        <View style={[styles.chatBubbleMetaRow, isMe ? { alignSelf: 'flex-end', marginRight: 4 } : { alignSelf: 'flex-start', marginLeft: 4 }]}>
+                          <Text style={styles.chatBubbleMetaTime}>{timeStr}</Text>
                           {isMe && (
                             <Ionicons
                               name="checkmark-done"
                               size={15}
-                              color={m.readAt ? '#53BDEB' : '#8696A0'}
+                              color="#6B7280"
+                              style={{ marginLeft: 3 }}
                             />
                           )}
                         </View>
@@ -3955,90 +4416,71 @@ function App() {
                   })}
               </ScrollView>
 
-              {/* WhatsApp Bottom Input & Action Bar */}
+              {/* Bottom Message Input Bar */}
               {hasMessageEntitlement() ? (
-                <View style={styles.waBottomContainer}>
+                <View style={styles.chatBottomBar}>
                   {/* Pending Attachment Banner */}
                   {pendingAttachment ? (
-                    <View style={styles.waPendingAttachBanner}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                        <Ionicons
-                          name={pendingAttachment.type === 'image' ? 'image' : 'document-attach'}
-                          size={20}
-                          color="#008069"
-                          style={{ marginRight: 8 }}
-                        />
-                        <Txt size={12} bold color="#111B21" numberOfLines={1} style={{ flex: 1 }}>
-                          {pendingAttachment.name}
-                        </Txt>
-                      </View>
+                    <View style={styles.chatPendingBanner}>
+                      <Ionicons
+                        name={pendingAttachment.type === 'image' ? 'image' : 'document-attach'}
+                        size={18}
+                        color="#7C3AED"
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={styles.chatPendingText} numberOfLines={1}>
+                        {pendingAttachment.name}
+                      </Text>
                       <TouchableOpacity onPress={() => setPendingAttachment(null)} style={{ padding: 4 }}>
-                        <Ionicons name="close-circle" size={19} color="#EF4444" />
+                        <Ionicons name="close-circle" size={18} color="#EF4444" />
                       </TouchableOpacity>
                     </View>
                   ) : null}
 
-                  <View style={styles.waInputRow}>
-                    <View style={styles.waInputCapsule}>
-                      <TouchableOpacity
-                        onPress={() => setDraft((d) => d + ' 😊')}
-                        style={{ paddingRight: 6 }}
-                      >
-                        <Ionicons name="happy-outline" size={23} color="#8696A0" />
-                      </TouchableOpacity>
-
+                  <View style={styles.chatInputRow}>
+                    <View style={styles.chatInputCapsule}>
                       <TextInput
-                        placeholder="Message..."
-                        placeholderTextColor="#8696A0"
+                        placeholder="Type your message..."
+                        placeholderTextColor="#94A3B8"
                         value={draft}
                         onChangeText={updateDraft}
-                        style={styles.waTextInput}
+                        style={styles.chatTextInput}
                         multiline
                       />
 
                       <TouchableOpacity
                         onPress={() => setShowAttachmentModal(true)}
-                        style={{ paddingHorizontal: 6 }}
-                        accessibilityLabel="Attach photo or document"
+                        style={styles.chatAttachBtn}
+                        accessibilityLabel="Attach photo or file"
                       >
-                        <Ionicons name="attach" size={24} color="#8696A0" style={{ transform: [{ rotate: '-45deg' }] }} />
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => {
-                          setPendingAttachment(PRESET_ATTACHMENT_IMAGES[0]);
-                        }}
-                        style={{ paddingLeft: 4 }}
-                        accessibilityLabel="Take photo"
-                      >
-                        <Ionicons name="camera" size={22} color="#8696A0" />
+                        <Ionicons name="attach" size={22} color="#64748B" style={{ transform: [{ rotate: '-45deg' }] }} />
                       </TouchableOpacity>
                     </View>
 
                     <TouchableOpacity
                       onPress={() => send()}
-                      style={styles.waSendCircle}
-                      activeOpacity={0.8}
+                      style={styles.chatSendBtn}
+                      activeOpacity={0.82}
                       accessibilityLabel="Send message"
                     >
                       <Ionicons
-                        name={draft.trim() || pendingAttachment ? 'send' : 'mic'}
-                        size={19}
+                        name="send"
+                        size={17}
                         color="#FFFFFF"
-                        style={draft.trim() || pendingAttachment ? { marginLeft: 2 } : {}}
+                        style={{ marginLeft: 2 }}
                       />
                     </TouchableOpacity>
                   </View>
                 </View>
               ) : (
-                <View style={styles.waLockedContainer}>
-                  <Ionicons name="lock-closed" size={22} color="#008069" />
+                <View style={styles.chatLockedBanner}>
+                  <Ionicons name="lock-closed" size={20} color="#7C3AED" />
                   <View style={{ flex: 1, marginHorizontal: 10 }}>
-                    <Txt size={13} bold color="#1A1D2E">Subscription Required</Txt>
-                    <Txt size={11} color="#64748B">Subscribe to send messages, photos & files to partners.</Txt>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }}>Subscription Required</Text>
+                    <Text style={{ fontSize: 11, color: '#64748B' }}>Subscribe to send messages, photos & files to partners.</Text>
                   </View>
-                  <TouchableOpacity onPress={openSubscription} style={styles.waUpgradeBtn}>
-                    <Txt size={12} bold color="#FFFFFF">Unlock</Txt>
+                  <TouchableOpacity onPress={openSubscription} style={styles.chatUpgradeBtn}>
+                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Unlock</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -4134,6 +4576,7 @@ function App() {
 
           {screen === 'call' && call && (
             <View style={styles.callScreen}>
+              {/* Call Top Header */}
               <View style={styles.callHeader}>
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -4141,20 +4584,49 @@ function App() {
                   onPress={endCall}
                   style={styles.callBackButton}
                 >
-                  <Ionicons name="chevron-down" size={22} color="#FFFFFF" />
+                  <Ionicons name="chevron-down" size={22} color="#334155" />
                 </TouchableOpacity>
-                <View style={{ flex: 1 }}>
-                  <Txt color="#FFFFFF" size={17} bold>{call.peer.name}</Txt>
-                  <Txt color="#D8D8E2" size={12}>{call.type === 'video' ? 'Video call' : 'Voice call'}</Txt>
+
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={styles.callHeaderTitle}>
+                    {call.type === 'video' ? 'Video Practice' : 'Speaking Practice'}
+                  </Text>
+                  <Text style={styles.callHeaderSub}>
+                    {call.status === 'Connected' ? 'Active Call' : call.status}
+                  </Text>
                 </View>
-                <Txt color="#D8D8E2" size={12}>
-                  {call.status === 'Connected'
-                    ? `${String(Math.floor(callDuration / 60)).padStart(2, '0')}:${String(callDuration % 60).padStart(2, '0')}`
-                    : call.status}
-                </Txt>
+
+                <View style={styles.callHeaderRight}>
+                  {call.status === 'Connected' ? (
+                    <View style={styles.liveCallPill}>
+                      <View style={styles.liveCallDot} />
+                      <Text style={styles.liveCallText}>LIVE</Text>
+                    </View>
+                  ) : (
+                    <View style={{ width: 36 }} />
+                  )}
+                </View>
               </View>
 
-              {call.type === 'video' ? (
+              {/* Status Notice (Ringing / Connecting) */}
+              {call.status !== 'Connected' && (
+                <View style={styles.callConnectingBanner}>
+                  {call.status === 'Ringing' && (
+                    <View style={styles.ringingBannerBox}>
+                      <Text style={{ fontSize: 20 }}>🔔</Text>
+                      <Text style={styles.ringingBannerText}>
+                        {call.direction === 'incoming' ? 'Incoming Ringing Call...' : 'Calling Partner...'}
+                      </Text>
+                    </View>
+                  )}
+                  {callNotice ? (
+                    <Text style={styles.callNoticeText}>{callNotice}</Text>
+                  ) : null}
+                </View>
+              )}
+
+              {/* Video stage if Video Call */}
+              {call.type === 'video' && (
                 <View style={styles.callVideoStage}>
                   <CallVideo
                     stream={remoteStream}
@@ -4179,41 +4651,113 @@ function App() {
                     </View>
                   ) : null}
                 </View>
-              ) : (
-                <View style={styles.voiceCallAvatarArea}>
-                  <CallAudio stream={remoteStream} />
-                  <View style={styles.callAvatar}>
-                    <Txt size={48} bold color="#FFFFFF">{call.peer.name?.charAt(0)?.toUpperCase() || '?'}</Txt>
-                  </View>
-                  <Txt color="#FFFFFF" size={22} bold style={{ marginTop: 16 }}>{call.peer.name}</Txt>
-                </View>
               )}
 
-              <View style={styles.callStatusArea}>
-                <Txt color="#FFFFFF" size={15} bold>{call.status}</Txt>
-                {call.status === 'Ringing' && (
-                  <View style={{ marginTop: 10, alignItems: 'center' }}>
-                    <View style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: 'rgba(245, 158, 11, 0.25)',
-                      borderWidth: 1.5,
-                      borderColor: '#F59E0B',
-                      borderRadius: 24,
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                      gap: 8,
-                    }}>
-                      <Txt size={22}>🔔</Txt>
-                      <Txt color="#FFD166" size={13} bold>
-                        {call.direction === 'incoming' ? 'Incoming Ringing Bell...' : 'Calling... Ringing Bell...'}
-                      </Txt>
-                    </View>
+              {/* Hidden CallAudio to play remote audio */}
+              <CallAudio stream={remoteStream} />
+
+              {/* ================= EXACT MATCH TO REFERENCE IMAGE 1 & 2 ================= */}
+              {/* Dual Avatars (Oliver & Sarah) + Center Timer & Buttons */}
+              <View style={styles.callHubRow}>
+                {/* Left Participant: Oliver (Current User) */}
+                <View style={styles.callUserCol}>
+                  <View style={styles.callAvatarCircle}>
+                    <Image
+                      source={{
+                        uri: avatarUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Oliver&facialHair=beardLight&top=shortFlat&clothingColor=blue01',
+                      }}
+                      style={styles.callAvatarImg}
+                    />
                   </View>
-                )}
-                {callNotice ? <Txt color="#FFD4C8" size={12} style={{ textAlign: 'center', marginTop: 8 }}>{callNotice}</Txt> : null}
+                  <Text style={styles.callUserName} numberOfLines={1}>
+                    {name || 'Oliver'}
+                  </Text>
+                  <Text style={styles.callUserLevel}>
+                    Level : {level === 'Advanced' ? '3' : level === 'Intermediate' ? '2' : '1'}
+                  </Text>
+                </View>
+
+                {/* Center: Live Timer + Green Speaker + Red End Call */}
+                <View style={styles.callCenterHub}>
+                  <Text style={styles.callTimerText}>
+                    {call.status === 'Connected'
+                      ? `${String(Math.floor(callDuration / 60)).padStart(2, '0')} : ${String(callDuration % 60).padStart(2, '0')}`
+                      : '00 : 00'}
+                  </Text>
+
+                  {!isPaidSubscriber() && (
+                    <View style={styles.freeTrialCallBadge}>
+                      <Text style={styles.freeTrialCallBadgeText}>
+                        Free: {Math.max(0, Math.floor((FREE_TRIAL_TOTAL_SECONDS - usedFreeSeconds) / 60))}m {Math.max(0, (FREE_TRIAL_TOTAL_SECONDS - usedFreeSeconds) % 60)}s left
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.callCenterButtons}>
+                    {/* Green Speaker Toggle Icon / Button */}
+                    <TouchableOpacity
+                      onPress={() => {
+                        try {
+                          const nextSpeaker = !speakerEnabled;
+                          setAudioRoute(nextSpeaker);
+                          setSpeakerEnabled(nextSpeaker);
+                        } catch (error) {
+                          setCallNotice(error.message || 'Speaker control is unavailable.');
+                        }
+                      }}
+                      style={[
+                        styles.callSpeakerBtn,
+                        !speakerEnabled && styles.callSpeakerBtnOff,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={speakerEnabled ? 'Use earpiece' : 'Use speaker'}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="volume-high"
+                        size={25}
+                        color={speakerEnabled ? '#10B981' : '#94A3B8'}
+                      />
+                    </TouchableOpacity>
+
+                    {/* Red End Call Button */}
+                    <TouchableOpacity
+                      onPress={endCall}
+                      style={styles.callEndBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="End call"
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons
+                        name="call"
+                        size={23}
+                        color="#FFFFFF"
+                        style={{ transform: [{ rotate: '135deg' }] }}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Right Participant: sarah (Partner) */}
+                <View style={styles.callUserCol}>
+                  <View style={styles.callAvatarCircle}>
+                    <Image
+                      source={{
+                        uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&clothingColor=yellow&top=longHairStraight',
+                      }}
+                      style={styles.callAvatarImg}
+                    />
+                  </View>
+                  <Text style={styles.callUserName} numberOfLines={1}>
+                    {call.peer?.name || 'sarah'}
+                  </Text>
+                  <Text style={styles.callUserLevel}>
+                    {call.peer?.level?.startsWith('Level') ? call.peer.level : ('Level : ' + (call.peer?.level === 'Advanced' ? '3' : call.peer?.level === 'Intermediate' ? '2' : '1'))}
+                  </Text>
+                </View>
               </View>
 
+              {/* Incoming Call Accept / Decline Actions (if incoming) */}
               {call.direction === 'incoming' && call.status === 'Ringing' ? (
                 <View style={styles.incomingCallActions}>
                   <TouchableOpacity
@@ -4235,95 +4779,240 @@ function App() {
                       <Ionicons name="star" size={23} color="#FFFFFF" />
                       <Txt color="#FFFFFF" size={11}>Upgrade</Txt>
                     </TouchableOpacity>
-                  ) : <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Accept incoming call"
-                    onPress={acceptCall}
-                    style={[styles.callControl, styles.acceptControl]}
-                  >
-                    <Ionicons name={call.type === 'video' ? 'videocam' : 'call'} size={23} color="#FFFFFF" />
-                    <Txt color="#FFFFFF" size={11}>Accept</Txt>
-                  </TouchableOpacity>}
-                </View>
-              ) : (
-                <View style={styles.callControls}>
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'}
-                    onPress={() => {
-                      const nextMuted = !muted;
-                      localStreamRef.current?.getAudioTracks().forEach((track) => { track.enabled = !nextMuted; });
-                      setMuted(nextMuted);
-                    }}
-                    style={[styles.callControl, muted && styles.callControlActive]}
-                  >
-                    <Ionicons name={muted ? 'mic-off' : 'mic'} size={21} color="#FFFFFF" />
-                    <Txt color="#FFFFFF" size={10}>{muted ? 'Unmute' : 'Mute'}</Txt>
-                  </TouchableOpacity>
-                  {Platform.OS !== 'web' && (
+                  ) : (
                     <TouchableOpacity
                       accessibilityRole="button"
-                      accessibilityLabel={speakerEnabled ? 'Use earpiece' : 'Use speaker'}
-                      onPress={() => {
-                        try {
-                          const nextSpeaker = !speakerEnabled;
-                          setAudioRoute(nextSpeaker);
-                          setSpeakerEnabled(nextSpeaker);
-                        } catch (error) {
-                          setCallNotice(error.message || 'Speaker control is unavailable.');
-                        }
-                      }}
-                      style={[styles.callControl, speakerEnabled && styles.callControlActive]}
+                      accessibilityLabel="Accept incoming call"
+                      onPress={acceptCall}
+                      style={[styles.callControl, styles.acceptControl]}
                     >
-                      <Ionicons name={speakerEnabled ? 'volume-high' : 'volume-medium'} size={21} color="#FFFFFF" />
-                      <Txt color="#FFFFFF" size={10}>{speakerEnabled ? 'Speaker' : 'Earpiece'}</Txt>
+                      <Ionicons name={call.type === 'video' ? 'videocam' : 'call'} size={23} color="#FFFFFF" />
+                      <Txt color="#FFFFFF" size={11}>Accept</Txt>
                     </TouchableOpacity>
                   )}
-                  {call.type === 'video' && (
-                    <>
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
-                        onPress={() => {
-                          const nextEnabled = !cameraEnabled;
-                          localStreamRef.current?.getVideoTracks().forEach((track) => { track.enabled = nextEnabled; });
-                          setCameraEnabled(nextEnabled);
-                        }}
-                        disabled={!localStream?.getVideoTracks().length}
-                        style={[styles.callControl, !cameraEnabled && styles.callControlActive, !localStream?.getVideoTracks().length && { opacity: 0.45 }]}
-                      >
-                        <Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={21} color="#FFFFFF" />
-                        <Txt color="#FFFFFF" size={10}>{cameraEnabled ? 'Camera' : 'Camera off'}</Txt>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel="Switch camera"
-                        onPress={() => {
-                          try {
-                            switchCamera(localStreamRef.current, peerRef.current?.connection);
-                          } catch (error) {
-                            setCallNotice(error.message || 'Could not switch camera.');
-                          }
-                        }}
-                        disabled={!localStream?.getVideoTracks().length}
-                        style={[styles.callControl, !localStream?.getVideoTracks().length && { opacity: 0.45 }]}
-                      >
-                        <Ionicons name="camera-reverse-outline" size={21} color="#FFFFFF" />
-                        <Txt color="#FFFFFF" size={10}>Flip</Txt>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="End call"
-                    onPress={endCall}
-                    style={[styles.callControl, styles.declineControl]}
-                  >
-                    <Ionicons name="call" size={21} color="#FFFFFF" style={{ transform: [{ rotate: '135deg' }] }} />
-                    <Txt color="#FFFFFF" size={10}>End</Txt>
-                  </TouchableOpacity>
                 </View>
-              )}
+              ) : null}
+
+              {/* ================= "You have 6 activities" Section ================= */}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.activitiesScrollContainer}
+              >
+                <View style={styles.activitiesHeadingArea}>
+                  <Text style={styles.activitiesHeadingTitle}>You have 6 activities</Text>
+                  <Text style={styles.activitiesHeadingSub}>
+                    Tap any activity card to practice speaking together
+                  </Text>
+                </View>
+
+                {/* 6 Activities Grid */}
+                <View style={styles.activitiesGrid}>
+                  {CALL_ACTIVITIES.map((act) => (
+                    <TouchableOpacity
+                      key={act.id}
+                      onPress={() => {
+                        setActiveCallActivity(act);
+                        setCallActivityPromptIdx(0);
+                        if (call.peer?.isAi || call.peer?.id?.startsWith('partner_')) {
+                          setTimeout(() => {
+                            speakEnglish(act.prompts[0]);
+                          }, 350);
+                        }
+                      }}
+                      style={[
+                        styles.activityCard,
+                        {
+                          backgroundColor: act.bgColor,
+                          borderColor: act.borderColor,
+                        },
+                      ]}
+                      activeOpacity={0.78}
+                    >
+                      <Text style={styles.activityCardEmoji}>{act.emoji}</Text>
+                      <Text style={[styles.activityCardTitle, { color: act.textColor }]}>
+                        {act.title}
+                      </Text>
+                      <Text
+                        style={[styles.activityCardSub, { color: act.subColor }]}
+                        numberOfLines={1}
+                      >
+                        {act.subtitle}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              {/* Bottom In-Call Controls (Mute Mic, Video Toggle/Flip) */}
+              <View style={styles.callBottomControls}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'}
+                  onPress={() => {
+                    const nextMuted = !muted;
+                    localStreamRef.current?.getAudioTracks().forEach((track) => {
+                      track.enabled = !nextMuted;
+                    });
+                    setMuted(nextMuted);
+                  }}
+                  style={[styles.callMicroBtn, muted && styles.callMicroBtnMuted]}
+                >
+                  <Ionicons
+                    name={muted ? 'mic-off' : 'mic'}
+                    size={18}
+                    color={muted ? '#EF4444' : '#334155'}
+                  />
+                  <Text style={[styles.callMicroBtnText, muted && { color: '#EF4444' }]}>
+                    {muted ? 'Muted' : 'Mute'}
+                  </Text>
+                </TouchableOpacity>
+
+                {call.type === 'video' && (
+                  <>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
+                      onPress={() => {
+                        const nextEnabled = !cameraEnabled;
+                        localStreamRef.current?.getVideoTracks().forEach((track) => {
+                          track.enabled = nextEnabled;
+                        });
+                        setCameraEnabled(nextEnabled);
+                      }}
+                      disabled={!localStream?.getVideoTracks().length}
+                      style={[styles.callMicroBtn, !cameraEnabled && styles.callMicroBtnMuted]}
+                    >
+                      <Ionicons
+                        name={cameraEnabled ? 'videocam' : 'videocam-off'}
+                        size={18}
+                        color={cameraEnabled ? '#334155' : '#EF4444'}
+                      />
+                      <Text style={styles.callMicroBtnText}>
+                        {cameraEnabled ? 'Cam On' : 'Cam Off'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Switch camera"
+                      onPress={() => {
+                        try {
+                          switchCamera(localStreamRef.current, peerRef.current?.connection);
+                        } catch (error) {
+                          setCallNotice(error.message || 'Could not switch camera.');
+                        }
+                      }}
+                      disabled={!localStream?.getVideoTracks().length}
+                      style={styles.callMicroBtn}
+                    >
+                      <Ionicons name="camera-reverse-outline" size={18} color="#334155" />
+                      <Text style={styles.callMicroBtnText}>Flip</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+
+              {/* Interactive In-Call Activity Prompt Modal */}
+              <Modal
+                visible={Boolean(activeCallActivity)}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setActiveCallActivity(null)}
+              >
+                <View style={styles.activityModalOverlay}>
+                  <View style={styles.activityModalSheet}>
+                    {activeCallActivity && (
+                      <>
+                        <View style={styles.activityModalHeader}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Text style={{ fontSize: 24 }}>{activeCallActivity.emoji}</Text>
+                            <Text style={styles.activityModalTitle}>
+                              {activeCallActivity.title}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => setActiveCallActivity(null)}
+                            style={styles.activityModalCloseBtn}
+                          >
+                            <Ionicons name="close" size={20} color="#64748B" />
+                          </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.activityPromptCard}>
+                          <Text style={styles.activityPromptQuestion}>
+                            "{activeCallActivity.prompts[callActivityPromptIdx % activeCallActivity.prompts.length]}"
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() =>
+                              speakEnglish(
+                                activeCallActivity.prompts[
+                                  callActivityPromptIdx % activeCallActivity.prompts.length
+                                ]
+                              )
+                            }
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              marginTop: 10,
+                              paddingVertical: 5,
+                              paddingHorizontal: 10,
+                              borderRadius: 12,
+                              backgroundColor: '#EFF6FF',
+                              alignSelf: 'center',
+                            }}
+                          >
+                            <Ionicons name="volume-high" size={16} color="#2563EB" />
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: '#2563EB' }}>
+                              Listen to {call.peer?.name || 'partner'} read this
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Vocabulary suggestions */}
+                        <Text style={styles.activityVocabTitle}>Helpful vocabulary to use:</Text>
+                        <View style={styles.activityVocabRow}>
+                          {activeCallActivity.vocab.map((v, i) => (
+                            <View key={i} style={styles.activityVocabChip}>
+                              <Text style={styles.activityVocabText}>{v}</Text>
+                            </View>
+                          ))}
+                        </View>
+
+                        {/* Modal Action Buttons */}
+                        <View style={styles.activityModalButtons}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              const nextIdx = (callActivityPromptIdx + 1) % activeCallActivity.prompts.length;
+                              setCallActivityPromptIdx(nextIdx);
+                              if (call.peer?.isAi || call.peer?.id?.startsWith('partner_')) {
+                                setTimeout(() => {
+                                  speakEnglish(activeCallActivity.prompts[nextIdx]);
+                                }, 300);
+                              }
+                            }}
+                            style={styles.activityNextBtn}
+                          >
+                            <Ionicons name="shuffle" size={18} color="#FFFFFF" />
+                            <Text style={styles.activityNextBtnText}>Next Question</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            onPress={() => {
+                              stopSpeech();
+                              setActiveCallActivity(null);
+                            }}
+                            style={styles.activityDoneBtn}
+                          >
+                            <Text style={styles.activityDoneBtnText}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
+                  </View>
+                </View>
+              </Modal>
             </View>
           )}
 
@@ -5127,8 +5816,8 @@ function App() {
             </ScrollView>
           )}
 
-          {/* BOTTOM NAVIGATION (ARYA 5-TAB BAR) */}
-          {!['welcome', 'login', 'register', 'onboard', 'level', 'call', 'call-complete', 'profile', 'aiPractice', 'manage-account', 'legal-terms', 'legal-privacy'].includes(screen) && (
+          {/* BOTTOM NAVIGATION (ARYA TAB BAR) */}
+          {!['welcome', 'login', 'register', 'onboard', 'level', 'call', 'call-complete', 'aiPractice', 'manage-account', 'legal-terms', 'legal-privacy', 'chat'].includes(screen) && (
             <AryaBottomNav
               activeTab={activeBottomTab}
               onTabPress={handleBottomTabPress}
@@ -5614,8 +6303,8 @@ const styles = StyleSheet.create({
   },
   callScreen: {
     flex: 1,
-    backgroundColor: '#17172F',
-    paddingBottom: 24,
+    backgroundColor: '#FFFFFF',
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
   },
   callCompletionScreen: {
     padding: 22,
@@ -5681,17 +6370,356 @@ const styles = StyleSheet.create({
   callHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 12 : 14,
+    paddingBottom: 10,
     gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   callBackButton: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 19,
-    backgroundColor: '#303047',
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+  },
+  callHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  callHeaderSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  callHeaderRight: {
+    width: 36,
+    alignItems: 'flex-end',
+  },
+  liveCallPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  liveCallDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#16A34A',
+  },
+  liveCallText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  callConnectingBanner: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#FEF3C7',
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 12,
+  },
+  ringingBannerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  ringingBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  callNoticeText: {
+    fontSize: 11,
+    color: '#92400E',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  callHubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  callUserCol: {
+    alignItems: 'center',
+    width: 90,
+  },
+  callAvatarCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  callAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  callUserName: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  callUserLevel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 1,
+    textAlign: 'center',
+  },
+  callCenterHub: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callTimerText: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 1,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginBottom: 4,
+  },
+  freeTrialCallBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  freeTrialCallBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  callCenterButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  callSpeakerBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  callSpeakerBtnOff: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  callEndBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  activitiesScrollContainer: {
+    paddingBottom: 12,
+  },
+  activitiesHeadingArea: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+  activitiesHeadingTitle: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  activitiesHeadingSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  activitiesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 14,
+    gap: 10,
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  activityCard: {
+    width: '48%',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  activityCardEmoji: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  activityCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  activityCardSub: {
+    fontSize: 10.5,
+    fontWeight: '500',
+  },
+  callBottomControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  callMicroBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+  },
+  callMicroBtnMuted: {
+    backgroundColor: '#FEE2E2',
+  },
+  callMicroBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  activityModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  activityModalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  activityModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  activityModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  activityModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityPromptCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+  },
+  activityPromptQuestion: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+    lineHeight: 22,
+    fontStyle: 'italic',
+  },
+  activityVocabTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 6,
+  },
+  activityVocabRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 18,
+  },
+  activityVocabChip: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  activityVocabText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  activityModalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  activityNextBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  activityNextBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  activityDoneBtn: {
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+  },
+  activityDoneBtnText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '700',
   },
   callVideoStage: {
     flex: 1,
@@ -6736,6 +7764,918 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     backgroundColor: '#F8FAFC',
   },
+
+  /* UNIFIED CHATS & CALLS HUB STYLES (REFERRAL THEME) */
+  hubContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  hubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 48 : 14,
+    paddingBottom: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  hubCircleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  hubHeaderRightBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hubSearchContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  hubSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+  },
+  hubSearchInput: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#0F172A',
+    paddingVertical: 4,
+    marginLeft: 6,
+  },
+  hubStoriesContainer: {
+    paddingVertical: 8,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC',
+  },
+  hubStoriesScroll: {
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    gap: 14,
+  },
+  hubStatusPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 4,
+  },
+  hubStatusPillText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  hubStoryItem: {
+    alignItems: 'center',
+    width: 60,
+  },
+  hubStoryAvatarRing: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 2.5,
+    borderColor: '#8B5CF6',
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  hubStoryAvatarImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
+  },
+  hubStoryAddPlus: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  hubStoryName: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#334155',
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  hubFilterRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  hubFilterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#1E293B',
+  },
+  hubFilterPillActive: {
+    backgroundColor: '#7C3AED',
+  },
+  hubFilterText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  hubFilterTextActive: {
+    color: '#FFFFFF',
+  },
+  hubConvRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
+  },
+  hubConvAvatarBox: {
+    position: 'relative',
+    width: 50,
+    height: 50,
+  },
+  hubConvAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F1F5F9',
+  },
+  hubOnlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  hubConvDetails: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  hubConvTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  hubConvName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  hubConvTime: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+  },
+  hubConvTimeUnread: {
+    color: '#7C3AED',
+    fontWeight: '700',
+  },
+  hubConvBottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  hubConvPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 6,
+  },
+  hubConvSnippet: {
+    fontSize: 12.5,
+    color: '#64748B',
+    flex: 1,
+  },
+  hubTypingText: {
+    fontSize: 12.5,
+    color: '#8B5CF6',
+    fontWeight: '700',
+    fontStyle: 'italic',
+  },
+  hubUnreadBadge: {
+    minWidth: 19,
+    height: 19,
+    borderRadius: 10,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  hubUnreadText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  hubSectionHeading: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  hubSearchUserCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
+  },
+  hubQuickChatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    gap: 4,
+  },
+  hubQuickBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  hubQuickCallBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubQuickVideoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubMatchHeroCard: {
+    padding: 16,
+    borderRadius: 18,
+    marginBottom: 12,
+  },
+  hubMatchHeroIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubMatchHeroTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  hubMatchHeroSub: {
+    fontSize: 12,
+    color: '#EDE9FE',
+    marginTop: 2,
+  },
+  hubMatchHeroBtn: {
+    marginTop: 14,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubMatchHeroBtnText: {
+    color: '#5843E8',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  hubCallUpgradeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  hubLockPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+    gap: 4,
+  },
+  hubLockPillText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  hubUpgradeTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  hubUpgradeSub: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 1,
+  },
+  hubUpgradeActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D97706',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 3,
+    marginLeft: 8,
+  },
+  hubUpgradeActionText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  hubCallActiveBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 14,
+    padding: 11,
+    marginBottom: 12,
+    gap: 8,
+  },
+  hubCallActiveText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#065F46',
+    flex: 1,
+  },
+  hubCallPartnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC',
+  },
+  hubCallActionCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubEmptyCard: {
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    marginTop: 8,
+  },
+  hubEmptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 8,
+  },
+  hubEmptySub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginTop: 3,
+  },
+  hubGroupCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  hubGroupIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubGroupBadge: {
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  hubGroupBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  hubGroupJoinBtn: {
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  hubGroupJoinText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+
+  /* 1-ON-1 CHAT SCREEN STYLES (REFERRAL RIGHT SCREEN) */
+  chatWrapper: {
+    flex: 1,
+    backgroundColor: '#FAF8FF',
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: Platform.OS === 'ios' ? 48 : 12,
+    paddingBottom: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  chatBackBtn: {
+    padding: 4,
+    marginRight: 4,
+  },
+  chatHeaderUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  chatHeaderAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+  },
+  chatHeaderName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  chatHeaderStatus: {
+    fontSize: 11,
+    color: '#10B981',
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  chatHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginRight: 4,
+  },
+  chatHeaderIconBtn: {
+    padding: 4,
+  },
+  chatErrorBanner: {
+    padding: 8,
+    backgroundColor: '#FEF2F2',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FCA5A5',
+  },
+  chatErrorText: {
+    fontSize: 12,
+    color: '#DC2626',
+    textAlign: 'center',
+  },
+  chatTypingBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  chatTypingBannerText: {
+    fontSize: 11,
+    color: '#7C3AED',
+    fontWeight: '700',
+  },
+  chatDatePillRow: {
+    alignItems: 'center',
+    marginVertical: 12,
+  },
+  chatDatePill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  chatDatePillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  chatBubbleContainer: {
+    marginBottom: 10,
+    maxWidth: '82%',
+  },
+  chatBubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  chatBubbleMe: {
+    backgroundColor: '#C49BFA',
+    borderBottomRightRadius: 4,
+  },
+  chatBubbleThem: {
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 4,
+  },
+  chatBubbleText: {
+    fontSize: 14.5,
+    lineHeight: 21,
+  },
+  chatBubbleTextMe: {
+    color: '#1E1B4B',
+  },
+  chatBubbleTextThem: {
+    color: '#0F172A',
+  },
+  chatBubbleMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+  },
+  chatBubbleMetaTime: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+  },
+  chatImgBox: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  chatImgPreview: {
+    width: 220,
+    height: 150,
+    borderRadius: 10,
+  },
+  chatAttachCaption: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 4,
+    paddingHorizontal: 2,
+  },
+  chatFileBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  chatFileIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatFileName: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  chatFileSize: {
+    fontSize: 10.5,
+    color: '#64748B',
+  },
+  chatBottomBar: {
+    paddingHorizontal: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    paddingTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  chatPendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  chatPendingText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#5843E8',
+  },
+  chatInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chatInputCapsule: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F3F8',
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 6 : 2,
+  },
+  chatTextInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+    maxHeight: 100,
+    paddingVertical: 6,
+  },
+  chatAttachBtn: {
+    padding: 6,
+  },
+  chatSendBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#7C3AED',
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  chatLockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  chatUpgradeBtn: {
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 14,
+  },
+  // Messages Screen Theme (Exact match to referral screenshot)
+  msgScreenContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  messagesThemeTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingTop: Platform.OS === 'ios' ? 12 : 16,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  messagesLogoBt: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#F97316',
+    letterSpacing: 0.5,
+  },
+  messagesLogoBytalk: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#1E1B4B',
+    letterSpacing: 0.5,
+  },
+  apiOnlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  apiOnlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  apiOnlineText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  messagesSignOutBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  messagesThemeTitleArea: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  messagesThemeTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#1E1B4B',
+    letterSpacing: -0.5,
+  },
+  messagesThemeSub: {
+    fontSize: 14.5,
+    fontWeight: '400',
+    color: '#475569',
+    marginTop: 6,
+  },
+  messagesThemeEmptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingTop: 80,
+  },
+  messagesThemeEmptyText: {
+    fontSize: 14.5,
+    fontWeight: '400',
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  messagesSubNoticeCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FFEDD5',
+  },
+  messagesSubNoticeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#9A3412',
+  },
+  messagesSubNoticeDesc: {
+    fontSize: 12,
+    color: '#C2410C',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  messagesSubNoticeBtn: {
+    backgroundColor: '#EA580C',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  messagesSubNoticeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  msgConvRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  msgConvAvatarBox: {
+    position: 'relative',
+    marginRight: 13,
+  },
+  msgConvAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F1F5F9',
+  },
+  msgOnlineDot: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  msgConvDetails: {
+    flex: 1,
+  },
+  msgConvTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  msgConvName: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  msgConvTime: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+  },
+  msgConvTimeUnread: {
+    color: '#EA580C',
+    fontWeight: '700',
+  },
+  msgConvBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  msgConvPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  msgTypingText: {
+    fontSize: 13,
+    color: '#EA580C',
+    fontWeight: '600',
+    fontStyle: 'italic',
+  },
+  msgConvSnippet: {
+    fontSize: 13,
+    color: '#64748B',
+    flex: 1,
+  },
+  msgUnreadBadge: {
+    backgroundColor: '#EA580C',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  msgUnreadText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
 });
 
 export default App;

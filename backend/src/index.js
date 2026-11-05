@@ -15,7 +15,7 @@ import { PracticeSession } from './models/PracticeSession.js';
 import { messageCutoff } from './messageRetention.js';
 import { SubscriptionEvent } from './models/SubscriptionEvent.js';
 import { Plan } from './models/Plan.js';
-import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded } from './subscriptions.js';
+import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, isPaidSubscriber, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded, getFreeTrialSecondsRemaining } from './subscriptions.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { generateAiResponse } from './aiService.js';
 
@@ -628,11 +628,21 @@ function finishCall(call, status, endedBy) {
   const disconnectTimer = callTimers.get(`disconnect:${call.id}`);
   if (disconnectTimer) clearTimeout(disconnectTimer);
   callTimers.delete(`disconnect:${call.id}`);
+  const trialTimer = callTimers.get(`trial:${call.id}`);
+  if (trialTimer) clearTimeout(trialTimer);
+  callTimers.delete(`trial:${call.id}`);
   call.status = status;
   call.endedAt = new Date().toISOString();
   call.endedBy = endedBy || null;
   if (call.connectedAt) {
     call.durationSeconds = Math.max(0, Math.floor((Date.parse(call.endedAt) - Date.parse(call.connectedAt)) / 1000));
+    if (call.durationSeconds > 0) {
+      const durSec = call.durationSeconds;
+      Promise.all([
+        User.findByIdAndUpdate(call.callerId, { $inc: { voiceSecondsUsed: durSec, voiceMinutesUsed: Math.ceil(durSec / 60) } }),
+        User.findByIdAndUpdate(call.calleeId, { $inc: { voiceSecondsUsed: durSec, voiceMinutesUsed: Math.ceil(durSec / 60) } }),
+      ]).catch(() => {});
+    }
   } else {
     call.durationSeconds = 0;
   }
@@ -2047,11 +2057,9 @@ app.post('/api/messages', requireAuth, async (req, res) => {
   const senderId = req.authenticatedUser.id;
 
   // Enforce subscription: Only customer who purchased a subscription can send messages
-  const userSub = activeSubscription(req.authenticatedUser);
-  const isSubscribed = userSub.plan?.id !== 'free' && userSub.status === 'active';
-  if (!isSubscribed) {
+  if (!isPaidSubscriber(req.authenticatedUser)) {
     return res.status(403).json({
-      error: 'Subscription required to send messages. Please subscribe to chat!',
+      error: 'Messaging is available for subscribers only. Upgrade to PRO to send messages.',
       code: 'SUBSCRIPTION_REQUIRED',
     });
   }
@@ -2193,8 +2201,13 @@ app.post('/api/calls/:callId/feedback', requireAuth, async (req, res) => {
 });
 
 app.get('/api/rtc-config', requireAuth, (req, res) => {
-  const iceServers = (process.env.RTC_STUN_URLS || 'stun:stun.l.google.com:19302')
-    .split(',')
+  const defaultStuns = [
+    'stun:stun.l.google.com:19302',
+    'stun:stun1.l.google.com:19302',
+    'stun:stun2.l.google.com:19302',
+    'stun:openrelay.metered.ca:80',
+  ];
+  const iceServers = (process.env.RTC_STUN_URLS ? process.env.RTC_STUN_URLS.split(',') : defaultStuns)
     .map((url) => url.trim())
     .filter(Boolean)
     .map((urls) => ({ urls }));
@@ -2824,7 +2837,7 @@ io.on('connection', (socket) => {
     if (type === 'audio') {
       if (!canUseAudio(callerDoc)) {
         acknowledge({
-          error: 'Voice calling requires an active subscription plan. Please activate a Basic or PRO plan to start calling.',
+          error: 'Your 5-minute free trial has ended. Please purchase a subscription to continue speaking practice.',
           code: 'subscription_required',
         });
         return;
@@ -2902,7 +2915,7 @@ io.on('connection', (socket) => {
         User.findById(call.calleeId),
       ]);
       if (!caller || !callee || (!canUseAudio(caller) && !canUseAudio(callee))) {
-        acknowledge({ error: 'Voice calling requires an active subscription plan.', code: 'subscription_required' });
+        acknowledge({ error: 'Your 5-minute free trial has ended. Please purchase a subscription to continue speaking practice.', code: 'subscription_required' });
         emitToUser(call.callerId, 'call:ended', { callId: call.id, status: 'restricted', reason: 'subscription_required' });
         finishCall(call, 'restricted', userId);
         return;
@@ -2967,7 +2980,7 @@ io.on('connection', (socket) => {
     try {
       payloadSize = JSON.stringify(signal).length;
     } catch {}
-    if (!call || call.status === 'ringing' || !recipientId || !validKind || !validRole || !signal || payloadSize > 100000) {
+    if (!call || !['ringing', 'connecting', 'connected'].includes(call.status) || !recipientId || !validKind || !validRole || !signal || payloadSize > 100000) {
       acknowledge({ error: 'Invalid or unauthorized call signal' });
       return;
     }
@@ -2991,6 +3004,34 @@ io.on('connection', (socket) => {
       call.connectedAt = new Date().toISOString();
       call.status = 'connected';
       saveCall(call);
+
+      // Enforce 5-minute free trial limit for unsubscribed users
+      Promise.all([
+        User.findById(call.callerId),
+        User.findById(call.calleeId),
+      ]).then(([callerDoc, calleeDoc]) => {
+        const callerSec = getFreeTrialSecondsRemaining(callerDoc);
+        const calleeSec = getFreeTrialSecondsRemaining(calleeDoc);
+        const limitSec = Math.min(callerSec, calleeSec);
+        if (Number.isFinite(limitSec) && limitSec > 0) {
+          const trialTimer = setTimeout(async () => {
+            const current = activeCalls.get(call.id);
+            if (!current || current.status !== 'connected') return;
+            try {
+              await finishCall(current, 'ended', 'system');
+            } catch {}
+            const ended = {
+              callId: current.id,
+              status: 'ended',
+              reason: 'free_trial_expired',
+              endedAt: current.endedAt,
+            };
+            emitToUser(current.callerId, 'call:ended', ended);
+            emitToUser(current.calleeId, 'call:ended', ended);
+          }, limitSec * 1000);
+          callTimers.set(`trial:${call.id}`, trialTimer);
+        }
+      }).catch(() => {});
     }
     emitToUser(call.callerId, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
     emitToUser(call.calleeId, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });

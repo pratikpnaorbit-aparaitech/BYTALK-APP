@@ -182,16 +182,37 @@ export function resetUsageIfNeeded(user) {
   }
 }
 
+export const FREE_TRIAL_VOICE_SECONDS = 300; // 5 minutes free trial for new users
+export const FREE_TRIAL_VOICE_MINUTES = 5;
+
+export function isPaidSubscriber(user) {
+  if (!user) return false;
+  const subscription = activeSubscription(user);
+  return subscription.plan.id !== 'free';
+}
+
+export function getFreeTrialSecondsRemaining(user) {
+  if (!user) return 0;
+  if (isPaidSubscriber(user)) return Infinity;
+  const usedSeconds = user.voiceSecondsUsed ?? ((user.voiceMinutesUsed || 0) * 60);
+  return Math.max(0, FREE_TRIAL_VOICE_SECONDS - usedSeconds);
+}
+
 /**
- * Normal voice/audio calling requires an active subscription (Basic, Plus, or Pro).
+ * Normal voice/audio calling:
+ * - Paid subscribers have unlimited/plan-based calling.
+ * - Every new/unsubscribed user gets their first 5 minutes free.
  */
 export function canUseAudio(user) {
   if (!user) return false;
   const subscription = activeSubscription(user);
-  if (subscription.plan.id === 'free') return false;
-  resetUsageIfNeeded(user);
-  const limit = subscription.plan.limits?.monthlyVoiceMinutes;
-  return limit === null || (user.voiceMinutesUsed || 0) < limit;
+  if (subscription.plan.id !== 'free') {
+    resetUsageIfNeeded(user);
+    const limit = subscription.plan.limits?.monthlyVoiceMinutes;
+    return limit === null || (user.voiceMinutesUsed || 0) < limit;
+  }
+  const remainingSeconds = getFreeTrialSecondsRemaining(user);
+  return remainingSeconds > 0;
 }
 
 /**
@@ -209,8 +230,17 @@ export function canUseVideo(user) {
 export function entitlementPayload(user) {
   const subscription = activeSubscription(user);
   resetUsageIfNeeded(user);
+  const isPaid = subscription.plan.id !== 'free';
+  const freeSecondsRemaining = getFreeTrialSecondsRemaining(user);
   return {
     ...subscription,
+    isPaidSubscriber: isPaid,
+    freeTrial: {
+      totalSeconds: FREE_TRIAL_VOICE_SECONDS,
+      remainingSeconds: isPaid ? null : freeSecondsRemaining,
+      remainingMinutes: isPaid ? null : Math.ceil(freeSecondsRemaining / 60),
+      isExpired: !isPaid && freeSecondsRemaining <= 0,
+    },
     usage: {
       month: user?.usageMonth || monthKey(),
       voiceMinutesUsed: user?.voiceMinutesUsed || 0,
