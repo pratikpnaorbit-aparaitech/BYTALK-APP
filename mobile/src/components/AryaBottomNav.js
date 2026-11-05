@@ -9,20 +9,24 @@ export default function AryaBottomNav({
   isPro = false,
 }) {
   const tabs = [
+    { id: 'home', label: 'Home', icon: 'home-outline', iconActive: 'home' },
+    { id: 'learn', label: 'Learn', icon: 'book-outline', iconActive: 'book' },
+    { id: 'pro', label: isPro ? 'PRO 👑' : 'Get Pro', icon: 'crown', iconActive: 'crown' },
+    { id: 'call', label: 'Call', icon: 'call-outline', iconActive: 'call' },
     { id: 'discover', label: 'Discover', icon: 'compass-outline', iconActive: 'compass' },
-    { id: 'practice', label: 'Practice', icon: 'book-outline', iconActive: 'book' },
-    { id: 'messages', label: 'Messages', icon: 'chatbubbles-outline', iconActive: 'chatbubbles' },
-    { id: 'profile', label: 'Profile', icon: 'stats-chart-outline', iconActive: 'stats-chart' },
   ];
 
   return (
     <View style={styles.navContainer}>
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id
-          || (tab.id === 'discover' && ['discover', 'home'].includes(activeTab))
-          || (tab.id === 'practice' && ['practice', 'call', 'call-tab', 'learn'].includes(activeTab))
-          || (tab.id === 'messages' && ['messages', 'chat'].includes(activeTab))
-          || (tab.id === 'profile' && ['profile'].includes(activeTab));
+          || (tab.id === 'home' && ['home'].includes(activeTab))
+          || (tab.id === 'learn' && ['learn'].includes(activeTab))
+          || (tab.id === 'pro' && ['premium', 'pro'].includes(activeTab))
+          || (tab.id === 'call' && ['call', 'call-tab', 'practice'].includes(activeTab))
+          || (tab.id === 'discover' && ['discover', 'messages', 'chat'].includes(activeTab));
+
+        const isCallTab = tab.id === 'call';
 
         return (
           <TouchableOpacity
@@ -34,20 +38,43 @@ export default function AryaBottomNav({
             accessibilityLabel={`Navigate to ${tab.label}`}
           >
             {/* Active Pill indicator behind icon */}
-            <View style={[styles.iconWrapper, isActive && styles.iconWrapperActive]}>
-              <Ionicons
-                name={isActive ? tab.iconActive : tab.icon}
-                size={22}
-                color={isActive ? '#FF5A36' : '#8E8E93'}
-              />
+            <View
+              style={[
+                styles.iconWrapper,
+                isActive && isCallTab && styles.callIconWrapperActive,
+                isActive && !isCallTab && styles.iconWrapperActive,
+              ]}
+            >
+              {tab.id === 'pro' ? (
+                <MaterialCommunityIcons
+                  name="crown"
+                  size={22}
+                  color={isActive ? '#F59E0B' : '#737F96'}
+                />
+              ) : (
+                <Ionicons
+                  name={isActive ? tab.iconActive : tab.icon}
+                  size={21}
+                  color={
+                    isActive
+                      ? (isCallTab ? '#6366F1' : '#6366F1')
+                      : '#737F96'
+                  }
+                />
+              )}
             </View>
 
-            <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+            <Text
+              style={[
+                styles.tabLabel,
+                isActive && styles.tabLabelActive,
+              ]}
+            >
               {tab.label}
             </Text>
 
-            {/* Unread badge on messages */}
-            {tab.id === 'messages' && unreadCount > 0 && (
+            {/* Unread badge on discover / messages */}
+            {tab.id === 'discover' && unreadCount > 0 && (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadText}>
                   {unreadCount > 99 ? '99+' : unreadCount}
@@ -85,7 +112,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   iconWrapper: {
-    width: 44,
+    width: 48,
     height: 28,
     borderRadius: 14,
     alignItems: 'center',
@@ -95,14 +122,17 @@ const styles = StyleSheet.create({
   iconWrapperActive: {
     backgroundColor: 'transparent',
   },
+  callIconWrapperActive: {
+    backgroundColor: '#EEF2FF',
+  },
   tabLabel: {
     fontSize: 11,
     fontWeight: '500',
-    color: '#8E8E93',
+    color: '#737F96',
   },
   tabLabelActive: {
     fontWeight: '700',
-    color: '#FF5A36',
+    color: '#6366F1',
   },
   unreadBadge: {
     position: 'absolute',

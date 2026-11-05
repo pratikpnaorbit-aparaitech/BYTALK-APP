@@ -976,6 +976,68 @@ function App() {
   const [userStars, setUserStars] = useState(40);
   const [streak, setStreak] = useState(1);
   const [isMatchingCall, setIsMatchingCall] = useState(false);
+  const [showEarlyDisconnectModal, setShowEarlyDisconnectModal] = useState(false);
+  const [disconnectReason, setDisconnectReason] = useState('');
+  const [audioQualityRating, setAudioQualityRating] = useState(5);
+  const [friendRequestSentInCall, setFriendRequestSentInCall] = useState(false);
+  const [friendsList, setFriendsList] = useState([
+    {
+      id: 'friend_srihari',
+      name: 'Srihari',
+      country: 'India',
+      level: 'Advanced',
+      isPro: true,
+      online: true,
+      profilePhotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    },
+    {
+      id: 'friend_sarah',
+      name: 'Sarah',
+      country: 'United Kingdom',
+      level: 'Intermediate',
+      isPro: false,
+      online: true,
+      profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&clothingColor=yellow&top=longHairStraight',
+    },
+    {
+      id: 'friend_alex',
+      name: 'Alex',
+      country: 'Canada',
+      level: 'Intermediate',
+      isPro: true,
+      online: true,
+      profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Alex&top=shortFlat',
+    },
+  ]);
+  const [pendingFriendRequests, setPendingFriendRequests] = useState([
+    {
+      id: 'mock_req_1',
+      from: {
+        id: 'user_candela',
+        name: 'Candela',
+        country: 'Spain',
+        level: 'Intermediate',
+        profilePhotoUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150',
+      },
+      createdAt: new Date().toISOString(),
+    },
+  ]);
+  const [recentCoLearnersList, setRecentCoLearnersList] = useState([
+    {
+      id: 'partner_srihari',
+      name: 'Srihari',
+      country: 'India',
+      level: 'Advanced',
+      profilePhotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    },
+    {
+      id: 'partner_zokhida',
+      name: 'Zokhida',
+      country: 'Russia',
+      level: 'Intermediate',
+      profilePhotoUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=150',
+    },
+  ]);
   const [aryaSettings, setAryaSettings] = useState({
     voice: 'FEMALE',
     speed: '1x',
@@ -1163,7 +1225,7 @@ function App() {
   const initialUsedFreeSecondsRef = useRef(0);
   const lastCalledPartnerIdRef = useRef(null);
   const recentPartnerHistoryRef = useRef([]);
-  const FREE_TRIAL_TOTAL_SECONDS = 300;
+  const FREE_TRIAL_TOTAL_SECONDS = 600; // 10 minutes free daily speaking practice
   const socketRef = useRef(null);
   const peerRef = useRef(null);
   const callRef = useRef(null);
@@ -1288,8 +1350,19 @@ function App() {
     return getFreeTrialSecondsRemaining() > 0;
   }
 
+  const getTodayKey = () => new Date().toISOString().slice(0, 10);
+
   const loadFreeTrialUsage = async (uid) => {
     try {
+      const today = getTodayKey();
+      const storedDay = await authStorage.getItem(`bytalk_free_day_${uid || 'guest'}`);
+      if (storedDay !== today) {
+        // New day! Reset to 0 used seconds (fresh 10 minutes free every day)
+        setUsedFreeSeconds(0);
+        await authStorage.setItem(`bytalk_free_day_${uid || 'guest'}`, today);
+        await authStorage.setItem(`bytalk_used_free_seconds_${uid || 'guest'}`, '0');
+        return;
+      }
       const stored = await authStorage.getItem(`bytalk_used_free_seconds_${uid || 'guest'}`);
       if (stored !== null && !isNaN(Number(stored))) {
         setUsedFreeSeconds(Number(stored));
@@ -1300,7 +1373,50 @@ function App() {
   const saveUsedFreeSeconds = (seconds) => {
     setUsedFreeSeconds(seconds);
     const uid = userId || 'guest';
+    authStorage.setItem(`bytalk_free_day_${uid}`, getTodayKey()).catch(() => {});
     authStorage.setItem(`bytalk_used_free_seconds_${uid}`, String(seconds)).catch(() => {});
+  };
+
+  const handleSendFriendRequest = async (targetUser) => {
+    if (!targetUser) return;
+    try {
+      if (targetUser.id && !targetUser.id.startsWith('partner_') && !targetUser.id.startsWith('friend_')) {
+        await request('friends/request', { method: 'POST', body: { targetUserId: targetUser.id } });
+      }
+    } catch {}
+    setFriendRequestSentInCall(true);
+    Alert.alert('Friend Request Sent! 🤝', `Your friend request has been sent to ${targetUser.name || 'Co-learner'}. When accepted, you can call directly from Friends.`);
+  };
+
+  const handleAcceptFriendRequest = async (req) => {
+    try {
+      if (req.id && !req.id.startsWith('mock_')) {
+        await request('friends/accept', { method: 'POST', body: { requestId: req.id } });
+      }
+    } catch {}
+    setPendingFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
+    if (req.from) {
+      setFriendsList((prev) => [{ ...req.from, online: true }, ...prev]);
+    }
+    Alert.alert('Friend Added! 🎉', `You and ${req.from?.name || 'Co-learner'} are now friends! You can call each other directly anytime.`);
+  };
+
+  const handleDeclineFriendRequest = async (req) => {
+    try {
+      if (req.id && !req.id.startsWith('mock_')) {
+        await request('friends/decline', { method: 'POST', body: { requestId: req.id } });
+      }
+    } catch {}
+    setPendingFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
+  };
+
+  const handleStartDirectCall = (friend) => {
+    if (!hasAudioEntitlement()) {
+      setSubscriptionError('Your daily 10 minutes free trial has ended. Please upgrade to PRO to continue calling.');
+      openSubscription();
+      return;
+    }
+    startCall(friend, 'audio');
   };
 
   function hasVideoEntitlement() {
@@ -3316,18 +3432,30 @@ function App() {
             />
           )}
 
-          {/* SCREEN: CALL TAB */}
+          {/* SCREEN: CALL TAB (IMAGE 5) */}
           {screen === 'call-tab' && (
             <CallTabScreen
               onStartRandomMatch={handleStartRandomMatch}
               isMatching={isMatchingCall}
               isSubscribed={isPaidSubscriber()}
               freeTrialSecondsRemaining={getFreeTrialSecondsRemaining()}
+              dailyFreeSecondsLimit={FREE_TRIAL_TOTAL_SECONDS}
               onPressUpgrade={openSubscription}
               onBack={() => {
                 setActiveBottomTab('home');
                 setScreen('home');
               }}
+              currentUser={{ name, avatarUrl, level, streak }}
+              onPressLeaderboard={() => setShowLeaderboard(true)}
+              onPressStreak={() => setShowHistoryModal(true)}
+              friends={friendsList}
+              pendingRequests={pendingFriendRequests}
+              recentCoLearners={recentCoLearnersList}
+              onDirectCall={handleStartDirectCall}
+              onSendFriendRequest={handleSendFriendRequest}
+              onAcceptFriendRequest={handleAcceptFriendRequest}
+              onDeclineFriendRequest={handleDeclineFriendRequest}
+              onCancelMatch={() => setIsMatchingCall(false)}
             />
           )}
 
@@ -4488,320 +4616,263 @@ function App() {
           )}
 
           {screen === 'call-complete' && callCompletion && (
-            <ScrollView contentContainerStyle={styles.callCompletionScreen} showsVerticalScrollIndicator={false}>
-              <LinearGradient
-                colors={['#FFF1E9', '#FFFFFF']}
-                style={styles.callCompletionCard}
-              >
-                {callCompletion.peer.profilePhotoUrl ? (
-                  <Image
-                    source={{ uri: callCompletion.peer.profilePhotoUrl }}
-                    style={styles.callCompletionAvatar}
-                    accessibilityLabel={`${callCompletion.peer.name}'s profile picture`}
-                  />
-                ) : (
-                  <View style={[styles.callCompletionAvatar, styles.callCompletionAvatarFallback]}>
-                    <Txt color="#FFFFFF" size={30} bold>{callCompletion.peer.name?.charAt(0)?.toUpperCase() || '?'}</Txt>
-                  </View>
-                )}
-                <Txt size={28} bold style={{ marginTop: 16, textAlign: 'center' }}>Great Job! 🎉</Txt>
-                <Txt size={14} color={muted} style={{ textAlign: 'center', marginTop: 8, lineHeight: 21 }}>
-                  You completed your conversation. Keep practicing and improving!
-                </Txt>
-                <Txt size={17} bold style={{ marginTop: 15 }}>{callCompletion.peer.name}</Txt>
-                <Txt size={13} color={muted} style={{ marginTop: 5 }}>
-                  {callCompletion.type === 'video' ? 'Video call' : 'Voice call'} · {String(Math.floor(callCompletion.durationSeconds / 60)).padStart(2, '0')}:{String(callCompletion.durationSeconds % 60).padStart(2, '0')}
-                </Txt>
-              </LinearGradient>
+            <ScrollView contentContainerStyle={styles.postCallScreen} showsVerticalScrollIndicator={false}>
+              {/* Top Bar: Skip on left, ⋮ on right (Image 2) */}
+              <View style={styles.postCallTopBar}>
+                <TouchableOpacity onPress={leaveCallCompletion} activeOpacity={0.7} style={styles.postCallSkipBtn}>
+                  <Text style={styles.postCallSkipText}>Skip</Text>
+                </TouchableOpacity>
+                <TouchableOpacity activeOpacity={0.7} style={{ padding: 6 }}>
+                  <Ionicons name="ellipsis-vertical" size={20} color="#64748B" />
+                </TouchableOpacity>
+              </View>
 
-              <Section title="How was your conversation?">
-                {feedbackSubmitted ? (
-                  <View style={styles.feedbackThankYou}>
-                    <Ionicons name="checkmark-circle" size={34} color="#168653" />
-                    <Txt color="#168653" bold size={16} style={{ marginTop: 8 }}>Thank you for your feedback!</Txt>
-                    <Txt color={muted} size={12} style={{ marginTop: 5, textAlign: 'center' }}>Your review helps make BYTALK better.</Txt>
+              {/* Green Note Banner (Image 2) */}
+              <View style={styles.postCallNoteBanner}>
+                <Text style={styles.postCallNoteText}>
+                  <Text style={{ fontWeight: '800' }}>Note : </Text>
+                  Ratings help us to connect you with a good co-learner and create an effective learning environment.
+                </Text>
+              </View>
+
+              {/* Section 1: Share your feedback about [Partner] */}
+              <View style={styles.postCallCard}>
+                <Text style={styles.postCallCardTitle}>
+                  Share your feedback about {callCompletion.peer?.name || 'Co-learner'}
+                </Text>
+                <View style={styles.postCallStarsRow}>
+                  <View style={styles.postCallStarsGroup}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <TouchableOpacity
+                        key={star}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Rate ${star} star`}
+                        onPress={() => setFeedbackRating(star)}
+                        style={{ padding: 4 }}
+                      >
+                        <Ionicons
+                          name={star <= (feedbackRating || 5) ? 'star' : 'star-outline'}
+                          size={34}
+                          color={star <= (feedbackRating || 5) ? '#F59E0B' : '#E2E8F0'}
+                        />
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                ) : (
-                  <>
-                    <View style={styles.feedbackStars}>
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <TouchableOpacity
-                          key={star}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Rate ${star} star${star === 1 ? '' : 's'}`}
-                          onPress={() => setFeedbackRating(star)}
-                          style={{ padding: 5 }}
-                        >
-                          <Ionicons name={star <= feedbackRating ? 'star' : 'star-outline'} size={34} color={star <= feedbackRating ? '#F59E0B' : '#D1D5DB'} />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <View style={styles.feedbackTags}>
-                      {['Great conversation', 'Friendly person', 'Helpful practice', 'Good communication', 'Poor connection'].map((tag) => {
-                        const selectedTag = feedbackTags.includes(tag);
-                        return (
-                          <TouchableOpacity
-                            key={tag}
-                            onPress={() => setFeedbackTags((previous) => selectedTag
-                              ? previous.filter((item) => item !== tag)
-                              : [...previous, tag])}
-                            style={[styles.feedbackTag, selectedTag && styles.feedbackTagSelected]}
-                          >
-                            <Txt size={12} color={selectedTag ? orange : muted} bold={selectedTag}>{tag}</Txt>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                    <TextInput
-                      value={feedbackComment}
-                      onChangeText={setFeedbackComment}
-                      placeholder="Share your feedback..."
-                      placeholderTextColor="#9CA3AF"
-                      multiline
-                      maxLength={1000}
-                      style={styles.feedbackInput}
+                  <View style={styles.postCallStarMascot}>
+                    <Text style={{ fontSize: 32 }}>⭐</Text>
+                  </View>
+                </View>
+                <View style={styles.postCallStarLabels}>
+                  <Text style={styles.postCallSubLabel}>Bad</Text>
+                  <Text style={styles.postCallSubLabel}>Very Good</Text>
+                </View>
+              </View>
+
+              {/* Section 2: Add detailed review */}
+              <View style={styles.postCallCard}>
+                <Text style={styles.postCallCardTitle}>Add detailed review</Text>
+                <TextInput
+                  value={feedbackComment}
+                  onChangeText={setFeedbackComment}
+                  placeholder="Add comments"
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  style={styles.postCallTextInput}
+                />
+              </View>
+
+              {/* Section 3: Call audio/network quality experience? (optional) */}
+              <View style={styles.postCallCard}>
+                <Text style={styles.postCallCardTitle}>
+                  Call audio/network quality experience? (optional)
+                </Text>
+                <View style={styles.postCallAudioRow}>
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <TouchableOpacity
+                      key={num}
+                      onPress={() => setAudioQualityRating(num)}
+                      style={[
+                        styles.audioRatingPill,
+                        audioQualityRating === num && styles.audioRatingPillActive,
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.audioRatingPillText,
+                          audioQualityRating === num && styles.audioRatingPillTextActive,
+                        ]}
+                      >
+                        {num}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                  <Text style={{ fontSize: 28, marginLeft: 6 }}>⭐</Text>
+                </View>
+                <View style={styles.postCallStarLabels}>
+                  <Text style={styles.postCallSubLabel}>Poor Quality</Text>
+                  <Text style={styles.postCallSubLabel}>Very Good</Text>
+                </View>
+              </View>
+
+              {/* Section 4: Add as Friend Option */}
+              <View style={styles.postCallCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={styles.postCallCardTitle}>
+                      Practice again with {callCompletion.peer?.name || 'Co-learner'}?
+                    </Text>
+                    <Text style={styles.postCallSubLabel}>
+                      Send a friend request to call directly from the Friends tab.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleSendFriendRequest(callCompletion.peer)}
+                    disabled={friendRequestSentInCall}
+                    style={[
+                      styles.postCallFriendBtn,
+                      friendRequestSentInCall && styles.postCallFriendBtnSent,
+                    ]}
+                  >
+                    <Ionicons
+                      name={friendRequestSentInCall ? 'checkmark' : 'person-add'}
+                      size={15}
+                      color={friendRequestSentInCall ? '#166534' : '#6366F1'}
+                      style={{ marginRight: 4 }}
                     />
-                    {feedbackError ? <Txt color={COLORS.error} size={12} style={{ marginBottom: 8 }}>{feedbackError}</Txt> : null}
-                    <Btn label="Submit Feedback" onPress={submitCallFeedback} loading={feedbackSubmitting} />
-                  </>
-                )}
-              </Section>
-              {!feedbackSubmitted ? (
-                <Btn label="Skip" outline onPress={leaveCallCompletion} />
-              ) : (
-                <Btn label="Done" onPress={leaveCallCompletion} />
-              )}
+                    <Text
+                      style={[
+                        styles.postCallFriendBtnText,
+                        friendRequestSentInCall && { color: '#166534' },
+                      ]}
+                    >
+                      {friendRequestSentInCall ? 'Sent' : 'Add Friend'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                onPress={() => {
+                  submitCallFeedback();
+                  leaveCallCompletion();
+                }}
+                style={styles.postCallSubmitBtn}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.postCallSubmitBtnText}>Submit</Text>
+              </TouchableOpacity>
             </ScrollView>
           )}
 
           {screen === 'call' && call && (
             <View style={styles.callScreen}>
-              {/* Call Top Header */}
-              <View style={styles.callHeader}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="End call and return"
-                  onPress={endCall}
-                  style={styles.callBackButton}
-                >
-                  <Ionicons name="chevron-down" size={22} color="#334155" />
-                </TouchableOpacity>
-
-                <View style={{ flex: 1, alignItems: 'center' }}>
-                  <Text style={styles.callHeaderTitle}>
-                    {call.type === 'video' ? 'Video Practice' : 'Speaking Practice'}
-                  </Text>
-                  <Text style={styles.callHeaderSub}>
-                    {call.status === 'Connected' ? 'Active Call' : call.status}
-                  </Text>
-                </View>
-
-                <View style={styles.callHeaderRight}>
-                  {call.status === 'Connected' ? (
-                    <View style={styles.liveCallPill}>
-                      <View style={styles.liveCallDot} />
-                      <Text style={styles.liveCallText}>LIVE</Text>
-                    </View>
-                  ) : (
-                    <View style={{ width: 36 }} />
-                  )}
-                </View>
+              {/* [🔴 REC] Top Recording Banner (Exact from Image 3) */}
+              <View style={styles.recBannerBox}>
+                <View style={styles.recDot} />
+                <Text style={styles.recBannerText}>
+                  [REC] Call may be recorded to ensure a quality experience
+                </Text>
               </View>
-
-              {/* Status Notice (Ringing / Connecting) */}
-              {call.status !== 'Connected' && (
-                <View style={styles.callConnectingBanner}>
-                  {call.status === 'Ringing' && (
-                    <View style={styles.ringingBannerBox}>
-                      <Text style={{ fontSize: 20 }}>🔔</Text>
-                      <Text style={styles.ringingBannerText}>
-                        {call.direction === 'incoming' ? 'Incoming Ringing Call...' : 'Calling Partner...'}
-                      </Text>
-                    </View>
-                  )}
-                  {callNotice ? (
-                    <Text style={styles.callNoticeText}>{callNotice}</Text>
-                  ) : null}
-                </View>
-              )}
-
-              {/* Video stage if Video Call */}
-              {call.type === 'video' && (
-                <View style={styles.callVideoStage}>
-                  <CallVideo
-                    stream={remoteStream}
-                    label={call.status === 'Connected' ? 'Waiting for remote video…' : 'Connecting video…'}
-                    style={styles.remoteVideo}
-                  />
-                  {localStream?.getVideoTracks().length > 0 ? (
-                    <CallVideo
-                      stream={localStream}
-                      label="Camera off"
-                      mirror
-                      style={styles.localVideo}
-                    />
-                  ) : (
-                    <View style={styles.localVideoFallback}>
-                      <Txt color="#FFFFFF" size={10}>Camera unavailable</Txt>
-                    </View>
-                  )}
-                  {call.status === 'Connected' && remoteStream && !remoteStream.getVideoTracks().length ? (
-                    <View style={styles.videoFallbackNotice}>
-                      <Txt color="#FFFFFF" size={12}>The other person has no camera available. Audio is still connected.</Txt>
-                    </View>
-                  ) : null}
-                </View>
-              )}
 
               {/* Hidden CallAudio to play remote audio */}
               <CallAudio stream={remoteStream} />
 
-              {/* ================= EXACT MATCH TO REFERENCE IMAGE 1 & 2 ================= */}
-              {/* Dual Avatars (Oliver & Sarah) + Center Timer & Buttons */}
-              <View style={styles.callHubRow}>
-                {/* Left Participant: Oliver (Current User) */}
-                <View style={styles.callUserCol}>
-                  <View style={styles.callAvatarCircle}>
+              {/* ================= CONNECTED AVATARS (EXACT MATCH TO IMAGE 3) ================= */}
+              <View style={styles.connectedAvatarsRow}>
+                {/* Left: User Avatar + Name Pill */}
+                <View style={styles.connectedUserCol}>
+                  <View style={styles.connectedAvatarBorder}>
                     <Image
                       source={{
-                        uri: avatarUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Oliver&facialHair=beardLight&top=shortFlat&clothingColor=blue01',
+                        uri: avatarUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Prateek&top=shortFlat&clothingColor=blue01',
                       }}
-                      style={styles.callAvatarImg}
+                      style={styles.connectedAvatarImg}
                     />
                   </View>
-                  <Text style={styles.callUserName} numberOfLines={1}>
-                    {name || 'Oliver'}
-                  </Text>
-                  <Text style={styles.callUserLevel}>
-                    Level : {level === 'Advanced' ? '3' : level === 'Intermediate' ? '2' : '1'}
-                  </Text>
-                </View>
-
-                {/* Center: Live Timer + Green Speaker + Red End Call */}
-                <View style={styles.callCenterHub}>
-                  <Text style={styles.callTimerText}>
-                    {call.status === 'Connected'
-                      ? `${String(Math.floor(callDuration / 60)).padStart(2, '0')} : ${String(callDuration % 60).padStart(2, '0')}`
-                      : '00 : 00'}
-                  </Text>
-
-                  {!isPaidSubscriber() && (
-                    <View style={styles.freeTrialCallBadge}>
-                      <Text style={styles.freeTrialCallBadgeText}>
-                        Free: {Math.max(0, Math.floor((FREE_TRIAL_TOTAL_SECONDS - usedFreeSeconds) / 60))}m {Math.max(0, (FREE_TRIAL_TOTAL_SECONDS - usedFreeSeconds) % 60)}s left
-                      </Text>
-                    </View>
-                  )}
-
-                  <View style={styles.callCenterButtons}>
-                    {/* Green Speaker Toggle Icon / Button */}
-                    <TouchableOpacity
-                      onPress={() => {
-                        try {
-                          const nextSpeaker = !speakerEnabled;
-                          setAudioRoute(nextSpeaker);
-                          setSpeakerEnabled(nextSpeaker);
-                        } catch (error) {
-                          setCallNotice(error.message || 'Speaker control is unavailable.');
-                        }
-                      }}
-                      style={[
-                        styles.callSpeakerBtn,
-                        !speakerEnabled && styles.callSpeakerBtnOff,
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={speakerEnabled ? 'Use earpiece' : 'Use speaker'}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons
-                        name="volume-high"
-                        size={25}
-                        color={speakerEnabled ? '#10B981' : '#94A3B8'}
-                      />
-                    </TouchableOpacity>
-
-                    {/* Red End Call Button */}
-                    <TouchableOpacity
-                      onPress={endCall}
-                      style={styles.callEndBtn}
-                      accessibilityRole="button"
-                      accessibilityLabel="End call"
-                      activeOpacity={0.85}
-                    >
-                      <Ionicons
-                        name="call"
-                        size={23}
-                        color="#FFFFFF"
-                        style={{ transform: [{ rotate: '135deg' }] }}
-                      />
-                    </TouchableOpacity>
+                  <View style={styles.userNamePill}>
+                    <Text style={styles.userNamePillText}>{name || 'Prateek'}</Text>
                   </View>
                 </View>
 
-                {/* Right Participant: sarah (Partner) */}
-                <View style={styles.callUserCol}>
-                  <View style={styles.callAvatarCircle}>
+                {/* Connecting Line Between Avatars */}
+                <View style={styles.avatarConnectorLine} />
+
+                {/* Right: Partner Avatar + Name Pill (with crown if PRO) */}
+                <View style={styles.connectedUserCol}>
+                  <View style={[styles.connectedAvatarBorder, { borderColor: '#FDE047' }]}>
                     <Image
                       source={{
-                        uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&clothingColor=yellow&top=longHairStraight',
+                        uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (call.peer?.name || 'Srihari'),
                       }}
-                      style={styles.callAvatarImg}
+                      style={styles.connectedAvatarImg}
                     />
                   </View>
-                  <Text style={styles.callUserName} numberOfLines={1}>
-                    {call.peer?.name || 'sarah'}
-                  </Text>
-                  <Text style={styles.callUserLevel}>
-                    {call.peer?.level?.startsWith('Level') ? call.peer.level : ('Level : ' + (call.peer?.level === 'Advanced' ? '3' : call.peer?.level === 'Intermediate' ? '2' : '1'))}
-                  </Text>
+                  <View style={[styles.userNamePill, call.peer?.isPro && styles.userNamePillPro]}>
+                    <Text style={styles.userNamePillText}>
+                      {call.peer?.isPro ? '👑 ' : ''}{call.peer?.name || 'Srihari'}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
-              {/* Incoming Call Accept / Decline Actions (if incoming) */}
-              {call.direction === 'incoming' && call.status === 'Ringing' ? (
-                <View style={styles.incomingCallActions}>
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Decline incoming call"
-                    onPress={rejectCall}
-                    style={[styles.callControl, styles.declineControl]}
-                  >
-                    <Ionicons name="call" size={23} color="#FFFFFF" style={{ transform: [{ rotate: '135deg' }] }} />
-                    <Txt color="#FFFFFF" size={11}>Decline</Txt>
-                  </TouchableOpacity>
-                  {call.restricted ? (
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel="Upgrade to accept video call"
-                      onPress={openSubscription}
-                      style={[styles.callControl, styles.acceptControl]}
-                    >
-                      <Ionicons name="star" size={23} color="#FFFFFF" />
-                      <Txt color="#FFFFFF" size={11}>Upgrade</Txt>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel="Accept incoming call"
-                      onPress={acceptCall}
-                      style={[styles.callControl, styles.acceptControl]}
-                    >
-                      <Ionicons name={call.type === 'video' ? 'videocam' : 'call'} size={23} color="#FFFFFF" />
-                      <Txt color="#FFFFFF" size={11}>Accept</Txt>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ) : null}
+              {/* Partner Practice Stat Green Banner (Image 3) */}
+              <View style={styles.partnerStatBanner}>
+                <Ionicons name="call" size={14} color="#166534" style={{ marginRight: 6 }} />
+                <Text style={styles.partnerStatText}>
+                  {call.peer?.name || 'Srihari'} practices for an average of 4 minutes/call
+                </Text>
+              </View>
 
-              {/* ================= "You have 6 activities" Section ================= */}
+              {/* Remaining Time & Green Progress Bar (Image 3) */}
+              <View style={styles.callRemainingTimeBox}>
+                <Text style={styles.callRemainingTimeText}>
+                  {isPaidSubscriber()
+                    ? 'Unlimited PRO minutes for today’s call'
+                    : `${String(Math.max(0, Math.floor((FREE_TRIAL_TOTAL_SECONDS - usedFreeSeconds) / 60))).padStart(2, '0')}:${String(Math.max(0, (FREE_TRIAL_TOTAL_SECONDS - usedFreeSeconds) % 60)).padStart(2, '0')} minutes remaining for today’s call`}
+                </Text>
+                <View style={styles.callProgressBarTrack}>
+                  <View
+                    style={[
+                      styles.callProgressBarFill,
+                      {
+                        width: isPaidSubscriber()
+                          ? '100%'
+                          : `${Math.round(Math.max(0, 1 - (usedFreeSeconds / FREE_TRIAL_TOTAL_SECONDS)) * 100)}%`,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              {/* Quick Action: Send Friend Request during Call */}
+              <TouchableOpacity
+                onPress={() => handleSendFriendRequest(call.peer)}
+                disabled={friendRequestSentInCall}
+                style={[styles.inCallAddFriendBtn, friendRequestSentInCall && styles.inCallAddFriendBtnSent]}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={friendRequestSentInCall ? 'checkmark-circle' : 'person-add'}
+                  size={15}
+                  color={friendRequestSentInCall ? '#166534' : '#6366F1'}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[styles.inCallAddFriendText, friendRequestSentInCall && { color: '#166534' }]}>
+                  {friendRequestSentInCall ? 'Friend Request Sent' : `Send Friend Request to ${call.peer?.name || 'Co-learner'}`}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Scrollable Conversation Activities */}
               <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.activitiesScrollContainer}
               >
                 <View style={styles.activitiesHeadingArea}>
-                  <Text style={styles.activitiesHeadingTitle}>You have 6 activities</Text>
+                  <Text style={styles.activitiesHeadingTitle}>Conversation Prompts</Text>
                   <Text style={styles.activitiesHeadingSub}>
-                    Tap any activity card to practice speaking together
+                    Tap any topic card to practice speaking together
                   </Text>
                 </View>
 
@@ -4843,8 +4914,9 @@ function App() {
                 </View>
               </ScrollView>
 
-              {/* Bottom In-Call Controls (Mute Mic, Video Toggle/Flip) */}
-              <View style={styles.callBottomControls}>
+              {/* ================= CURVED CALL BOTTOM BAR (IMAGE 3) ================= */}
+              <View style={styles.curvedCallBottomBar}>
+                {/* Mute Button */}
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'}
@@ -4855,62 +4927,120 @@ function App() {
                     });
                     setMuted(nextMuted);
                   }}
-                  style={[styles.callMicroBtn, muted && styles.callMicroBtnMuted]}
+                  style={styles.floatingControlBtn}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons
-                    name={muted ? 'mic-off' : 'mic'}
-                    size={18}
-                    color={muted ? '#EF4444' : '#334155'}
-                  />
-                  <Text style={[styles.callMicroBtnText, muted && { color: '#EF4444' }]}>
-                    {muted ? 'Muted' : 'Mute'}
-                  </Text>
+                  <View style={[styles.floatingControlIconCircle, muted && styles.floatingControlMutedCircle]}>
+                    <Ionicons name={muted ? 'mic-off' : 'mic'} size={24} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.floatingControlLabel}>{muted ? 'Unmute' : 'Mute'}</Text>
                 </TouchableOpacity>
 
-                {call.type === 'video' && (
-                  <>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
-                      onPress={() => {
-                        const nextEnabled = !cameraEnabled;
-                        localStreamRef.current?.getVideoTracks().forEach((track) => {
-                          track.enabled = nextEnabled;
-                        });
-                        setCameraEnabled(nextEnabled);
-                      }}
-                      disabled={!localStream?.getVideoTracks().length}
-                      style={[styles.callMicroBtn, !cameraEnabled && styles.callMicroBtnMuted]}
-                    >
-                      <Ionicons
-                        name={cameraEnabled ? 'videocam' : 'videocam-off'}
-                        size={18}
-                        color={cameraEnabled ? '#334155' : '#EF4444'}
-                      />
-                      <Text style={styles.callMicroBtnText}>
-                        {cameraEnabled ? 'Cam On' : 'Cam Off'}
-                      </Text>
-                    </TouchableOpacity>
+                {/* Speaker Button */}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Toggle speaker"
+                  onPress={() => {
+                    try {
+                      const nextSpeaker = !speakerEnabled;
+                      setAudioRoute(nextSpeaker);
+                      setSpeakerEnabled(nextSpeaker);
+                    } catch (error) {
+                      setCallNotice(error.message || 'Speaker control unavailable.');
+                    }
+                  }}
+                  style={styles.floatingControlBtn}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.floatingControlIconCircle, styles.floatingControlSpeakerCircle]}>
+                    <Ionicons name="volume-high" size={24} color={speakerEnabled ? '#4F46E5' : '#94A3B8'} />
+                  </View>
+                  <Text style={styles.floatingControlLabel}>Speaker</Text>
+                </TouchableOpacity>
 
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel="Switch camera"
-                      onPress={() => {
-                        try {
-                          switchCamera(localStreamRef.current, peerRef.current?.connection);
-                        } catch (error) {
-                          setCallNotice(error.message || 'Could not switch camera.');
-                        }
-                      }}
-                      disabled={!localStream?.getVideoTracks().length}
-                      style={styles.callMicroBtn}
-                    >
-                      <Ionicons name="camera-reverse-outline" size={18} color="#334155" />
-                      <Text style={styles.callMicroBtnText}>Flip</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
+                {/* End Call Button (Opens Image 1 early disconnect modal) */}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="End call"
+                  onPress={() => setShowEarlyDisconnectModal(true)}
+                  style={styles.floatingControlBtn}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.floatingControlIconCircle, styles.floatingControlEndCircle]}>
+                    <Ionicons name="close" size={26} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.floatingControlLabel}>End</Text>
+                </TouchableOpacity>
               </View>
+
+              {/* ================= EARLY DISCONNECT MODAL (EXACT MATCH TO IMAGE 1) ================= */}
+              <Modal
+                visible={showEarlyDisconnectModal}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowEarlyDisconnectModal(false)}
+              >
+                <View style={styles.earlyDisconnectOverlay}>
+                  <View style={styles.earlyDisconnectSheet}>
+                    {/* Red Top Warning Banner (Image 1) */}
+                    <View style={styles.earlyWarningBanner}>
+                      <Text style={{ fontSize: 18, marginRight: 8 }}>✋</Text>
+                      <Text style={styles.earlyWarningText}>
+                        Disconnecting calls early may get you banned
+                      </Text>
+                    </View>
+
+                    <View style={styles.earlyDisconnectBody}>
+                      <Text style={styles.earlyDisconnectTitle}>Don’t leave so soon! 🥺</Text>
+                      <Text style={styles.earlyDisconnectSub}>
+                        State the reason for disconnecting below
+                      </Text>
+
+                      {/* 4 Radio Reasons */}
+                      {[
+                        'Not interested in talking to this Co-learner',
+                        'Network issues/voice not clear',
+                        'Co-learner is not speaking',
+                        'Rude/misbehaving/inappropriate behaviour',
+                      ].map((reason) => (
+                        <TouchableOpacity
+                          key={reason}
+                          onPress={() => setDisconnectReason(reason)}
+                          style={styles.earlyReasonRow}
+                          activeOpacity={0.7}
+                        >
+                          <View style={[styles.earlyRadioCircle, disconnectReason === reason && styles.earlyRadioCircleActive]}>
+                            {disconnectReason === reason && <View style={styles.earlyRadioDot} />}
+                          </View>
+                          <Text style={styles.earlyReasonText}>{reason}</Text>
+                        </TouchableOpacity>
+                      ))}
+
+                      {/* Action Buttons: End call | Continue call */}
+                      <View style={styles.earlyActionsRow}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setShowEarlyDisconnectModal(false);
+                            endCall();
+                          }}
+                          style={styles.earlyEndBtn}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.earlyEndBtnText}>End call</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => setShowEarlyDisconnectModal(false)}
+                          style={styles.earlyContinueBtn}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.earlyContinueBtnText}>Continue call</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </Modal>
 
               {/* Interactive In-Call Activity Prompt Modal */}
               <Modal
@@ -4930,26 +5060,20 @@ function App() {
                               {activeCallActivity.title}
                             </Text>
                           </View>
-                          <TouchableOpacity
-                            onPress={() => setActiveCallActivity(null)}
-                            style={styles.activityModalCloseBtn}
-                          >
+                          <TouchableOpacity onPress={() => setActiveCallActivity(null)} style={{ padding: 4 }}>
                             <Ionicons name="close" size={20} color="#64748B" />
                           </TouchableOpacity>
                         </View>
 
-                        <View style={styles.activityPromptCard}>
-                          <Text style={styles.activityPromptQuestion}>
-                            "{activeCallActivity.prompts[callActivityPromptIdx % activeCallActivity.prompts.length]}"
+                        <View style={styles.activityPromptBox}>
+                          <Text style={styles.activityPromptText}>
+                            "{activeCallActivity.prompts[callActivityPromptIdx]}"
                           </Text>
                           <TouchableOpacity
-                            onPress={() =>
-                              speakEnglish(
-                                activeCallActivity.prompts[
-                                  callActivityPromptIdx % activeCallActivity.prompts.length
-                                ]
-                              )
-                            }
+                            onPress={() => {
+                              stopSpeech();
+                              speakEnglish(activeCallActivity.prompts[callActivityPromptIdx]);
+                            }}
                             style={{
                               flexDirection: 'row',
                               alignItems: 'center',
@@ -4970,7 +5094,6 @@ function App() {
                           </TouchableOpacity>
                         </View>
 
-                        {/* Vocabulary suggestions */}
                         <Text style={styles.activityVocabTitle}>Helpful vocabulary to use:</Text>
                         <View style={styles.activityVocabRow}>
                           {activeCallActivity.vocab.map((v, i) => (
@@ -4980,7 +5103,6 @@ function App() {
                           ))}
                         </View>
 
-                        {/* Modal Action Buttons */}
                         <View style={styles.activityModalButtons}>
                           <TouchableOpacity
                             onPress={() => {
@@ -8673,6 +8795,442 @@ const styles = StyleSheet.create({
   msgUnreadText: {
     color: '#FFFFFF',
     fontSize: 11,
+    fontWeight: '800',
+  },
+  /* ================= CALL SCREEN STYLES (IMAGE 3) ================= */
+  recBannerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFF7ED',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FFEDD5',
+  },
+  recDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    marginRight: 8,
+  },
+  recBannerText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#9A3412',
+  },
+  connectedAvatarsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: '#FAF5FF',
+  },
+  connectedUserCol: {
+    alignItems: 'center',
+  },
+  connectedAvatarBorder: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: '#38BDF8',
+    backgroundColor: '#E0E7FF',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  connectedAvatarImg: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+  },
+  userNamePill: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginTop: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  userNamePillPro: {
+    borderColor: '#FACC15',
+    backgroundColor: '#FEF9C3',
+  },
+  userNamePillText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  avatarConnectorLine: {
+    width: 50,
+    height: 2,
+    backgroundColor: '#CBD5E1',
+    marginHorizontal: 12,
+    marginBottom: 20,
+  },
+  partnerStatBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 12,
+    marginHorizontal: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginTop: 8,
+  },
+  partnerStatText: {
+    color: '#166534',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  callRemainingTimeBox: {
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 14,
+  },
+  callRemainingTimeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  callProgressBarTrack: {
+    width: '100%',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  callProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#22C55E',
+    borderRadius: 3,
+  },
+  inCallAddFriendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    borderRadius: 20,
+    marginHorizontal: 30,
+    paddingVertical: 7,
+    marginTop: 12,
+  },
+  inCallAddFriendBtnSent: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  inCallAddFriendText: {
+    color: '#4F46E5',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  curvedCallBottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: '#6366F1',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingVertical: 18,
+    paddingHorizontal: 30,
+  },
+  floatingControlBtn: {
+    alignItems: 'center',
+  },
+  floatingControlIconCircle: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  floatingControlMutedCircle: {
+    backgroundColor: '#EF4444',
+  },
+  floatingControlSpeakerCircle: {
+    backgroundColor: '#FFFFFF',
+  },
+  floatingControlEndCircle: {
+    backgroundColor: '#EF4444',
+  },
+  floatingControlLabel: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  /* ================= EARLY DISCONNECT MODAL (IMAGE 1) ================= */
+  earlyDisconnectOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  earlyDisconnectSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    overflow: 'hidden',
+  },
+  earlyWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#B91C1C',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+  },
+  earlyWarningText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    flex: 1,
+  },
+  earlyDisconnectBody: {
+    padding: 22,
+  },
+  earlyDisconnectTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  earlyDisconnectSub: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  earlyReasonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  earlyRadioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  earlyRadioCircleActive: {
+    borderColor: '#6366F1',
+  },
+  earlyRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#6366F1',
+  },
+  earlyReasonText: {
+    fontSize: 13.5,
+    color: '#334155',
+    fontWeight: '600',
+    flex: 1,
+  },
+  earlyActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 22,
+  },
+  earlyEndBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  earlyEndBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  earlyContinueBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 24,
+    backgroundColor: '#6366F1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  earlyContinueBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* ================= POST-CALL FEEDBACK SCREEN (IMAGE 2) ================= */
+  postCallScreen: {
+    padding: 18,
+    paddingBottom: 40,
+    backgroundColor: '#F8F9FE',
+  },
+  postCallTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  postCallSkipBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  postCallSkipText: {
+    fontSize: 14,
+    color: '#6366F1',
+    fontWeight: '700',
+  },
+  postCallNoteBanner: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  postCallNoteText: {
+    color: '#15803D',
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  postCallCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+  },
+  postCallCardTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 10,
+  },
+  postCallStarsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  postCallStarsGroup: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  postCallStarMascot: {
+    padding: 2,
+  },
+  postCallStarLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  postCallSubLabel: {
+    fontSize: 11.5,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  postCallTextInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 12,
+    fontSize: 13.5,
+    color: '#0F172A',
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  postCallAudioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 6,
+  },
+  audioRatingPill: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  audioRatingPillActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#6366F1',
+  },
+  audioRatingPillText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  audioRatingPillTextActive: {
+    color: '#4F46E5',
+    fontWeight: '900',
+  },
+  postCallFriendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  postCallFriendBtnSent: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  postCallFriendBtnText: {
+    color: '#4F46E5',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  postCallSubmitBtn: {
+    backgroundColor: '#6366F1',
+    borderRadius: 24,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+    shadowColor: '#6366F1',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  postCallSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '800',
   },
 

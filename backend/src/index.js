@@ -1919,6 +1919,103 @@ app.get('/api/practice/partners', requireAuth, (req, res) => {
   return listDiscoverUsers(req, res);
 });
 
+// ==================== FRIENDS SYSTEM ====================
+const friendRequestsStore = new Map();
+const userFriendsStore = new Map();
+
+app.get('/api/friends', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    const friendsSet = userFriendsStore.get(currentUserId) || new Set();
+
+    const friendUsers = [];
+    for (const fId of friendsSet) {
+      const u = await User.findById(fId).lean();
+      if (u) friendUsers.push(publicUser(u));
+    }
+
+    const pendingRequests = [];
+    for (const [rId, reqData] of friendRequestsStore.entries()) {
+      if (reqData.to === currentUserId && reqData.status === 'pending') {
+        const fromUser = await User.findById(reqData.from).lean();
+        pendingRequests.push({
+          id: rId,
+          from: fromUser ? publicUser(fromUser) : { id: reqData.from, name: 'Practice Learner' },
+          createdAt: reqData.createdAt,
+        });
+      }
+    }
+
+    res.json({
+      friends: friendUsers,
+      pendingRequests,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve friends', details: err.message });
+  }
+});
+
+app.post('/api/friends/request', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    const { targetUserId } = req.body;
+    if (!targetUserId || String(targetUserId) === currentUserId) {
+      return res.status(400).json({ error: 'Invalid target user' });
+    }
+
+    const requestId = `fr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    friendRequestsStore.set(requestId, {
+      id: requestId,
+      from: currentUserId,
+      to: String(targetUserId),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    });
+
+    res.json({ ok: true, requestId, message: 'Friend request sent successfully!' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to send friend request', details: err.message });
+  }
+});
+
+app.post('/api/friends/accept', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    const { requestId, friendUserId } = req.body;
+
+    let targetId = friendUserId;
+    if (requestId && friendRequestsStore.has(requestId)) {
+      const r = friendRequestsStore.get(requestId);
+      r.status = 'accepted';
+      targetId = r.from;
+    }
+
+    if (targetId) {
+      targetId = String(targetId);
+      if (!userFriendsStore.has(currentUserId)) userFriendsStore.set(currentUserId, new Set());
+      if (!userFriendsStore.has(targetId)) userFriendsStore.set(targetId, new Set());
+      userFriendsStore.get(currentUserId).add(targetId);
+      userFriendsStore.get(targetId).add(currentUserId);
+    }
+
+    res.json({ ok: true, message: 'Friend request accepted!' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to accept friend request', details: err.message });
+  }
+});
+
+app.post('/api/friends/decline', requireAuth, async (req, res) => {
+  try {
+    const { requestId } = req.body;
+    if (requestId && friendRequestsStore.has(requestId)) {
+      friendRequestsStore.get(requestId).status = 'declined';
+    }
+    res.json({ ok: true, message: 'Friend request declined.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to decline friend request', details: err.message });
+  }
+});
+
 app.patch('/api/profile/practice-interests', requireAuth, async (req, res) => {
   const practiceInterests = normalizePracticeInterests(req.body?.practiceInterests);
   if (!practiceInterests) {
