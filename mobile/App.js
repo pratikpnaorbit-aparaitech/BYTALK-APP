@@ -1288,6 +1288,13 @@ function App() {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
 
+  function formatCallTimeSpaced(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${String(mins).padStart(2, '0')} : ${String(secs).padStart(2, '0')}`;
+  }
+
   function hasAudioEntitlement() {
     if (isPaidSubscriber()) return true;
     return getFreeTrialSecondsRemaining() > 0;
@@ -5059,57 +5066,117 @@ function App() {
                   )}
                 </View>
 
-              {/* ================= CONNECTED AVATARS (EXACT MATCH TO IMAGE 3) ================= */}
-              <View style={styles.connectedAvatarsRow}>
-                {/* Left: User Avatar + Name Pill */}
-                <View style={styles.connectedUserCol}>
-                  <View style={styles.connectedAvatarBorder}>
+              {/* ================= ACTIVE CALL HEADER (EXACT MATCH TO REFERENCE IMAGE) ================= */}
+              <View style={styles.refCallHeaderContainer}>
+                {/* Left: User Profile (Oliver style from reference image) */}
+                <View style={styles.refUserCol}>
+                  <View style={styles.refAvatarWrapper}>
                     <Image
                       source={{
-                        uri: avatarUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Prateek&top=shortFlat&clothingColor=blue01',
+                        uri: avatarUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Oliver&top=shortFlat&clothingColor=blue01',
                       }}
-                      style={styles.connectedAvatarImg}
+                      style={styles.refAvatarImg}
                     />
                   </View>
-                  <View style={styles.userNamePill}>
-                    <Text style={styles.userNamePillText}>{name || 'Prateek'}</Text>
+                  <Text style={styles.refUserName} numberOfLines={1}>{name || 'Oliver'}</Text>
+                  <Text style={styles.refUserLevel}>Level : {user?.level || '1'}</Text>
+                </View>
+
+                {/* Center: Live Timer + Action Buttons (00 : 52, Green Speaker, Red End Call) */}
+                <View style={styles.refCenterCol}>
+                  {/* Digital Timer (Exact match to 00 : 52 in reference image) */}
+                  <Text style={styles.refTimerText}>
+                    {call.status === 'Connected' ? formatCallTimeSpaced(callDuration) : '00 : 00'}
+                  </Text>
+
+                  {/* Action Buttons Row: Mute, Green Speaker, Red End Call */}
+                  <View style={styles.refActionBtnRow}>
+                    {/* Mute Button */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'}
+                      onPress={() => {
+                        const nextMuted = !muted;
+                        localStreamRef.current?.getAudioTracks().forEach((track) => {
+                          track.enabled = !nextMuted;
+                        });
+                        setMuted(nextMuted);
+                      }}
+                      style={[styles.refBtnCircle, muted ? styles.refMuteBtnActive : styles.refBtnMute]}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons name={muted ? 'mic-off' : 'mic'} size={18} color={muted ? '#FFFFFF' : '#475569'} />
+                    </TouchableOpacity>
+
+                    {/* Green Speaker Button (Exact match from reference image) */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Toggle speaker"
+                      onPress={() => {
+                        try {
+                          const nextSpeaker = !speakerEnabled;
+                          setAudioRoute(nextSpeaker);
+                          setSpeakerEnabled(nextSpeaker);
+                        } catch (error) {
+                          setCallNotice(error.message || 'Speaker control unavailable.');
+                        }
+                      }}
+                      style={[styles.refBtnCircle, speakerEnabled ? styles.refSpeakerBtnOn : styles.refSpeakerBtnOff]}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons
+                        name="volume-high"
+                        size={20}
+                        color={speakerEnabled ? '#FFFFFF' : '#16A34A'}
+                      />
+                    </TouchableOpacity>
+
+                    {/* Red End Call Button (Exact match from reference image) */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Disconnect call"
+                      onPress={() => {
+                        if (call.status !== 'Connected') {
+                          endCall();
+                        } else {
+                          setShowEarlyDisconnectModal(true);
+                        }
+                      }}
+                      style={styles.refEndCallBtn}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons
+                        name="call"
+                        size={20}
+                        color="#FFFFFF"
+                        style={{ transform: [{ rotate: '135deg' }] }}
+                      />
+                    </TouchableOpacity>
                   </View>
                 </View>
 
-                {/* Connecting Line Between Avatars */}
-                <View style={styles.avatarConnectorLine} />
-
-                {/* Right: Partner Avatar + Name Pill (with crown if PRO) */}
-                <View style={styles.connectedUserCol}>
-                  <View style={[styles.connectedAvatarBorder, { borderColor: '#FDE047' }]}>
+                {/* Right: Partner Profile (sarah style from reference image) */}
+                <View style={styles.refUserCol}>
+                  <View style={[styles.refAvatarWrapper, call.peer?.isPro && { borderColor: '#F59E0B', borderWidth: 2 }]}>
                     <Image
                       source={{
-                        uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (call.peer?.name || 'Srihari'),
+                        uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (call.peer?.name || 'sarah') + '&clothingColor=yellow',
                       }}
-                      style={styles.connectedAvatarImg}
+                      style={styles.refAvatarImg}
                     />
                   </View>
-                  <View style={[styles.userNamePill, call.peer?.isPro && styles.userNamePillPro]}>
-                    <Text style={styles.userNamePillText}>
-                      {call.peer?.isPro ? '👑 ' : ''}{call.peer?.name || 'Srihari'}
-                    </Text>
-                  </View>
+                  <Text style={styles.refUserName} numberOfLines={1}>
+                    {call.peer?.isPro ? '👑 ' : ''}{call.peer?.name || 'sarah'}
+                  </Text>
+                  <Text style={styles.refUserLevel}>Level : {call.peer?.level || '1'}</Text>
                 </View>
               </View>
 
-              {/* Active Call Live Timer Badge */}
-              <View style={styles.activeCallTimerPill}>
-                <View style={[styles.activeCallPulseDot, { backgroundColor: call.status === 'Connected' ? '#10B981' : '#F59E0B' }]} />
-                <Ionicons name="time" size={16} color="#4F46E5" style={{ marginRight: 6 }} />
-                <Text style={styles.activeCallTimerLabel}>Call Time:</Text>
-                <Text style={styles.activeCallTimerValue}>
-                  {call.status === 'Connected' ? formatCallTime(callDuration) : `${call.status || 'Connecting'}...`}
+              {/* Sub-bar: You have X activities (Exact from reference image) */}
+              <View style={styles.refActivitiesSubBar}>
+                <Text style={styles.refActivitiesSubTitle}>
+                  You have {CALL_ACTIVITIES.length} activities to practice together
                 </Text>
-                {call.status === 'Connected' && (
-                  <View style={styles.activeCallLiveTag}>
-                    <Text style={styles.activeCallLiveTagText}>LIVE</Text>
-                  </View>
-                )}
               </View>
 
               {/* Partner Practice Stat Green Banner (Image 3) */}
@@ -9374,6 +9441,121 @@ const styles = StyleSheet.create({
     color: '#CBD5E1',
     fontSize: 11,
     fontWeight: '600',
+  },
+  /* ================= ACTIVE CALL REFERENCE THEME STYLES ================= */
+  refCallHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  refUserCol: {
+    alignItems: 'center',
+    width: 85,
+  },
+  refAvatarWrapper: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  refAvatarImg: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  refUserName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  refUserLevel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  refCenterCol: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    paddingHorizontal: 8,
+  },
+  refTimerText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1E293B',
+    letterSpacing: 2,
+    marginBottom: 8,
+    fontVariant: ['tabular-nums'],
+  },
+  refActionBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  refBtnCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refBtnMute: {
+    backgroundColor: '#F1F5F9',
+  },
+  refMuteBtnActive: {
+    backgroundColor: '#EF4444',
+  },
+  refSpeakerBtnOff: {
+    backgroundColor: '#DCFCE7',
+  },
+  refSpeakerBtnOn: {
+    backgroundColor: '#16A34A',
+  },
+  refEndCallBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  refActivitiesSubBar: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF2F6',
+  },
+  refActivitiesSubTitle: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#475569',
+    textAlign: 'center',
   },
   /* ================= CALL SCREEN STYLES (IMAGE 3) ================= */
   activeCallTimerPill: {
