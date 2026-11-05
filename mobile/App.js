@@ -3099,9 +3099,8 @@ function App() {
   }
 
   function openPractice() {
-    setPracticeStep('overview');
-    setPracticeMode('searching');
-    setScreen('practice');
+    setActiveBottomTab('call');
+    setScreen('call-tab');
   }
 
   async function loadSettings() {
@@ -5136,126 +5135,6 @@ function App() {
                 </View>
               </Modal>
             </View>
-          )}
-
-          {/* SCREEN 8: LANGUAGE PRACTICE */}
-          {screen === 'practice' && (
-            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 30 }}>
-              <Header title="Language Practice" subtitle={`Build confidence in ${learningLanguage || 'your learning language'} with short daily exercises.`} onBack={() => { setActiveBottomTab('home'); setScreen('home'); }} />
-              <View style={styles.practiceProgressCard}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View>
-                    <Txt size={16} bold>Daily Practice</Txt>
-                    <Txt size={12} color={muted} style={{ marginTop: 4 }}>{practiceProgress}% complete today</Txt>
-                  </View>
-                  <Txt size={20} bold color={orange}>{practiceProgress}%</Txt>
-                </View>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${practiceProgress}%` }]} />
-                </View>
-                <Btn label="Start Practice" onPress={() => startPractice()} style={{ marginTop: 15 }} />
-                <Btn
-                  label="Talk with AI Partner 🤖"
-                  outline
-                  onPress={() => startAiPractice(practiceTopic)}
-                  style={{ marginTop: 10 }}
-                />
-              </View>
-
-              <Txt size={17} bold style={{ marginBottom: 12 }}>Choose a conversation topic</Txt>
-              {PRACTICE_TOPICS.map((topic) => (
-                <TouchableOpacity
-                  key={topic.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Practice ${topic.title}`}
-                  onPress={() => beginPracticeTopic(topic)}
-                  style={[styles.practiceTopicCard, practiceTopic.id === topic.id && styles.practiceTopicCardSelected]}
-                >
-                  <View style={styles.practiceTopicIcon}>
-                    <Ionicons name={topic.icon} size={22} color={orange} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Txt size={15} bold>{topic.title}</Txt>
-                    <Txt size={12} color={muted} style={{ marginTop: 3 }}>{topic.description}</Txt>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={muted} />
-                </TouchableOpacity>
-              ))}
-              <Txt size={17} bold style={{ marginTop: 18, marginBottom: 10 }}>
-                {practiceTopic.title} partners
-              </Txt>
-              {discoverError ? (
-                <View style={styles.discoverMessage}>
-                  <Txt color={COLORS.error} size={13} style={{ textAlign: 'center' }}>{discoverError}</Txt>
-                  <TouchableOpacity onPress={() => loadDiscoverUsers(true, practiceTopic.id)} style={styles.discoverRetry}>
-                    <Ionicons name="refresh" size={16} color={orange} />
-                    <Txt color={orange} size={13} bold>Retry</Txt>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-              {discoverLoading ? (
-                <View style={styles.discoverMessage}>
-                  <ActivityIndicator color={orange} />
-                  <Txt size={13} color={muted} style={{ marginTop: 10 }}>Finding registered partners…</Txt>
-                </View>
-              ) : null}
-              {!discoverLoading && !discoverError && practicePartners.length === 0 ? (
-                <View style={styles.discoverMessage}>
-                  <Ionicons name="people-outline" size={34} color={muted} />
-                  <Txt size={14} color={muted} style={{ marginTop: 10, textAlign: 'center' }}>
-                    {partnerTotalEligible === 0
-                      ? 'No partners have joined yet. Invite a friend to start practicing.'
-                      : 'No partners found for this topic. Try All or another topic.'}
-                  </Txt>
-                </View>
-              ) : null}
-              {!discoverLoading && !discoverError && practicePartners.map((p) => (
-                <View key={p.id} style={styles.partnerCard}>
-                  <View style={styles.partnerInfoRow}>
-                    <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3' }]}>
-                      {p.avatarUrl ? (
-                        <Image source={{ uri: p.avatarUrl }} style={styles.partnerAvatarImage} />
-                      ) : (
-                        <Txt size={20} bold color={orange}>{(p.displayName || p.name || '?').trim().charAt(0).toUpperCase()}</Txt>
-                      )}
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Txt bold size={15}>{p.displayName || p.name}  <Txt size={12} color={muted}>{p.country}</Txt></Txt>
-                      <Txt size={11} color={muted} style={{ marginTop: 2 }}>Speaks: {p.nativeLanguage}, {p.learningLanguage}</Txt>
-                      <Txt size={11} color={COLORS.primary} style={{ marginTop: 2, fontWeight: '600' }}>{p.level} · {p.learningLanguage}</Txt>
-                      <Txt size={10} color={p.online ? COLORS.success : muted} style={{ marginTop: 3 }}>{p.online ? '● Online' : '● Offline'}</Txt>
-                    </View>
-                  </View>
-                  <View style={styles.partnerActions}>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={`Chat with ${p.name}`}
-                      onPress={() => openConversation(p)}
-                      style={[styles.chatButtonOutline, styles.partnerAction]}
-                    >
-                      <Ionicons name="chatbubble-ellipses-outline" size={17} color={orange} />
-                      <Txt color={orange} size={12} bold>Start chat</Txt>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => startCall(p, 'audio')} disabled={Boolean(callStarting)} style={styles.partnerAction}>
-                      <Ionicons name="call-outline" size={17} color={orange} />
-                      <Txt color={orange} size={12} bold>Voice</Txt>
-                    </TouchableOpacity>
-                    {hasVideoEntitlement() ? (
-                      <TouchableOpacity onPress={() => startCall(p, 'video')} disabled={Boolean(callStarting)} style={styles.partnerAction}>
-                        <Ionicons name="videocam-outline" size={17} color={orange} />
-                        <Txt color={orange} size={12} bold>Video</Txt>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity onPress={openSubscription} style={styles.partnerAction}>
-                        <Ionicons name="lock-closed-outline" size={17} color={muted} />
-                        <Txt color={muted} size={12} bold>Video</Txt>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              ))}
-              <Btn label="Start Practice Exercise" onPress={() => startPractice()} style={{ marginTop: 8 }} />
-            </ScrollView>
           )}
 
           {screen === 'practiceSession' && (
