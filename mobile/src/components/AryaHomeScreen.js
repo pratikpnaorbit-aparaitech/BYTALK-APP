@@ -421,6 +421,61 @@ export default function AryaHomeScreen({
           </TouchableOpacity>
         </View>
 
+        {/* Tab Switcher: General | Interview */}
+        <View style={styles.tabSwitcherContainer}>
+          <TouchableOpacity
+            onPress={() => setActiveCategory('General')}
+            style={[styles.switcherTab, activeCategory === 'General' && styles.switcherTabActive]}
+            activeOpacity={0.8}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeCategory === 'General' }}
+          >
+            <Text style={[styles.switcherTabText, activeCategory === 'General' && styles.switcherTabTextActive]}>
+              General
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setActiveCategory('Interview')}
+            style={[styles.switcherTab, activeCategory === 'Interview' && styles.switcherTabActive]}
+            activeOpacity={0.8}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeCategory === 'Interview' }}
+          >
+            <Text style={[styles.switcherTabText, activeCategory === 'Interview' && styles.switcherTabTextActive]}>
+              Interview
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 2-Column Cards Grid with Floating Crown Badges */}
+        <View style={styles.cardsGrid}>
+          {topics.map((topic) => (
+            <TouchableOpacity
+              key={topic.id}
+              onPress={() => onSelectTopic(topic)}
+              style={styles.cardItem}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Practice ${topic.title}`}
+            >
+              {/* Crown Badge floating on top center border */}
+              <View style={styles.crownBadgeFloating}>
+                <Text style={styles.crownBadgeEmoji}>👑</Text>
+              </View>
+
+              {/* Top Row: Signal Level Bars + Text */}
+              <View style={styles.cardTopRow}>
+                <View style={styles.levelSignalContainer}>
+                  <View style={styles.signalBarGroup}>
+                    <View style={[styles.signalBar, topic.bars >= 1 && styles.signalBarFilled]} />
+                    <View style={[styles.signalBar, topic.bars >= 2 && styles.signalBarFilled]} />
+                    <View style={[styles.signalBar, topic.bars >= 3 && styles.signalBarFilled]} />
+                  </View>
+                  <Text style={styles.levelText}>{topic.level}</Text>
+                </View>
+              </View>
+
               {/* Graphic Illustration with soft pastel background pill */}
               <View style={[styles.graphicArea, { backgroundColor: topic.bgColor || '#F8FAFC' }]}>
                 <CardIllustration type={topic.graphic} color={topic.color} />
