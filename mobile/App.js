@@ -964,64 +964,9 @@ function App() {
   const [disconnectReason, setDisconnectReason] = useState('');
   const [audioQualityRating, setAudioQualityRating] = useState(5);
   const [friendRequestSentInCall, setFriendRequestSentInCall] = useState(false);
-  const [friendsList, setFriendsList] = useState([
-    {
-      id: 'friend_srihari',
-      name: 'Srihari',
-      country: 'India',
-      level: 'Advanced',
-      isPro: true,
-      online: true,
-      profilePhotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-    },
-    {
-      id: 'friend_sarah',
-      name: 'Sarah',
-      country: 'United Kingdom',
-      level: 'Intermediate',
-      isPro: false,
-      online: true,
-      profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&clothingColor=yellow&top=longHairStraight',
-    },
-    {
-      id: 'friend_alex',
-      name: 'Alex',
-      country: 'Canada',
-      level: 'Intermediate',
-      isPro: true,
-      online: true,
-      profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Alex&top=shortFlat',
-    },
-  ]);
-  const [pendingFriendRequests, setPendingFriendRequests] = useState([
-    {
-      id: 'mock_req_1',
-      from: {
-        id: 'user_candela',
-        name: 'Candela',
-        country: 'Spain',
-        level: 'Intermediate',
-        profilePhotoUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150',
-      },
-      createdAt: new Date().toISOString(),
-    },
-  ]);
-  const [recentCoLearnersList, setRecentCoLearnersList] = useState([
-    {
-      id: 'partner_srihari',
-      name: 'Srihari',
-      country: 'India',
-      level: 'Advanced',
-      profilePhotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-    },
-    {
-      id: 'partner_zokhida',
-      name: 'Zokhida',
-      country: 'Russia',
-      level: 'Intermediate',
-      profilePhotoUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=150',
-    },
-  ]);
+  const [friendsList, setFriendsList] = useState([]);
+  const [pendingFriendRequests, setPendingFriendRequests] = useState([]);
+  const [recentCoLearnersList, setRecentCoLearnersList] = useState([]);
   const [aryaSettings, setAryaSettings] = useState({
     voice: 'FEMALE',
     speed: '1x',
@@ -1371,34 +1316,32 @@ function App() {
   const handleSendFriendRequest = async (targetUser) => {
     if (!targetUser) return;
     try {
-      if (targetUser.id && !targetUser.id.startsWith('partner_') && !targetUser.id.startsWith('friend_')) {
+      if (targetUser.id) {
         await request('friends/request', { method: 'POST', body: { targetUserId: targetUser.id } });
       }
     } catch {}
     setFriendRequestSentInCall(true);
-    Alert.alert('Friend Request Sent! 🤝', `Your friend request has been sent to ${targetUser.name || 'Co-learner'}. When accepted, you can call directly from Friends.`);
+    loadFriends();
+    Alert.alert('Friend Request Sent! 🤝', `Your friend request has been sent to ${targetUser.name || 'Co-learner'}. When accepted, you can chat, video call, and voice call directly from Friends.`);
   };
 
   const handleAcceptFriendRequest = async (req) => {
     try {
-      if (req.id && !req.id.startsWith('mock_')) {
+      if (req.id) {
         await request('friends/accept', { method: 'POST', body: { requestId: req.id } });
       }
     } catch {}
-    setPendingFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
-    if (req.from) {
-      setFriendsList((prev) => [{ ...req.from, online: true }, ...prev]);
-    }
-    Alert.alert('Friend Added! 🎉', `You and ${req.from?.name || 'Co-learner'} are now friends! You can call each other directly anytime.`);
+    loadFriends();
+    Alert.alert('Friend Added! 🎉', `You and ${req.from?.name || 'Co-learner'} are now friends! You can now chat, video call, or voice call anytime.`);
   };
 
   const handleDeclineFriendRequest = async (req) => {
     try {
-      if (req.id && !req.id.startsWith('mock_')) {
+      if (req.id) {
         await request('friends/decline', { method: 'POST', body: { requestId: req.id } });
       }
     } catch {}
-    setPendingFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
+    loadFriends();
   };
 
   const handleStartDirectCall = (friend) => {
@@ -1408,6 +1351,32 @@ function App() {
       return;
     }
     startCall(friend, 'audio');
+  };
+
+  const handleStartDirectVideoCall = (friend) => {
+    if (!hasVideoEntitlement()) {
+      setSubscriptionError('BYTALK Plus or Pro is required for video calling.');
+      openSubscription();
+      return;
+    }
+    startCall(friend, 'video');
+  };
+
+  const loadFriends = async () => {
+    if (!activeAuthToken) return;
+    try {
+      const res = await request('friends');
+      if (res?.friends && Array.isArray(res.friends)) {
+        const unique = Array.from(new Map(res.friends.map((f) => [String(f.id || f.name), f])).values());
+        setFriendsList(unique);
+      }
+      if (res?.pendingRequests && Array.isArray(res.pendingRequests)) {
+        const uniqueReqs = Array.from(new Map(res.pendingRequests.map((r) => [String(r.id), r])).values());
+        setPendingFriendRequests(uniqueReqs);
+      }
+    } catch (err) {
+      console.warn('[BYTALK loadFriends]', err.message);
+    }
   };
 
   function hasVideoEntitlement() {
@@ -1497,7 +1466,9 @@ function App() {
       const result = await request(`users/discover?topic=${encodeURIComponent(topic)}`);
       if (requestId !== discoverRequestRef.current) return;
       const users = Array.isArray(result) ? result : result?.users;
-      setPartners(Array.isArray(users) ? users : []);
+      const rawUsers = Array.isArray(users) ? users : [];
+      const uniquePartners = Array.from(new Map(rawUsers.map((u) => [String(u.id), u])).values());
+      setPartners(uniquePartners);
       setPartnerTotalEligible(Number(result?.totalEligible) || (Array.isArray(users) ? users.length : 0));
       setDiscoverError('');
     } catch (error) {
@@ -2043,7 +2014,6 @@ function App() {
         ]);
 
         const expiry = Number(expiryStr);
-        // Fast client check: if no token or local 15-day expiry passed, clear session
         if (!token || !Number.isFinite(expiry) || Date.now() >= expiry) {
           await clearSession();
           if (active) {
@@ -2053,7 +2023,19 @@ function App() {
           return;
         }
 
-        // Set token in memory to validate against backend
+        // Fast immediate restore of saved profile on refresh/reload
+        if (savedUserStr) {
+          try {
+            const cachedUser = JSON.parse(savedUserStr);
+            if (cachedUser) {
+              if (cachedUser.id) setUserId(cachedUser.id);
+              if (cachedUser.name || cachedUser.displayName) setName(cachedUser.displayName || cachedUser.name);
+              if (cachedUser.email) setEmail(cachedUser.email);
+              if (cachedUser.profilePhotoUrl) setAvatarUrl(cachedUser.profilePhotoUrl);
+            }
+          } catch {}
+        }
+
         setAuthToken(token);
 
         // Validate token cryptographically against backend (Requirement 11)
@@ -2326,8 +2308,28 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!sessionChecking && (screen === 'discover' || screen === 'call-tab' || screen === 'home') && activeAuthToken) loadDiscoverUsers();
+    if (!sessionChecking && (screen === 'discover' || screen === 'call-tab' || screen === 'home') && activeAuthToken) {
+      loadDiscoverUsers();
+    }
+    if (!sessionChecking && screen === 'call-tab' && activeAuthToken) {
+      loadFriends();
+    }
   }, [screen, sessionChecking, sessionVersion, userId]);
+
+  useEffect(() => {
+    if (callHistory && callHistory.length > 0) {
+      const seen = new Set();
+      const recents = [];
+      for (const item of callHistory) {
+        const peer = item.peer;
+        if (peer && peer.id && peer.id !== userId && !seen.has(peer.id)) {
+          seen.add(peer.id);
+          recents.push(peer);
+        }
+      }
+      setRecentCoLearnersList(recents);
+    }
+  }, [callHistory, userId]);
 
   useEffect(() => {
     if (!sessionChecking && screen === 'practice') {
@@ -3433,6 +3435,8 @@ function App() {
               pendingRequests={pendingFriendRequests}
               recentCoLearners={recentCoLearnersList}
               onDirectCall={handleStartDirectCall}
+              onDirectVideoCall={handleStartDirectVideoCall}
+              onDirectChat={(friend) => openConversation(friend)}
               onSendFriendRequest={handleSendFriendRequest}
               onAcceptFriendRequest={handleAcceptFriendRequest}
               onDeclineFriendRequest={handleDeclineFriendRequest}
@@ -3461,13 +3465,18 @@ function App() {
                 if (newName) setName(newName);
                 if (newAvatar !== undefined) setAvatarUrl(newAvatar);
                 try {
-                  await request('profile', {
+                  const res = await request('profile', {
                     method: 'PATCH',
                     body: JSON.stringify({
                       name: newName || name,
                       profilePhotoUrl: newAvatar !== undefined ? newAvatar : avatarUrl,
                     }),
                   });
+                  if (res?.user) {
+                    if (res.user.name) setName(res.user.name);
+                    if (res.user.profilePhotoUrl) setAvatarUrl(res.user.profilePhotoUrl);
+                    await authStorage.setItem(SESSION_USER_KEY, JSON.stringify(res.user));
+                  }
                 } catch (e) {
                   console.warn('[Profile update error]', e.message);
                 }

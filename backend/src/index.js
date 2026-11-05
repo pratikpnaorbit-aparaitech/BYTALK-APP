@@ -814,7 +814,10 @@ app.patch('/api/profile', requireAuth, async (req, res) => {
   try {
     const { name, profilePhotoUrl, bio, country, nativeLanguage } = req.body || {};
     const updates = {};
-    if (typeof name === 'string' && name.trim()) updates.name = name.trim();
+    if (typeof name === 'string' && name.trim()) {
+      updates.name = name.trim();
+      updates.displayName = name.trim();
+    }
     if (profilePhotoUrl !== undefined) updates.profilePhotoUrl = profilePhotoUrl;
     if (typeof bio === 'string') updates.bio = bio.trim();
     if (typeof country === 'string') updates.country = country.trim();

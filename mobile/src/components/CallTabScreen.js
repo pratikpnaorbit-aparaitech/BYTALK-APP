@@ -28,6 +28,8 @@ export default function CallTabScreen({
   friends = [],
   pendingRequests = [],
   onDirectCall,
+  onDirectVideoCall,
+  onDirectChat,
   onSendFriendRequest,
   onAcceptFriendRequest,
   onDeclineFriendRequest,
@@ -80,14 +82,9 @@ export default function CallTabScreen({
 
   const handleSelectGender = (gender) => {
     if (gender !== 'any' && !isSubscribed) {
-      Alert.alert(
-        'PRO Feature 👑',
-        'Filtering co-learners by gender (Female or Male) requires an active PRO subscription. Upgrade to PRO to choose your partner\'s gender!',
-        [
-          { text: 'Upgrade to PRO 👑', onPress: onPressUpgrade },
-          { text: 'Use Any Gender', onPress: () => setSelectedGender('any'), style: 'cancel' },
-        ]
-      );
+      if (onPressUpgrade) {
+        onPressUpgrade();
+      }
       return;
     }
     setSelectedGender(gender);
@@ -216,7 +213,7 @@ export default function CallTabScreen({
             <Text style={[styles.topTabLabel, activeTopTab === 'friends' && styles.topTabLabelActive]}>
               Friends
             </Text>
-            {pendingRequests.length > 0 && (
+            {uniquePendingRequests.length > 0 && (
               <View style={styles.friendReqDot}>
                 <Text style={styles.friendReqDotText}>{pendingRequests.length}</Text>
               </View>
@@ -433,7 +430,7 @@ export default function CallTabScreen({
           {pendingRequests.length > 0 && (
             <View style={styles.sectionCard}>
               <Text style={styles.sectionHeading}>Pending Friend Requests 📬</Text>
-              {pendingRequests.map((req) => (
+              {uniquePendingRequests.map((req) => (
                 <View key={req.id} style={styles.friendReqRow}>
                   <Image
                     source={{
@@ -506,26 +503,47 @@ export default function CallTabScreen({
                       {f.country || 'Global'} • {f.level || 'Intermediate'}
                     </Text>
                   </View>
-                  {/* Direct Call Button */}
-                  <TouchableOpacity
-                    onPress={() => onDirectCall && onDirectCall(f)}
-                    style={styles.directCallBtn}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="call" size={15} color="#FFFFFF" style={{ marginRight: 4 }} />
-                    <Text style={styles.directCallBtnText}>Call</Text>
-                  </TouchableOpacity>
+                  {/* Actions for Accepted Friend: Chat, Video Call, Voice Call */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <TouchableOpacity
+                      onPress={() => onDirectChat && onDirectChat(f)}
+                      style={styles.directChatBtn}
+                      activeOpacity={0.8}
+                      accessibilityLabel={`Chat with ${f.name}`}
+                    >
+                      <Ionicons name="chatbubble-ellipses" size={14} color="#6366F1" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => onDirectVideoCall && onDirectVideoCall(f)}
+                      style={styles.directVideoBtn}
+                      activeOpacity={0.8}
+                      accessibilityLabel={`Video call ${f.name}`}
+                    >
+                      <Ionicons name="videocam" size={14} color="#FFFFFF" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => onDirectCall && onDirectCall(f)}
+                      style={styles.directCallBtn}
+                      activeOpacity={0.8}
+                      accessibilityLabel={`Voice call ${f.name}`}
+                    >
+                      <Ionicons name="call" size={13} color="#FFFFFF" style={{ marginRight: 3 }} />
+                      <Text style={styles.directCallBtnText}>Call</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ))
             )}
           </View>
 
           {/* Recent Co-Learners Section */}
-          {recentCoLearners.length > 0 && (
+          {uniqueRecentCoLearners.length > 0 && (
             <View style={styles.sectionCard}>
               <Text style={styles.sectionHeading}>Recent Co-learners</Text>
               <Text style={styles.sectionSub}>Add people you recently practiced with:</Text>
-              {recentCoLearners.map((learner) => {
+              {uniqueRecentCoLearners.map((learner) => {
                 const isSent = sentRequests[learner.id || learner.name];
                 return (
                   <View key={learner.id || learner.name} style={styles.recentLearnerRow}>
@@ -1147,6 +1165,18 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#64748B',
     marginTop: 2,
+  },
+  directChatBtn: {
+    padding: 7,
+    borderRadius: 16,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  directVideoBtn: {
+    padding: 7,
+    borderRadius: 16,
+    backgroundColor: '#F97316',
   },
   directCallBtn: {
     flexDirection: 'row',

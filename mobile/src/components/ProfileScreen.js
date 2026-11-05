@@ -90,10 +90,22 @@ export default function ProfileScreen({
   const currentAvatar = user?.profilePhotoUrl || DEFAULT_AVATAR;
   const [selectedAvatarUrl, setSelectedAvatarUrl] = useState(currentAvatar);
 
-  const [editName, setEditName] = useState(user?.displayName || user?.name || 'Prateek Pawar');
-  const [editEmail, setEditEmail] = useState(user?.email || 'pratikumeshpawar@gmail.com');
+  const [editName, setEditName] = useState(user?.displayName || user?.name || '');
+  const [editEmail, setEditEmail] = useState(user?.email || '');
   const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [giftClaimed, setGiftClaimed] = useState(false);
+
+  useEffect(() => {
+    if (user?.name || user?.displayName) {
+      setEditName(user?.displayName || user?.name);
+    }
+    if (user?.email) {
+      setEditEmail(user.email);
+    }
+    if (user?.profilePhotoUrl) {
+      setSelectedAvatarUrl(user.profilePhotoUrl);
+    }
+  }, [user?.name, user?.displayName, user?.email, user?.profilePhotoUrl]);
 
   // Subscription remaining days calculation
   const hasActiveSub = isPro || subscription?.active === true || ['basic', 'plus', 'pro', '1month', '3months', '1year'].includes(subscription?.plan?.id);
@@ -246,7 +258,7 @@ export default function ProfileScreen({
           <View style={styles.userDetailsCol}>
             <View style={styles.userNameRow}>
               <Text style={styles.userNameText} numberOfLines={1}>
-                {user?.displayName || user?.name || 'Prateek Pawar'}
+                {user?.displayName || user?.name || 'User'}
               </Text>
               <TouchableOpacity
                 onPress={() => setShowEditModal(true)}
@@ -507,7 +519,7 @@ export default function ProfileScreen({
               </View>
               <View style={{ marginLeft: 16, flex: 1 }}>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: '#1A1D2E' }}>
-                  {user?.displayName || 'Your Profile Avatar'}
+                  {user?.displayName || user?.name || 'Your Profile Avatar'}
                 </Text>
                 <Text style={{ fontSize: 12.5, color: '#64748B', marginTop: 2 }}>
                   {avatarTab === 'emojis' ? 'Custom Emoji Profile' : 'Select from 3D avatars below'}
