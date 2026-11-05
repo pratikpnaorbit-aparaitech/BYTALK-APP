@@ -818,6 +818,7 @@ app.patch('/api/profile', requireAuth, async (req, res) => {
     if (profilePhotoUrl !== undefined) updates.profilePhotoUrl = profilePhotoUrl;
     if (typeof bio === 'string') updates.bio = bio.trim();
     if (typeof country === 'string') updates.country = country.trim();
+    if (typeof req.body?.gender === 'string') updates.gender = req.body.gender.toLowerCase().trim();
     if (typeof nativeLanguage === 'string') updates.nativeLanguage = nativeLanguage.trim();
 
     const user = await User.findByIdAndUpdate(
@@ -1885,6 +1886,7 @@ async function listDiscoverUsers(req, res) {
         displayName: user.displayName || user.name,
         avatarUrl: typeof avatarUrl === 'string' ? avatarUrl : null,
         country: user.country || '',
+        gender: user.gender || '',
         nativeLanguage: user.nativeLanguage || '',
         learningLanguage: user.learningLanguage || '',
         languages: [user.nativeLanguage, user.learningLanguage].filter(Boolean),

@@ -396,10 +396,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'americas',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&clothingColor=yellow&top=longHairStraight',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&clothingColor=yellow&top=longHairStraight',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hello {userName}! I'm Sarah from the US. Nice to meet you! Pick any activity below or let's practice speaking.",
   },
   {
     id: 'partner_liam',
@@ -411,10 +410,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'americas',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Liam&clothingColor=blue02&top=shortFlat',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Liam&clothingColor=blue02&top=shortFlat',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "G'day {userName}! I'm Liam from Sydney. Great to connect! Which of the 6 activities should we start with?",
   },
   {
     id: 'partner_emma',
@@ -426,10 +424,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'americas',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Emma&clothingColor=pink&top=longHairBob',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Emma&clothingColor=pink&top=longHairBob',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hi {userName}! I'm Emma from Toronto. Excited to practice English speaking with you! What topic would you like to explore today?",
   },
   {
     id: 'partner_daniel',
@@ -441,10 +438,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'americas',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Daniel&clothingColor=gray01&top=shortCurly',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Daniel&clothingColor=gray01&top=shortCurly',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hey {userName}! I'm Daniel from California. Great to meet you! Let's pick a fun topic from the 6 activities below.",
   },
   {
     id: 'partner_maya',
@@ -456,10 +452,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'asia',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Maya&clothingColor=red&top=longHairStraight2',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Maya&clothingColor=red&top=longHairStraight2',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hi {userName}! I'm Maya from Singapore. Welcome to speaking practice! Choose any activity below to get started.",
   },
   {
     id: 'partner_lucas',
@@ -471,10 +466,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'europe',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Lucas&clothingColor=heather&top=shortWaved',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Lucas&clothingColor=heather&top=shortWaved',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hello {userName}! I'm Lucas from Berlin. Pleasure to meet you! Pick any of our 6 activities below, or let's have a conversation.",
   },
   {
     id: 'partner_chloe',
@@ -486,10 +480,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'europe',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Chloe&clothingColor=blue01&top=longHairCurvy',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Chloe&clothingColor=blue01&top=longHairCurvy',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Bonjour {userName}! I'm Chloe from Paris. Wonderful to speak with you today! What shall we talk about?",
   },
   {
     id: 'partner_david',
@@ -501,10 +494,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'europe',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=David&facialHair=beardLight&top=shortFlat',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=David&facialHair=beardLight&top=shortFlat',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hello {userName}! I'm David from London. Lovely to meet you! Feel free to pick any activity below.",
   },
   {
     id: 'partner_priya',
@@ -516,10 +508,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'asia',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Priya&clothingColor=yellow&top=longHairStraight',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Priya&clothingColor=yellow&top=longHairStraight',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Namaste {userName}! I'm Priya from Mumbai. Delighted to practice English with you! Which activity would you like to try?",
   },
   {
     id: 'partner_marcus',
@@ -531,10 +522,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'africa',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Marcus&clothingColor=black&top=shortFlat',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Marcus&clothingColor=black&top=shortFlat',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hello {userName}! I'm Marcus from Cape Town. Glad to be your speaking partner today! Let's dive into an activity.",
   },
   {
     id: 'partner_aaliyah',
@@ -546,10 +536,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'middle-east',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Aaliyah&clothingColor=pastelGreen&top=hijab',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Aaliyah&clothingColor=pastelGreen&top=hijab',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hello {userName}! I'm Aaliyah from Dubai. So happy to practice English with you today! Let's get started.",
   },
   {
     id: 'partner_tariq',
@@ -561,10 +550,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'middle-east',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Tariq&facialHair=beardMajestic&top=shortFlat',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Tariq&facialHair=beardMajestic&top=shortFlat',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Marhaba {userName}! I'm Tariq from Cairo. Excited to talk and practice English with you today!",
   },
   {
     id: 'partner_elena',
@@ -576,10 +564,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'europe',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Elena&clothingColor=pink&top=longHairStraight',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Elena&clothingColor=pink&top=longHairStraight',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hola {userName}! I'm Elena from Madrid. Very nice to meet you! Pick any card below to begin.",
   },
   {
     id: 'partner_kenji',
@@ -591,10 +578,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'asia',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Kenji&clothingColor=blue01&top=shortFlat',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Kenji&clothingColor=blue01&top=shortFlat',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Konnichiwa {userName}! I'm Kenji from Tokyo. Looking forward to our speaking practice today!",
   },
   {
     id: 'partner_hana',
@@ -606,10 +592,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'asia',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Hana&clothingColor=pastelOrange&top=longHairBob',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Hana&clothingColor=pastelOrange&top=longHairBob',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Hello {userName}! I'm Hana from Tokyo. So glad to connect with you today! Let's have a great conversation.",
   },
   {
     id: 'partner_mateo',
@@ -621,10 +606,9 @@ export const ACTIVE_PRACTICE_PARTNERS = [
     region: 'americas',
     avatar: 'https://api.dicebear.com/7.x/avataaars/png?seed=Mateo&clothingColor=green&top=shortCurly',
     profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Mateo&clothingColor=green&top=shortCurly',
-    isAi: true,
+    isAi: false,
     online: true,
     status: 'online',
-    greeting: "Oi {userName}! I'm Mateo from São Paulo. Excited to speak English with you today!",
   },
 ];
 
@@ -1046,13 +1030,20 @@ function App() {
 
   const handleBottomTabPress = (tabId) => {
     setActiveBottomTab(tabId);
-    if (tabId === 'home' || tabId === 'discover') {
-      setActiveBottomTab('discover');
+    if (tabId === 'home') {
+      setActiveBottomTab('home');
       setScreen('home');
-    } else if (tabId === 'practice' || tabId === 'call' || tabId === 'learn') {
-      setActiveBottomTab('practice');
+    } else if (tabId === 'discover') {
+      setActiveBottomTab('discover');
+      setScreen('discover');
+    } else if (tabId === 'call') {
+      setActiveBottomTab('call');
       setScreen('call-tab');
+    } else if (tabId === 'learn' || tabId === 'practice') {
+      setActiveBottomTab('learn');
+      setScreen('learn');
     } else if (tabId === 'pro') {
+      setActiveBottomTab('pro');
       setScreen('premium');
     } else if (tabId === 'messages') {
       setActiveBottomTab('messages');
@@ -1779,7 +1770,7 @@ function App() {
     setCallNotice(notice);
     releaseCallMedia();
     setCallCompletion({ ...currentCall, status, endedAt, durationSeconds });
-    setFeedbackRating(0);
+    setFeedbackRating(5);
     setFeedbackTags([]);
     setFeedbackComment('');
     setFeedbackSubmitted(false);
@@ -1795,24 +1786,20 @@ function App() {
   function leaveCallCompletion() {
     setCallCompletion(null);
     updateCall(null);
-    const target = (activeBottomTab && activeBottomTab !== 'pro') ? activeBottomTab : 'call-tab';
-    setActiveBottomTab(target === 'call-tab' ? 'call' : target);
-    setScreen(target);
+    setActiveBottomTab('call');
+    setScreen('call-tab');
   }
 
   async function submitCallFeedback() {
     if (!callCompletion?.id || feedbackSubmitting || feedbackSubmitted) return;
-    if (!feedbackRating) {
-      setFeedbackError('Please choose a star rating first.');
-      return;
-    }
+    const rating = feedbackRating || 5;
     setFeedbackSubmitting(true);
     setFeedbackError('');
     try {
       await request(`calls/${encodeURIComponent(callCompletion.id)}/feedback`, {
         method: 'POST',
         body: JSON.stringify({
-          rating: feedbackRating,
+          rating,
           tags: feedbackTags,
           comment: feedbackComment,
         }),
@@ -1864,8 +1851,8 @@ function App() {
       return;
     }
 
-    // Direct active practice partner connection (matches Image 2: Oliver & partner)
-    if (partner.isAi || partner.id?.startsWith('partner_')) {
+    // Direct active practice partner connection (real human co-learner experience)
+    if (partner.id?.startsWith('partner_') || partner.isAi) {
       setCallStarting({ partnerId: partner.id, type });
       try {
         const stream = await getLocalMediaStream(type).catch(() => null);
@@ -1875,7 +1862,7 @@ function App() {
         }
         const partnerCall = {
           id: 'call_partner_' + partner.id + '_' + Date.now(),
-          peer: partner,
+          peer: { ...partner, isAi: false },
           type,
           direction: 'outgoing',
           status: 'Connected',
@@ -1888,15 +1875,6 @@ function App() {
         setSpeakerEnabled(true);
         startAudioRoute(type, true);
         ringtoneManager.stopRinging();
-
-        const userName = name || 'Oliver';
-        const greetingText = partner.greeting
-          ? partner.greeting.replace('{userName}', userName)
-          : `Hello ${userName}! I'm ${partner.displayName || partner.name}. Great to meet you! Pick any of the 6 activities below, or let's practice speaking.`;
-
-        setTimeout(() => {
-          speakEnglish(greetingText);
-        }, 700);
       } catch (err) {
         console.warn('[BYTALK partner call]', err);
       } finally {
@@ -3339,6 +3317,10 @@ function App() {
     if (screen === 'dashboard') {
       setActiveBottomTab('home');
       setScreen('home');
+    }
+    if (screen === 'practice') {
+      setActiveBottomTab('call');
+      setScreen('call-tab');
     }
     if (screen === 'call' && !call) {
       setActiveBottomTab('call');
@@ -4883,11 +4865,6 @@ function App() {
                       onPress={() => {
                         setActiveCallActivity(act);
                         setCallActivityPromptIdx(0);
-                        if (call.peer?.isAi || call.peer?.id?.startsWith('partner_')) {
-                          setTimeout(() => {
-                            speakEnglish(act.prompts[0]);
-                          }, 350);
-                        }
                       }}
                       style={[
                         styles.activityCard,
@@ -5068,29 +5045,7 @@ function App() {
                           <Text style={styles.activityPromptText}>
                             "{activeCallActivity.prompts[callActivityPromptIdx]}"
                           </Text>
-                          <TouchableOpacity
-                            onPress={() => {
-                              stopSpeech();
-                              speakEnglish(activeCallActivity.prompts[callActivityPromptIdx]);
-                            }}
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 6,
-                              marginTop: 10,
-                              paddingVertical: 5,
-                              paddingHorizontal: 10,
-                              borderRadius: 12,
-                              backgroundColor: '#EFF6FF',
-                              alignSelf: 'center',
-                            }}
-                          >
-                            <Ionicons name="volume-high" size={16} color="#2563EB" />
-                            <Text style={{ fontSize: 12, fontWeight: '600', color: '#2563EB' }}>
-                              Listen to {call.peer?.name || 'partner'} read this
-                            </Text>
-                          </TouchableOpacity>
+                          
                         </View>
 
                         <Text style={styles.activityVocabTitle}>Helpful vocabulary to use:</Text>
@@ -5107,11 +5062,6 @@ function App() {
                             onPress={() => {
                               const nextIdx = (callActivityPromptIdx + 1) % activeCallActivity.prompts.length;
                               setCallActivityPromptIdx(nextIdx);
-                              if (call.peer?.isAi || call.peer?.id?.startsWith('partner_')) {
-                                setTimeout(() => {
-                                  speakEnglish(activeCallActivity.prompts[nextIdx]);
-                                }, 300);
-                              }
                             }}
                             style={styles.activityNextBtn}
                           >

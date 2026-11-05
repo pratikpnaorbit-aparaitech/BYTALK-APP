@@ -15,6 +15,7 @@ const userSchema = new mongoose.Schema(
     profilePhotoUrl: { type: String, default: null, trim: true },
     bio: { type: String, default: '', trim: true, maxlength: 500 },
     country: { type: String, default: '', trim: true, maxlength: 80 },
+    gender: { type: String, default: '', trim: true, maxlength: 20 },
     nativeLanguage: { type: String, default: '', trim: true, maxlength: 80 },
     learningLanguage: { type: String, default: 'English', trim: true, maxlength: 80 },
     level: { type: String, default: 'Beginner', trim: true, maxlength: 80 },

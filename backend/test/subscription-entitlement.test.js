@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canUseAudio, canUseVideo, entitlementPayload, activeSubscription } from '../src/subscriptions.js';
 
-test('Basic, Plus and Pro subscriptions can use audio calling; Free cannot', () => {
+const today = new Date().toISOString().slice(0, 10);
+
+test('Basic, Plus and Pro subscriptions can use audio calling; Free cannot when trial exhausted', () => {
   const activeBasic = {
     subscriptionPlan: 'basic',
     subscriptionStatus: 'active',
@@ -12,21 +14,23 @@ test('Basic, Plus and Pro subscriptions can use audio calling; Free cannot', () 
   };
   const activePlus = { ...activeBasic, subscriptionPlan: 'plus' };
   const activePro = { ...activeBasic, subscriptionPlan: 'pro' };
-  const freeUser = { subscriptionPlan: 'free', subscriptionStatus: 'inactive' };
-  const expiredBasic = { ...activeBasic, subscriptionExpiresAt: new Date(Date.now() - 1) };
+  const exhaustedFreeUser = { subscriptionPlan: 'free', subscriptionStatus: 'inactive', freeVoiceDay: today, voiceSecondsUsed: 600 };
+  const activeFreeUser = { subscriptionPlan: 'free', subscriptionStatus: 'inactive', freeVoiceDay: today, voiceSecondsUsed: 0 };
+  const expiredBasic = { ...activeBasic, subscriptionExpiresAt: new Date(Date.now() - 1), freeVoiceDay: today, voiceSecondsUsed: 600 };
 
   // Audio calling checks
   assert.equal(canUseAudio(activeBasic), true, 'Basic plan should allow audio calls');
   assert.equal(canUseAudio(activePlus), true, 'Plus plan should allow audio calls');
   assert.equal(canUseAudio(activePro), true, 'Pro plan should allow audio calls');
-  assert.equal(canUseAudio(freeUser), false, 'Free user should not be able to make normal calls');
-  assert.equal(canUseAudio(expiredBasic), false, 'Expired basic plan cannot make audio calls');
+  assert.equal(canUseAudio(activeFreeUser), true, 'Active free user with remaining daily trial can call');
+  assert.equal(canUseAudio(exhaustedFreeUser), false, 'Free user with exhausted trial cannot make audio calls');
+  assert.equal(canUseAudio(expiredBasic), false, 'Expired basic plan with exhausted trial cannot make audio calls');
 
   // Video calling checks (Basic is audio-only, Plus/Pro can use video)
   assert.equal(canUseVideo(activeBasic), false, 'Basic plan is audio-only, cannot use video');
   assert.equal(canUseVideo(activePlus), true, 'Plus plan can use video');
   assert.equal(canUseVideo(activePro), true, 'Pro plan can use video');
-  assert.equal(canUseVideo(freeUser), false, 'Free user cannot use video');
+  assert.equal(canUseVideo(exhaustedFreeUser), false, 'Free user cannot use video');
 });
 
 test('only active Plus and Pro subscriptions can use video', () => {
@@ -76,6 +80,8 @@ test('entitlementPayload reverts to free when revoked or expired', () => {
     subscriptionPlan: 'free',
     subscriptionStatus: 'inactive',
     subscriptionExpiresAt: null,
+    freeVoiceDay: today,
+    voiceSecondsUsed: 600,
   };
 
   const payload = entitlementPayload(revokedUser);
