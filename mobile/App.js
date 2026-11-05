@@ -1974,15 +1974,19 @@ function App() {
   }
 
   async function rejectCall() {
+    ringtoneManager.stopRinging();
     const incoming = callRef.current;
-    if (!incoming?.id) return;
+    if (!incoming?.id) {
+      finishCallLocally('Ended', 'Call disconnected');
+      return;
+    }
     let notice = '';
     try {
       await emitWithAck('call:reject', { callId: incoming.id });
     } catch (error) {
       notice = error.message;
     }
-    finishCallLocally('Ended', notice);
+    finishCallLocally('Rejected', notice || 'Call declined');
   }
 
   async function endCall(notice = '') {
@@ -4758,16 +4762,72 @@ function App() {
 
           {screen === 'call' && call && (
             <View style={styles.callScreen}>
-              {/* [🔴 REC] Top Recording Banner (Exact from Image 3) */}
-              <View style={styles.recBannerBox}>
-                <View style={styles.recDot} />
-                <Text style={styles.recBannerText}>
-                  [REC] Call may be recorded to ensure a quality experience
-                </Text>
-              </View>
-
               {/* Hidden CallAudio to play remote audio */}
               <CallAudio stream={remoteStream} />
+
+              {/* INCOMING CALL SCREEN: Displays prominent Accept & Disconnect options */}
+              {call.direction === 'incoming' && (call.status === 'Ringing' || call.status === 'Calling') ? (
+                <View style={styles.incomingCallFullContainer}>
+                  <View style={styles.incomingCallerCard}>
+                    <View style={styles.incomingAvatarWrapper}>
+                      <Image
+                        source={{
+                          uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (call.peer?.name || 'Learner'),
+                        }}
+                        style={styles.incomingAvatarImage}
+                      />
+                    </View>
+                    <Text style={styles.incomingCallerTitle}>
+                      {call.peer?.name || 'Co-learner'}
+                    </Text>
+                    <Text style={styles.incomingCallSubtitle}>
+                      Incoming {call.type === 'video' ? 'Video' : 'Audio'} Call...
+                    </Text>
+                    <Text style={styles.incomingMetaText}>
+                      {call.peer?.country || 'Global'} • {call.peer?.level || 'Intermediate'}
+                    </Text>
+                  </View>
+
+                  {/* Prominent Action Buttons: Disconnect & Accept */}
+                  <View style={styles.incomingCallActionRow}>
+                    {/* Disconnect Button (Red) */}
+                    <TouchableOpacity
+                      onPress={rejectCall}
+                      style={styles.incomingActionBtnItem}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Disconnect Call"
+                    >
+                      <View style={styles.incomingDisconnectCircle}>
+                        <Ionicons name="call" size={30} color="#FFFFFF" style={{ transform: [{ rotate: '135deg' }] }} />
+                      </View>
+                      <Text style={styles.incomingDisconnectLabel}>Disconnect</Text>
+                    </TouchableOpacity>
+
+                    {/* Accept Button (Green) */}
+                    <TouchableOpacity
+                      onPress={acceptCall}
+                      style={styles.incomingActionBtnItem}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Accept Call"
+                    >
+                      <View style={styles.incomingAcceptCircle}>
+                        <Ionicons name="call" size={30} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.incomingAcceptLabel}>Accept</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <>
+                {/* [🔴 REC] Top Recording Banner (Exact from Image 3) */}
+                <View style={styles.recBannerBox}>
+                  <View style={styles.recDot} />
+                  <Text style={styles.recBannerText}>
+                    [REC] Call may be recorded to ensure a quality experience
+                  </Text>
+                </View>
 
               {/* ================= CONNECTED AVATARS (EXACT MATCH TO IMAGE 3) ================= */}
               <View style={styles.connectedAvatarsRow}>
@@ -4943,18 +5003,24 @@ function App() {
                   <Text style={styles.floatingControlLabel}>Speaker</Text>
                 </TouchableOpacity>
 
-                {/* End Call Button (Opens Image 1 early disconnect modal) */}
+                {/* Disconnect Call Button */}
                 <TouchableOpacity
                   accessibilityRole="button"
-                  accessibilityLabel="End call"
-                  onPress={() => setShowEarlyDisconnectModal(true)}
+                  accessibilityLabel="Disconnect call"
+                  onPress={() => {
+                    if (call.status !== 'Connected') {
+                      endCall();
+                    } else {
+                      setShowEarlyDisconnectModal(true);
+                    }
+                  }}
                   style={styles.floatingControlBtn}
                   activeOpacity={0.8}
                 >
                   <View style={[styles.floatingControlIconCircle, styles.floatingControlEndCircle]}>
-                    <Ionicons name="close" size={26} color="#FFFFFF" />
+                    <Ionicons name="call" size={24} color="#FFFFFF" style={{ transform: [{ rotate: '135deg' }] }} />
                   </View>
-                  <Text style={styles.floatingControlLabel}>End</Text>
+                  <Text style={styles.floatingControlLabel}>Disconnect</Text>
                 </TouchableOpacity>
               </View>
 
@@ -5011,7 +5077,7 @@ function App() {
                           style={styles.earlyEndBtn}
                           activeOpacity={0.8}
                         >
-                          <Text style={styles.earlyEndBtnText}>End call</Text>
+                          <Text style={styles.earlyEndBtnText}>Disconnect Call</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -5093,6 +5159,44 @@ function App() {
                   </View>
                 </View>
               </Modal>
+                </>
+              )}
+            </View>
+          )}
+
+          {/* Top Banner for Incoming Call when user is on other screens */}
+          {call && call.direction === 'incoming' && (call.status === 'Ringing' || call.status === 'Calling') && screen !== 'call' && (
+            <View style={styles.incomingCallTopBanner}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }}>
+                <Image
+                  source={{
+                    uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (call.peer?.name || 'Learner'),
+                  }}
+                  style={styles.incomingBannerAvatar}
+                />
+                <View style={{ marginLeft: 10, flex: 1 }}>
+                  <Text style={styles.incomingBannerName} numberOfLines={1}>{call.peer?.name || 'Co-learner'}</Text>
+                  <Text style={styles.incomingBannerSub}>Incoming {call.type === 'video' ? 'video' : 'voice'} call...</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <TouchableOpacity
+                  onPress={rejectCall}
+                  style={styles.bannerDeclineBtn}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Disconnect incoming call"
+                >
+                  <Ionicons name="call" size={18} color="#FFFFFF" style={{ transform: [{ rotate: '135deg' }] }} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={acceptCall}
+                  style={styles.bannerAcceptBtn}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Accept incoming call"
+                >
+                  <Ionicons name="call" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -6260,6 +6364,158 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     backgroundColor: '#fff',
+  },
+  incomingCallFullContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+    backgroundColor: '#0F172A',
+  },
+  incomingCallerCard: {
+    alignItems: 'center',
+    marginTop: 40,
+  },
+  incomingAvatarWrapper: {
+    width: 136,
+    height: 136,
+    borderRadius: 68,
+    borderWidth: 4,
+    borderColor: '#6366F1',
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  incomingAvatarImage: {
+    width: 126,
+    height: 126,
+    borderRadius: 63,
+  },
+  incomingCallerTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  incomingCallSubtitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#818CF8',
+    marginBottom: 8,
+  },
+  incomingMetaText: {
+    fontSize: 14,
+    color: '#94A3B8',
+  },
+  incomingCallActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingHorizontal: 30,
+    marginBottom: 30,
+  },
+  incomingActionBtnItem: {
+    alignItems: 'center',
+  },
+  incomingDisconnectCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  incomingDisconnectLabel: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  incomingAcceptCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  incomingAcceptLabel: {
+    color: '#10B981',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  incomingCallTopBanner: {
+    position: 'absolute',
+    top: 10,
+    left: 14,
+    right: 14,
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 9999,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  incomingBannerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#334155',
+  },
+  incomingBannerName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  incomingBannerSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  bannerDeclineBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerAcceptBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   callScreen: {
     flex: 1,
