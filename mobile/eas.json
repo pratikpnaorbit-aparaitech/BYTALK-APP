@@ -6,6 +6,17 @@
   "build": {
     "preview": {
       "distribution": "internal",
+      "developmentClient": false,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://bytalk-app.onrender.com"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "apk": {
+      "distribution": "internal",
+      "developmentClient": false,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://bytalk-app.onrender.com"
       },
@@ -14,6 +25,7 @@
       }
     },
     "production": {
+      "developmentClient": false,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://bytalk-app.onrender.com"
       },
