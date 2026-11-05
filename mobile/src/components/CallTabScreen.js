@@ -120,8 +120,19 @@ export default function CallTabScreen({
   const userAvatar = currentUser?.avatarUrl || currentUser?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Prateek&top=shortFlat&clothingColor=blue01';
   const streakCount = currentUser?.streak ?? 0;
 
+  // Deduplicated data sets
+  const uniqueFriends = Array.from(
+    new Map((friends || []).map((f) => [String(f.id || f.name), f])).values()
+  );
+  const uniquePendingRequests = Array.from(
+    new Map((pendingRequests || []).map((r) => [String(r.id), r])).values()
+  );
+  const uniqueRecentCoLearners = Array.from(
+    new Map((recentCoLearners || []).map((r) => [String(r.id || r.name), r])).values()
+  );
+
   // Filtered friends
-  const filteredFriends = friends.filter((f) =>
+  const filteredFriends = uniqueFriends.filter((f) =>
     (f.name || '').toLowerCase().includes(searchFriendText.toLowerCase())
   );
 
