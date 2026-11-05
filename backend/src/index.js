@@ -475,6 +475,7 @@ async function getActivePlans() {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(
   cors({
     origin: '*',
@@ -1315,6 +1316,21 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
     let paymentLinkUrl = null;
     let paymentLinkId = null;
     try {
+      const cleanPhone = (user.phone || '').replace(/\D/g, '');
+      const customer = {
+        name: user.displayName || user.name || 'BYTALK Learner',
+        email: user.email || 'learner@bytalk.com',
+      };
+      // Only include contact if valid 10+ digits and not all repeating numbers
+      if (cleanPhone.length >= 10 && !/^(.)\1+$/.test(cleanPhone)) {
+        customer.contact = cleanPhone.slice(-10);
+      }
+
+      const host = req.get('host') || 'k-app.onrender.com';
+      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+      const scheme = isLocal ? req.protocol : 'https';
+      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}`;
+
       const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
         method: 'POST',
         headers: {
@@ -1326,11 +1342,7 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
           currency: 'INR',
           accept_partial: false,
           description: `BYTALK PRO - ${duration}`,
-          customer: {
-            name: user.displayName || user.name || 'BYTALK Learner',
-            email: user.email || 'learner@bytalk.com',
-            contact: user.phone || '9999999999',
-          },
+          customer,
           notify: { sms: false, email: false },
           reminder_enable: false,
           notes: {
@@ -1339,7 +1351,7 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
             planId,
             duration,
           },
-          callback_url: `${req.protocol}://${req.get('host')}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}`,
+          callback_url: callbackUrl,
           callback_method: 'get',
         }),
       });
@@ -1348,6 +1360,8 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
         paymentLinkUrl = plinkData.short_url;
         paymentLinkId = plinkData.id;
         console.log(`Razorpay payment link created: ${paymentLinkUrl} (${paymentLinkId})`);
+      } else {
+        console.warn('[Razorpay Payment Link API error]', plinkData);
       }
     } catch (plinkErr) {
       console.warn('[Razorpay Payment Link Warning]', plinkErr.message);
@@ -1638,8 +1652,55 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
 });
 
 app.get('/api/subscription/razorpay/checkout-page', async (req, res) => {
-  const { orderId, amount, name, email, planId = '3months', token } = req.query;
-  if (!orderId) return res.status(400).send('Missing orderId');
+  const { orderId, amount, name, email, planId = '3months', token, paymentLink } = req.query;
+  if (paymentLink && paymentLink.startsWith('http')) {
+    return res.redirect(paymentLink);
+  }
+  if (!orderId && !amount) return res.status(400).send('Missing orderId or amount');
+
+  // Attempt to redirect to hosted Razorpay payment link (rzp.io) to avoid domain whitelist restrictions
+  if (RAZORPAY_AVAILABLE && amount) {
+    try {
+      const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+      const cleanPhone = (req.query.phone || '').replace(/\D/g, '');
+      const customer = {
+        name: name || 'BYTALK Learner',
+        email: email || 'learner@bytalk.com',
+      };
+      if (cleanPhone.length >= 10 && !/^(.)\1+$/.test(cleanPhone)) {
+        customer.contact = cleanPhone.slice(-10);
+      }
+      const host = req.get('host') || 'k-app.onrender.com';
+      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+      const scheme = isLocal ? req.protocol : 'https';
+      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${token || ''}&planId=${planId}&duration=PRO`;
+
+      const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: Number(amount),
+          currency: 'INR',
+          accept_partial: false,
+          description: `BYTALK PRO Subscription`,
+          customer,
+          notify: { sms: false, email: false },
+          reminder_enable: false,
+          callback_url: callbackUrl,
+          callback_method: 'get',
+        }),
+      });
+      const plinkData = await plinkRes.json();
+      if (plinkRes.ok && plinkData.short_url) {
+        return res.redirect(plinkData.short_url);
+      }
+    } catch (e) {
+      console.warn('[checkout-page plink fallback error]', e.message);
+    }
+  }
 
   const html = `<!DOCTYPE html>
 <html>

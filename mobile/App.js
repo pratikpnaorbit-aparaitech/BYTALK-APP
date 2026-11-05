@@ -1281,6 +1281,13 @@ function App() {
     return Math.max(0, FREE_TRIAL_TOTAL_SECONDS - usedFreeSeconds);
   }
 
+  function formatCallTime(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
   function hasAudioEntitlement() {
     if (isPaidSubscriber()) return true;
     return getFreeTrialSecondsRemaining() > 0;
@@ -2428,13 +2435,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (call?.status !== 'Connected' || !call.connectedAt) {
+    if (call?.status !== 'Connected') {
       setCallDuration(0);
       return undefined;
     }
+    const callStart = call.connectedAt ? Date.parse(call.connectedAt) : Date.now();
     initialUsedFreeSecondsRef.current = usedFreeSeconds;
     const updateDuration = () => {
-      const dur = Math.max(0, Math.floor((Date.now() - Date.parse(call.connectedAt)) / 1000));
+      const dur = Math.max(0, Math.floor((Date.now() - callStart) / 1000));
       setCallDuration(dur);
       if (!isPaidSubscriber()) {
         const totalUsed = (initialUsedFreeSecondsRef.current || 0) + dur;
@@ -2442,8 +2450,8 @@ function App() {
           saveUsedFreeSeconds(FREE_TRIAL_TOTAL_SECONDS);
           endCall();
           Alert.alert(
-            '5 Minutes Free Trial Ended',
-            'Your first 5 minutes free trial has ended. Please purchase a subscription to continue speaking practice.',
+            '10 Minutes Daily Free Trial Ended',
+            'Your daily 10 minutes free trial has ended. Please purchase a subscription to continue speaking practice.',
             [
               { text: 'Buy Subscription', onPress: () => openSubscription() },
               { text: 'Cancel', style: 'cancel' },
@@ -4823,10 +4831,18 @@ function App() {
                 <>
                 {/* [🔴 REC] Top Recording Banner (Exact from Image 3) */}
                 <View style={styles.recBannerBox}>
-                  <View style={styles.recDot} />
-                  <Text style={styles.recBannerText}>
-                    [REC] Call may be recorded to ensure a quality experience
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                    <View style={styles.recDot} />
+                    <Text style={styles.recBannerText}>
+                      [REC] Call may be recorded to ensure a quality experience
+                    </Text>
+                  </View>
+                  {call.status === 'Connected' && (
+                    <View style={styles.recBannerTimeBox}>
+                      <Ionicons name="time-outline" size={13} color="#DC2626" style={{ marginRight: 3 }} />
+                      <Text style={styles.recBannerTimeText}>{formatCallTime(callDuration)}</Text>
+                    </View>
+                  )}
                 </View>
 
               {/* ================= CONNECTED AVATARS (EXACT MATCH TO IMAGE 3) ================= */}
@@ -4865,6 +4881,21 @@ function App() {
                     </Text>
                   </View>
                 </View>
+              </View>
+
+              {/* Active Call Live Timer Badge */}
+              <View style={styles.activeCallTimerPill}>
+                <View style={[styles.activeCallPulseDot, { backgroundColor: call.status === 'Connected' ? '#10B981' : '#F59E0B' }]} />
+                <Ionicons name="time" size={16} color="#4F46E5" style={{ marginRight: 6 }} />
+                <Text style={styles.activeCallTimerLabel}>Call Time:</Text>
+                <Text style={styles.activeCallTimerValue}>
+                  {call.status === 'Connected' ? formatCallTime(callDuration) : `${call.status || 'Connecting'}...`}
+                </Text>
+                {call.status === 'Connected' && (
+                  <View style={styles.activeCallLiveTag}>
+                    <Text style={styles.activeCallLiveTagText}>LIVE</Text>
+                  </View>
+                )}
               </View>
 
               {/* Partner Practice Stat Green Banner (Image 3) */}
@@ -8892,6 +8923,64 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   /* ================= CALL SCREEN STYLES (IMAGE 3) ================= */
+  activeCallTimerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  activeCallPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  activeCallTimerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4F46E5',
+    marginRight: 6,
+  },
+  activeCallTimerValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E1B4B',
+  },
+  activeCallLiveTag: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  activeCallLiveTagText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  recBannerTimeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  recBannerTimeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
   recBannerBox: {
     flexDirection: 'row',
     alignItems: 'center',

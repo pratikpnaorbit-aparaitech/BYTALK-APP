@@ -153,35 +153,65 @@ export default function ProSubscriptionScreen({
 
   // Auto-verify when returning to app from PhonePe / Paytm / GPay / Browser
   useEffect(() => {
-    const handleAppStateChange = async (nextAppState) => {
-      if (nextAppState === 'active' && pendingPaymentSessionRef.current) {
-        const session = pendingPaymentSessionRef.current;
+    const checkPendingPayment = async () => {
+      let session = pendingPaymentSessionRef.current;
+      if (!session && typeof window !== 'undefined' && window.localStorage) {
         try {
-          if (onRequest) {
-            const statusRes = await onRequest('subscription/razorpay/check-payment-status', {
-              method: 'POST',
-              body: JSON.stringify({
-                paymentLinkId: session.paymentLinkId,
-                orderId: session.orderId,
-                planId: session.planId,
-                duration: session.duration,
-              }),
-            });
-            if (statusRes?.active || statusRes?.isPaid) {
-              pendingPaymentSessionRef.current = null;
-              pendingSubscriptionRef.current = statusRes?.subscription;
-              setShowSuccessModal(true);
+          const stored = window.localStorage.getItem('bytalk_pending_payment');
+          if (stored) session = JSON.parse(stored);
+        } catch {}
+      }
+      if (!session || (!session.paymentLinkId && !session.orderId)) return;
+
+      try {
+        if (onRequest) {
+          const statusRes = await onRequest('subscription/razorpay/check-payment-status', {
+            method: 'POST',
+            body: JSON.stringify({
+              paymentLinkId: session.paymentLinkId,
+              orderId: session.orderId,
+              planId: session.planId,
+              duration: session.duration,
+            }),
+          });
+          if (statusRes?.active || statusRes?.isPaid) {
+            pendingPaymentSessionRef.current = null;
+            if (typeof window !== 'undefined' && window.localStorage) {
+              try { window.localStorage.removeItem('bytalk_pending_payment'); } catch {}
             }
+            setShowPaymentBanner(false);
+            pendingSubscriptionRef.current = statusRes?.subscription;
+            setShowSuccessModal(true);
           }
-        } catch (e) {
-          console.log('[Auto-check payment status]', e.message);
         }
+      } catch (e) {
+        console.log('[Auto-check payment status]', e.message);
+      }
+    };
+
+    // Check on mount in case user returned from redirect
+    checkPendingPayment();
+
+    const handleAppStateChange = (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkPendingPayment();
       }
     };
 
     const sub = AppState.addEventListener('change', handleAppStateChange);
+
+    // Also listen to web focus / visibility
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('focus', checkPendingPayment);
+      document.addEventListener('visibilitychange', checkPendingPayment);
+    }
+
     return () => {
       sub.remove();
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener('focus', checkPendingPayment);
+        document.removeEventListener('visibilitychange', checkPendingPayment);
+      }
     };
   }, [onRequest]);
 
@@ -231,148 +261,105 @@ export default function ProSubscriptionScreen({
 
       const keyId = orderData?.keyId || 'rzp_live_TvoCCSairIqmOY';
       const orderId = orderData?.orderId;
+      const paymentLink = orderData?.paymentLink;
 
-      // 2. Web Razorpay standard checkout
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        const loadScript = () =>
-          new Promise((resolve) => {
-            if (window.Razorpay) return resolve(true);
-            const script = document.createElement('script');
-            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-            script.onload = () => resolve(true);
-            script.onerror = () => resolve(false);
-            document.body.appendChild(script);
-          });
+      // Save pending payment session so auto-verify works on return
+      const session = {
+        paymentLinkId: orderData?.paymentLinkId,
+        orderId: orderId,
+        planId: selectedPlanId,
+        duration: selectedPlan.duration,
+      };
+      pendingPaymentSessionRef.current = session;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try { window.localStorage.setItem('bytalk_pending_payment', JSON.stringify(session)); } catch {}
+      }
+      setShowPaymentBanner(true);
 
-        const loaded = await loadScript();
-        if (loaded && window.Razorpay) {
-          const options = {
-            key: keyId,
-            amount: orderData?.amount || Math.round(finalPrice * 100),
-            currency: 'INR',
-            name: 'BYTALK',
-            description: `BYTALK PRO - ${selectedPlan.duration}`,
-            order_id: orderId,
-            prefill: {
-              name: user?.displayName || user?.name || 'BYTALK Learner',
-              email: user?.email || '',
-            },
-            theme: {
-              color: '#5843E8',
-            },
-            handler: async (response) => {
-              setIsProcessing(true);
-              try {
-                let verifyData = null;
-                if (onRequest) {
-                  verifyData = await onRequest('subscription/razorpay/verify-payment', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      razorpay_order_id: response.razorpay_order_id,
-                      razorpay_payment_id: response.razorpay_payment_id,
-                      razorpay_signature: response.razorpay_signature,
-                      planId: selectedPlanId,
-                      duration: selectedPlan.duration,
-                      amount: finalPrice,
-                    }),
-                  });
-                }
-                pendingSubscriptionRef.current = verifyData?.subscription;
-                setShowSuccessModal(true);
-              } catch (verifyErr) {
-                Alert.alert('Verification Issue', verifyErr.message || 'Payment received but verification had a problem.');
-              } finally {
-                setIsProcessing(false);
-              }
-            },
-            modal: {
-              ondismiss: () => {
-                setIsProcessing(false);
+      // 2. Direct Razorpay Payment Link (hosted on rzp.io - direct PhonePe, Paytm, Google Pay, UPI without domain restriction)
+      if (paymentLink) {
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.location.href = paymentLink;
+          return;
+        } else {
+          await Linking.openURL(paymentLink);
+          Alert.alert(
+            'Complete Payment',
+            `We opened Razorpay gateway for ₹${finalPrice}.\n\nSelect PhonePe, Paytm, Google Pay, or any UPI app to pay.\n\nOnce completed, tap "Verify & Activate PRO" below.`,
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => {
+                  pendingPaymentSessionRef.current = null;
+                  if (typeof window !== 'undefined' && window.localStorage) {
+                    try { window.localStorage.removeItem('bytalk_pending_payment'); } catch {}
+                  }
+                  setShowPaymentBanner(false);
+                },
               },
-            },
-          };
-          const rzp = new window.Razorpay(options);
-          rzp.open();
+              {
+                text: 'Verify & Activate PRO',
+                onPress: async () => {
+                  setIsProcessing(true);
+                  try {
+                    let verified = false;
+                    if (onRequest) {
+                      const statusRes = await onRequest('subscription/razorpay/check-payment-status', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          paymentLinkId: orderData?.paymentLinkId,
+                          orderId: orderData?.orderId,
+                          planId: selectedPlanId,
+                          duration: selectedPlan.duration,
+                        }),
+                      });
+
+                      if (statusRes?.active || statusRes?.isPaid) {
+                        verified = true;
+                        pendingPaymentSessionRef.current = null;
+                        pendingSubscriptionRef.current = statusRes?.subscription;
+                        setShowSuccessModal(true);
+                        return;
+                      }
+
+                      const subRes = await onRequest('subscription');
+                      if (subRes?.plan?.id === 'pro' || subRes?.plan?.id === 'basic') {
+                        verified = true;
+                        pendingPaymentSessionRef.current = null;
+                        setShowSuccessModal(true);
+                        return;
+                      }
+                    }
+
+                    if (!verified) {
+                      Alert.alert(
+                        'Payment Pending',
+                        'We have not yet received payment confirmation from Razorpay. If you already completed payment in PhonePe/Paytm, please wait a few seconds and tap "Verify & Activate PRO" again.',
+                        [{ text: 'OK' }]
+                      );
+                    }
+                  } catch (verifyErr) {
+                    Alert.alert('Verification Notice', verifyErr.message || 'Please try tapping "Verify & Activate PRO" again.');
+                  } finally {
+                    setIsProcessing(false);
+                  }
+                },
+              },
+            ]
+          );
           return;
         }
       }
 
-      // 3. Native Mobile (iOS/Android) secure Razorpay link (Direct PhonePe, Paytm, Google Pay, UPI)
-      const payUrl = orderData?.paymentLink || (apiBase && orderId ? `${apiBase}/api/subscription/razorpay/checkout-page?orderId=${encodeURIComponent(orderId)}&amount=${orderData.amount}&name=${encodeURIComponent(user?.displayName || 'BYTALK Learner')}&email=${encodeURIComponent(user?.email || '')}&planId=${encodeURIComponent(selectedPlanId)}&token=${encodeURIComponent(activeAuthToken || '')}` : null);
-
+      // 3. Fallback: Hosted checkout page on server
+      const payUrl = apiBase && orderId ? `${apiBase}/api/subscription/razorpay/checkout-page?orderId=${encodeURIComponent(orderId)}&amount=${orderData?.amount || Math.round(finalPrice * 100)}&name=${encodeURIComponent(user?.displayName || 'BYTALK Learner')}&email=${encodeURIComponent(user?.email || '')}&planId=${encodeURIComponent(selectedPlanId)}&token=${encodeURIComponent(activeAuthToken || '')}` : null;
       if (payUrl) {
-        setShowPaymentBanner(true);
-        pendingPaymentSessionRef.current = {
-          paymentLinkId: orderData?.paymentLinkId,
-          orderId: orderData?.orderId,
-          planId: selectedPlanId,
-          duration: selectedPlan.duration,
-        };
-
-        // Open secure Razorpay payment URL in browser (supports PhonePe, Paytm, GPay, UPI intent)
-        await Linking.openURL(payUrl);
-
-        Alert.alert(
-          'Complete Payment',
-          `We opened Razorpay gateway for ₹${finalPrice}.\n\nSelect PhonePe, Paytm, Google Pay, or any UPI app to pay.\n\nOnce completed, tap "Verify & Activate PRO" below.`,
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel',
-              onPress: () => {
-                pendingPaymentSessionRef.current = null;
-              },
-            },
-            {
-              text: 'Verify & Activate PRO',
-              onPress: async () => {
-                setIsProcessing(true);
-                try {
-                  let verified = false;
-                  if (onRequest) {
-                    const statusRes = await onRequest('subscription/razorpay/check-payment-status', {
-                      method: 'POST',
-                      body: JSON.stringify({
-                        paymentLinkId: orderData?.paymentLinkId,
-                        orderId: orderData?.orderId,
-                        planId: selectedPlanId,
-                        duration: selectedPlan.duration,
-                      }),
-                    });
-
-                    if (statusRes?.active || statusRes?.isPaid) {
-                      verified = true;
-                      pendingPaymentSessionRef.current = null;
-                      pendingSubscriptionRef.current = statusRes?.subscription;
-                      setShowSuccessModal(true);
-                      return;
-                    }
-
-                    const subRes = await onRequest('subscription');
-                    if (subRes?.plan?.id === 'pro' || subRes?.plan?.id === 'basic') {
-                      verified = true;
-                      pendingPaymentSessionRef.current = null;
-                      setShowSuccessModal(true);
-                      return;
-                    }
-                  }
-
-                  if (!verified) {
-                    Alert.alert(
-                      'Payment Pending',
-                      'We have not yet received payment confirmation from Razorpay. If you already completed payment in PhonePe/Paytm, please wait a few seconds and tap "Verify & Activate PRO" again.',
-                      [{ text: 'OK' }]
-                    );
-                  }
-                } catch (verifyErr) {
-                  Alert.alert('Verification Notice', verifyErr.message || 'Please try tapping "Verify & Activate PRO" again.');
-                } finally {
-                  setIsProcessing(false);
-                }
-              },
-            },
-          ]
-        );
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.location.href = payUrl;
+        } else {
+          await Linking.openURL(payUrl);
+        }
         return;
       }
 
