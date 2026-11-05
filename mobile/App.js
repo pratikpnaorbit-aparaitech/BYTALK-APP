@@ -43,6 +43,10 @@ import HistoryModal from './src/components/HistoryModal';
 
 const welcomeImage = require('./assets/bytalk-welcome-art.png');
 
+export const SERIF_FONT_FAMILY = Platform.OS === 'web'
+  ? '"Times New Roman", Times, Georgia, "Nimbus Roman No9 L", serif'
+  : (Platform.OS === 'ios' ? 'Times New Roman' : 'serif');
+
 const PRESET_ATTACHMENT_IMAGES = [
   { id: 'img1', name: 'Vocab_Flashcard.jpg', label: 'Daily Vocab Card', size: '1.2 MB', url: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=600&q=80', type: 'image' },
   { id: 'img2', name: 'Dialogue_Scene.jpg', label: 'Coffee Shop Scene', size: '1.8 MB', url: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=600&q=80', type: 'image' },
@@ -1540,10 +1544,10 @@ function App() {
   }
 
   async function notifyIncomingMessage(message) {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.Notification === 'undefined') return;
     try {
-      if (Notification.permission === 'granted' && document.hidden) {
-        new Notification('New BYTALK message', { body: String(message.text || '').slice(0, 120) });
+      if (window.Notification.permission === 'granted' && document.hidden) {
+        new window.Notification('New BYTALK message', { body: String(message.text || '').slice(0, 120) });
       }
     } catch (error) {
       console.warn('[BYTALK notification] unavailable', error?.message || 'permission denied');
@@ -1607,21 +1611,21 @@ function App() {
   }
 
   async function requestNotificationPermission() {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || !('Notification' in window)) return;
-    if (Notification.permission !== 'default') return;
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.Notification === 'undefined') return;
+    if (window.Notification.permission !== 'default') return;
     try {
-      await Notification.requestPermission();
+      await window.Notification.requestPermission();
     } catch (error) {
       console.warn('[BYTALK notification] permission request unavailable', error?.message || 'permission denied');
     }
   }
 
   async function notifyIncomingCall(incoming) {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.Notification === 'undefined') return;
     try {
-      if (Notification.permission === 'default') await Notification.requestPermission();
-      if (Notification.permission === 'granted' && document.hidden) {
-        new Notification(`Incoming ${incoming.type} call`, {
+      if (window.Notification.permission === 'default') await window.Notification.requestPermission();
+      if (window.Notification.permission === 'granted' && document.hidden) {
+        new window.Notification(`Incoming ${incoming.type} call`, {
           body: `${incoming.caller?.name || 'A BYTALK user'} is calling you.`,
         });
       }
@@ -3135,10 +3139,14 @@ function App() {
       const json = JSON.stringify(data, null, 2);
       if (Platform.OS === 'web' && typeof document !== 'undefined') {
         const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-        link.download = 'bytalk-personal-data.json';
-        link.click();
-        URL.revokeObjectURL(link.href);
+        const BlobClass = (typeof window !== 'undefined' && window.Blob) ? window.Blob : (typeof globalThis !== 'undefined' ? globalThis.Blob : null);
+        const UrlClass = (typeof window !== 'undefined' && window.URL) ? window.URL : (typeof globalThis !== 'undefined' ? globalThis.URL : null);
+        if (BlobClass && UrlClass) {
+          link.href = UrlClass.createObjectURL(new BlobClass([json], { type: 'application/json' }));
+          link.download = 'bytalk-personal-data.json';
+          link.click();
+          UrlClass.revokeObjectURL(link.href);
+        }
       } else {
         Alert.alert('Data ready', 'Your personal data was prepared. Downloading is available in the web app.');
       }
@@ -3614,33 +3622,35 @@ function App() {
                 </View>
               </View>
 
-              {/* Centered Brand Header */}
-              <View style={styles.authBrandHeader}>
-                <View style={styles.authBrandRow}>
-                  <Ionicons name="chatbubble-ellipses" size={36} color={COLORS.primary} />
-                  <Text style={styles.authBrandTitle}>
-                    BY<Text style={{ color: COLORS.primary }}>TALK</Text>
-                  </Text>
+              {/* Elevated Card Container */}
+              <View style={styles.authCardBox}>
+                {/* Centered Brand Header */}
+                <View style={styles.authBrandHeader}>
+                  <View style={styles.authBrandRow}>
+                    <Ionicons name="chatbubble-ellipses" size={36} color={COLORS.primary} />
+                    <Text style={styles.authBrandTitle}>
+                      BY<Text style={{ color: COLORS.primary }}>TALK</Text>
+                    </Text>
+                  </View>
+                  <Text style={styles.authBrandSubtitle}>Talk  •  Learn  •  Connect</Text>
                 </View>
-                <Text style={styles.authBrandSubtitle}>Talk  •  Learn  •  Connect</Text>
-              </View>
 
-              {/* Title & Subtitle */}
-              <View style={styles.authHeadingBlock}>
-                <Text style={styles.authHeadingTitle}>Welcome Back</Text>
-                <Text style={styles.authHeadingSubtitle}>Sign in to continue your language journey</Text>
-              </View>
-
-              {/* Server or Validation Error Alert */}
-              {loginError ? (
-                <View style={styles.errorAlertContainer}>
-                  <Ionicons name="alert-circle" size={18} color={COLORS.error} style={{ marginRight: 8 }} />
-                  <Text style={styles.errorAlertText}>{loginError}</Text>
+                {/* Title & Subtitle */}
+                <View style={styles.authHeadingBlock}>
+                  <Text style={styles.authHeadingTitle}>Welcome Back</Text>
+                  <Text style={styles.authHeadingSubtitle}>Sign in to continue your language journey</Text>
                 </View>
-              ) : null}
 
-              {/* Form Fields */}
-              <View style={styles.authForm}>
+                {/* Server or Validation Error Alert */}
+                {loginError ? (
+                  <View style={styles.errorAlertContainer}>
+                    <Ionicons name="alert-circle" size={18} color={COLORS.error} style={{ marginRight: 8 }} />
+                    <Text style={styles.errorAlertText}>{loginError}</Text>
+                  </View>
+                ) : null}
+
+                {/* Form Fields */}
+                <View style={styles.authForm}>
                 {/* Email Field */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Email Address</Text>
@@ -3746,6 +3756,7 @@ function App() {
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
+            </View>
 
               {/* Bottom Link to Registration */}
               <View style={[styles.footerLinkRow, styles.authFooterLinkRow]}>
@@ -3789,33 +3800,35 @@ function App() {
                 </View>
               </View>
 
-              {/* Centered Brand Header */}
-              <View style={styles.authBrandHeader}>
-                <View style={styles.authBrandRow}>
-                  <Ionicons name="chatbubble-ellipses" size={36} color={COLORS.primary} />
-                  <Text style={styles.authBrandTitle}>
-                    BY<Text style={{ color: COLORS.primary }}>TALK</Text>
-                  </Text>
+              {/* Elevated Card Container */}
+              <View style={styles.authCardBox}>
+                {/* Centered Brand Header */}
+                <View style={styles.authBrandHeader}>
+                  <View style={styles.authBrandRow}>
+                    <Ionicons name="chatbubble-ellipses" size={36} color={COLORS.primary} />
+                    <Text style={styles.authBrandTitle}>
+                      BY<Text style={{ color: COLORS.primary }}>TALK</Text>
+                    </Text>
+                  </View>
+                  <Text style={styles.authBrandSubtitle}>Talk  •  Learn  •  Connect</Text>
                 </View>
-                <Text style={styles.authBrandSubtitle}>Talk  •  Learn  •  Connect</Text>
-              </View>
 
-              {/* Title & Subtitle */}
-              <View style={styles.authHeadingBlock}>
-                <Text style={styles.authHeadingTitle}>Create Account</Text>
-                <Text style={styles.authHeadingSubtitle}>Start your language learning journey</Text>
-              </View>
-
-              {/* Server or Validation Error Alert */}
-              {regError ? (
-                <View style={styles.errorAlertContainer}>
-                  <Ionicons name="alert-circle" size={18} color={COLORS.error} style={{ marginRight: 8 }} />
-                  <Text style={styles.errorAlertText}>{regError}</Text>
+                {/* Title & Subtitle */}
+                <View style={styles.authHeadingBlock}>
+                  <Text style={styles.authHeadingTitle}>Create Account</Text>
+                  <Text style={styles.authHeadingSubtitle}>Start your language learning journey</Text>
                 </View>
-              ) : null}
 
-              {/* Form Fields */}
-              <View style={styles.authForm}>
+                {/* Server or Validation Error Alert */}
+                {regError ? (
+                  <View style={styles.errorAlertContainer}>
+                    <Ionicons name="alert-circle" size={18} color={COLORS.error} style={{ marginRight: 8 }} />
+                    <Text style={styles.errorAlertText}>{regError}</Text>
+                  </View>
+                ) : null}
+
+                {/* Form Fields */}
+                <View style={styles.authForm}>
                 {/* Full Name */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Full Name</Text>
@@ -3983,6 +3996,7 @@ function App() {
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
+            </View>
 
               {/* Bottom Link to Login */}
               <View style={[styles.footerLinkRow, styles.authFooterLinkRow]}>
@@ -4775,7 +4789,18 @@ function App() {
             </ScrollView>
           )}
 
-          {screen === 'call' && call && (
+          {screen === 'call' && (
+            !call ? (
+              <View style={[styles.callScreen, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' }]}>
+                <ActivityIndicator size="large" color="#6366F1" />
+                <Text style={{ marginTop: 14, fontSize: 16, color: '#334155', fontWeight: '700' }}>
+                  Connecting Co-learner...
+                </Text>
+                <Text style={{ marginTop: 6, fontSize: 13, color: '#94A3B8' }}>
+                  Setting up audio channel
+                </Text>
+              </View>
+            ) : (
             <View style={styles.callScreen}>
               {/* Hidden CallAudio to play remote audio */}
               <CallAudio stream={remoteStream} />
@@ -5079,7 +5104,7 @@ function App() {
                     />
                   </View>
                   <Text style={styles.refUserName} numberOfLines={1}>{name || 'Oliver'}</Text>
-                  <Text style={styles.refUserLevel}>Level : {user?.level || '1'}</Text>
+                  <Text style={styles.refUserLevel}>Level : {level ? (String(level).includes('Level') ? String(level).replace(/Level\s*:\s*/i, '').trim() : String(level)) : '1'}</Text>
                 </View>
 
                 {/* Center: Live Timer + Action Buttons (00 : 52, Green Speaker, Red End Call) */}
@@ -5168,7 +5193,7 @@ function App() {
                   <Text style={styles.refUserName} numberOfLines={1}>
                     {call.peer?.isPro ? '👑 ' : ''}{call.peer?.name || 'sarah'}
                   </Text>
-                  <Text style={styles.refUserLevel}>Level : {call.peer?.level || '1'}</Text>
+                  <Text style={styles.refUserLevel}>Level : {call.peer?.level ? (String(call.peer.level).includes('Level') ? String(call.peer.level).replace(/Level\s*:\s*/i, '').trim() : String(call.peer.level)) : '1'}</Text>
                 </View>
               </View>
 
@@ -5474,6 +5499,7 @@ function App() {
                 </>
               )}
             </View>
+            )
           )}
 
           {/* Top Banner for Incoming Call when user is on other screens */}
@@ -6366,7 +6392,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   brandTitle: {
-    fontSize: 27,
+    fontFamily: SERIF_FONT_FAMILY,
+    fontSize: 28,
     fontWeight: '900',
     color: COLORS.textPrimary,
     letterSpacing: -0.5,
@@ -6385,7 +6412,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   heroMainTitle: {
-    fontSize: Math.min(31, Math.max(25, windowWidth * 0.075)),
+    fontFamily: SERIF_FONT_FAMILY,
+    fontSize: Math.min(32, Math.max(26, windowWidth * 0.075)),
     fontWeight: '800',
     color: COLORS.textPrimary,
     textAlign: 'center',
@@ -6465,15 +6493,30 @@ const styles = StyleSheet.create({
   /* Auth Screens Common Styles (Login & Registration) */
   authScrollContainer: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 24,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+  },
+  authCardBox: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 26,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 4,
+    marginBottom: 16,
   },
   authTopNav: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 12,
     marginTop: 4,
   },
   backButton: {
@@ -6488,7 +6531,7 @@ const styles = StyleSheet.create({
   },
   authBrandHeader: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   authBrandRow: {
     flexDirection: 'row',
@@ -6501,11 +6544,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   authBrandTitle: {
-    fontSize: 24,
+    fontFamily: SERIF_FONT_FAMILY,
+    fontSize: 27,
     fontWeight: '900',
     color: COLORS.textPrimary,
     letterSpacing: -0.5,
-    lineHeight: 30,
+    lineHeight: 34,
   },
   authBrandSubtitle: {
     fontSize: 11,
@@ -6515,11 +6559,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   authHeadingBlock: {
-    marginBottom: 22,
+    marginBottom: 20,
     alignItems: 'center',
   },
   authHeadingTitle: {
-    fontSize: 26,
+    fontFamily: SERIF_FONT_FAMILY,
+    fontSize: 28,
     fontWeight: '800',
     color: COLORS.textPrimary,
     letterSpacing: -0.5,
@@ -6566,16 +6611,16 @@ const styles = StyleSheet.create({
   inputFieldBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
-    borderColor: COLORS.border,
+    borderColor: '#E2E8F0',
     borderRadius: 14,
     paddingHorizontal: 14,
     height: 52,
   },
   inputFieldBoxFocused: {
     borderColor: COLORS.primary,
-    backgroundColor: '#FFFDFB',
+    backgroundColor: '#FFFFFF',
   },
   authInput: {
     flex: 1,
