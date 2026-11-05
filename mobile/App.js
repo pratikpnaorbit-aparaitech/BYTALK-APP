@@ -4827,7 +4827,221 @@ function App() {
                     </TouchableOpacity>
                   </View>
                 </View>
+              ) : call.type === 'video' ? (
+                /* ================= FULL VIDEO CALL SCREEN ================= */
+                <View style={styles.videoCallContainer}>
+                  {/* Remote Video Stream (Main View) */}
+                  <View style={styles.videoRemoteWrapper}>
+                    {remoteStream && remoteStream.getVideoTracks().length > 0 ? (
+                      <CallVideo
+                        stream={remoteStream}
+                        label={call.peer?.name || 'Co-learner'}
+                        mirror={false}
+                        style={styles.videoRemoteStream}
+                      />
+                    ) : (
+                      <View style={styles.videoPlaceholderContainer}>
+                        <View style={styles.videoPlaceholderAvatarBorder}>
+                          <Image
+                            source={{
+                              uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (call.peer?.name || 'Srihari'),
+                            }}
+                            style={styles.videoPlaceholderAvatarImg}
+                          />
+                        </View>
+                        <Text style={styles.videoPlaceholderName}>
+                          {call.peer?.name || 'Co-learner'}
+                        </Text>
+                        <View style={styles.videoStatusPill}>
+                          <View style={[styles.activeCallPulseDot, { backgroundColor: call.status === 'Connected' ? '#10B981' : '#F59E0B' }]} />
+                          <Text style={styles.videoStatusPillText}>
+                            {call.status === 'Connected' ? 'Video Connected • Camera Ready' : `${call.status || 'Connecting'}...`}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Top Overlay: Partner Name, Live Timer, and Add Friend Button */}
+                    <View style={styles.videoTopOverlay}>
+                      <View style={styles.videoTopInfoPill}>
+                        <Text style={styles.videoTopPeerName} numberOfLines={1}>
+                          {call.peer?.isPro ? '👑 ' : ''}{call.peer?.name || 'Srihari'}
+                        </Text>
+                        <View style={styles.videoTopTimerRow}>
+                          <View style={styles.activeCallLiveTag}>
+                            <Text style={styles.activeCallLiveTagText}>LIVE</Text>
+                          </View>
+                          <Text style={styles.videoTopTimerText}>
+                            {formatCallTime(callDuration)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        onPress={() => handleSendFriendRequest(call.peer)}
+                        disabled={friendRequestSentInCall}
+                        style={[styles.videoFriendBtn, friendRequestSentInCall && styles.videoFriendBtnSent]}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons
+                          name={friendRequestSentInCall ? 'checkmark-circle' : 'person-add'}
+                          size={14}
+                          color="#FFFFFF"
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={styles.videoFriendBtnText}>
+                          {friendRequestSentInCall ? 'Sent' : 'Add Friend'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Floating Local Video PiP (Picture-in-Picture) */}
+                    <View style={styles.videoLocalPipWrapper}>
+                      {cameraEnabled && localStream && localStream.getVideoTracks().length > 0 ? (
+                        <CallVideo
+                          stream={localStream}
+                          label="You"
+                          mirror={true}
+                          style={styles.videoLocalPipStream}
+                        />
+                      ) : (
+                        <View style={styles.videoLocalPipPlaceholder}>
+                          <Ionicons name="videocam-off" size={24} color="#94A3B8" />
+                          <Text style={styles.videoLocalPipOffText}>Camera Off</Text>
+                        </View>
+                      )}
+                      {/* Flip Camera Button on PiP */}
+                      <TouchableOpacity
+                        onPress={async () => {
+                          if (localStreamRef.current) {
+                            try {
+                              await switchCamera(localStreamRef.current);
+                            } catch (e) {
+                              console.warn('Switch camera error:', e);
+                            }
+                          }
+                        }}
+                        style={styles.videoPipFlipBtn}
+                        activeOpacity={0.7}
+                        accessibilityLabel="Flip camera"
+                      >
+                        <Ionicons name="camera-reverse" size={16} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <View style={styles.videoPipLabelPill}>
+                        <Text style={styles.videoPipLabelText}>You</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Bottom Video Floating Toolbar */}
+                  <View style={styles.videoControlBar}>
+                    {/* 1. Mute/Unmute Mic */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'}
+                      onPress={() => {
+                        const nextMuted = !muted;
+                        localStreamRef.current?.getAudioTracks().forEach((track) => {
+                          track.enabled = !nextMuted;
+                        });
+                        setMuted(nextMuted);
+                      }}
+                      style={styles.videoControlBtn}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.videoControlCircle, muted && styles.videoControlCircleActive]}>
+                        <Ionicons name={muted ? 'mic-off' : 'mic'} size={22} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.videoControlLabel}>{muted ? 'Unmute' : 'Mute'}</Text>
+                    </TouchableOpacity>
+
+                    {/* 2. Camera On/Off */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
+                      onPress={() => {
+                        const nextCamera = !cameraEnabled;
+                        localStreamRef.current?.getVideoTracks().forEach((track) => {
+                          track.enabled = nextCamera;
+                        });
+                        setCameraEnabled(nextCamera);
+                      }}
+                      style={styles.videoControlBtn}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.videoControlCircle, !cameraEnabled && styles.videoControlCircleActive]}>
+                        <Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={22} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.videoControlLabel}>{cameraEnabled ? 'Camera' : 'Cam Off'}</Text>
+                    </TouchableOpacity>
+
+                    {/* 3. Flip Camera */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Flip camera"
+                      onPress={async () => {
+                        if (localStreamRef.current) {
+                          try {
+                            await switchCamera(localStreamRef.current);
+                          } catch (e) {
+                            console.warn('Switch camera error:', e);
+                          }
+                        }
+                      }}
+                      style={styles.videoControlBtn}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.videoControlCircle}>
+                        <Ionicons name="camera-reverse" size={22} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.videoControlLabel}>Flip</Text>
+                    </TouchableOpacity>
+
+                    {/* 4. Speaker */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Toggle speaker"
+                      onPress={() => {
+                        try {
+                          const nextSpeaker = !speakerEnabled;
+                          setAudioRoute(nextSpeaker);
+                          setSpeakerEnabled(nextSpeaker);
+                        } catch (error) {
+                          setCallNotice(error.message || 'Speaker control unavailable.');
+                        }
+                      }}
+                      style={styles.videoControlBtn}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.videoControlCircle, speakerEnabled && styles.videoControlCircleSpeaker]}>
+                        <Ionicons name="volume-high" size={22} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.videoControlLabel}>Speaker</Text>
+                    </TouchableOpacity>
+
+                    {/* 5. Disconnect Call */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Disconnect video call"
+                      onPress={() => {
+                        if (call.status !== 'Connected') {
+                          endCall();
+                        } else {
+                          setShowEarlyDisconnectModal(true);
+                        }
+                      }}
+                      style={styles.videoControlBtn}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.videoControlCircle, styles.videoControlCircleEnd]}>
+                        <Ionicons name="call" size={24} color="#FFFFFF" style={{ transform: [{ rotate: '135deg' }] }} />
+                      </View>
+                      <Text style={styles.videoControlLabel}>Disconnect</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               ) : (
+                /* ================= AUDIO CALL SCREEN (IMAGE 3) ================= */
                 <>
                 {/* [🔴 REC] Top Recording Banner (Exact from Image 3) */}
                 <View style={styles.recBannerBox}>
@@ -8921,6 +9135,245 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '800',
+  },
+  /* ================= VIDEO CALL STYLES ================= */
+  videoCallContainer: {
+    flex: 1,
+    backgroundColor: '#0B0F19',
+    position: 'relative',
+  },
+  videoRemoteWrapper: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#0F172A',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  videoRemoteStream: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+  },
+  videoPlaceholderContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F172A',
+    padding: 24,
+  },
+  videoPlaceholderAvatarBorder: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 4,
+    borderColor: '#6366F1',
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  videoPlaceholderAvatarImg: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  videoPlaceholderName: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  videoStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+  },
+  videoStatusPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#CBD5E1',
+  },
+  videoTopOverlay: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 20,
+  },
+  videoTopInfoPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    maxWidth: '65%',
+  },
+  videoTopPeerName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginRight: 8,
+  },
+  videoTopTimerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  videoTopTimerText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    marginLeft: 6,
+  },
+  videoFriendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.88)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#818CF8',
+  },
+  videoFriendBtnSent: {
+    backgroundColor: 'rgba(16, 185, 129, 0.88)',
+    borderColor: '#34D399',
+  },
+  videoFriendBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  videoLocalPipWrapper: {
+    position: 'absolute',
+    top: 60,
+    right: 14,
+    width: 105,
+    height: 145,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#1E293B',
+    borderWidth: 2,
+    borderColor: '#6366F1',
+    zIndex: 25,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  videoLocalPipStream: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+  },
+  videoLocalPipPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E293B',
+  },
+  videoLocalPipOffText: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  videoPipFlipBtn: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoPipLabelPill: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  videoPipLabelText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  videoControlBar: {
+    position: 'absolute',
+    bottom: 24,
+    left: 12,
+    right: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    borderRadius: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    zIndex: 30,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 12,
+  },
+  videoControlBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoControlCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  videoControlCircleActive: {
+    backgroundColor: '#EF4444',
+  },
+  videoControlCircleSpeaker: {
+    backgroundColor: '#6366F1',
+  },
+  videoControlCircleEnd: {
+    backgroundColor: '#DC2626',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  videoControlLabel: {
+    color: '#CBD5E1',
+    fontSize: 11,
+    fontWeight: '600',
   },
   /* ================= CALL SCREEN STYLES (IMAGE 3) ================= */
   activeCallTimerPill: {

@@ -2,38 +2,53 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text } from 'react-native';
 
 export default function CallVideo({ stream, label, style, mirror = false }) {
-  const containerRef = useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !stream) return undefined;
-
-    const video = document.createElement('video');
-    video.autoplay = true;
-    video.playsInline = true;
-    video.muted = mirror;
-    video.srcObject = stream;
-    Object.assign(video.style, {
-      width: '100%',
-      height: '100%',
-      objectFit: 'cover',
-      transform: mirror ? 'scaleX(-1)' : 'none',
-      backgroundColor: '#17172F',
-    });
-    container.appendChild(video);
-    video.play().catch(() => {
-      video.controls = true;
-    });
+    const el = videoRef.current;
+    if (el && stream) {
+      try {
+        el.srcObject = stream;
+        el.play().catch(() => {});
+      } catch (err) {
+        console.warn('CallVideo stream assignment error:', err);
+      }
+    }
     return () => {
-      video.pause();
-      video.srcObject = null;
-      if (container.contains(video)) container.removeChild(video);
+      if (el) {
+        try {
+          el.pause();
+          el.srcObject = null;
+        } catch {}
+      }
     };
-  }, [stream, mirror]);
+  }, [stream]);
+
+  if (!stream) {
+    return (
+      <View style={[style, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A' }]}>
+        <Text style={{ color: '#94A3B8', fontSize: 13, textAlign: 'center', paddingHorizontal: 12 }}>
+          {label || 'Camera unavailable'}
+        </Text>
+      </View>
+    );
+  }
 
   return (
-    <View ref={containerRef} style={style}>
-      {!stream && <Text style={{ color: '#FFFFFF', textAlign: 'center', paddingTop: 16 }}>{label}</Text>}
+    <View style={[style, { overflow: 'hidden', backgroundColor: '#000000' }]}>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={mirror}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          transform: mirror ? 'scaleX(-1)' : 'none',
+          backgroundColor: '#000000',
+        }}
+      />
     </View>
   );
 }
