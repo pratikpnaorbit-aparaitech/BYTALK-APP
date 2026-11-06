@@ -20,6 +20,7 @@ import {
   Switch,
   BackHandler,
   Modal,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -959,6 +960,29 @@ function App() {
   const [screen, setScreen] = useState('welcome');
   const [activeBottomTab, setActiveBottomTab] = useState('home');
 
+  const authFadeAnim = useRef(new Animated.Value(1)).current;
+  const authSlideAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (screen === 'login' || screen === 'register' || screen === 'welcome') {
+      authFadeAnim.setValue(0);
+      authSlideAnim.setValue(24);
+      Animated.parallel([
+        Animated.timing(authFadeAnim, {
+          toValue: 1,
+          duration: 380,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.spring(authSlideAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 50,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]).start();
+    }
+  }, [screen]);
+
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [userStars, setUserStars] = useState(40);
@@ -1353,10 +1377,23 @@ function App() {
       if (targetUser.id) {
         await request('friends/request', { method: 'POST', body: { targetUserId: targetUser.id } });
       }
-    } catch {}
-    setFriendRequestSentInCall(true);
-    loadFriends();
-    Alert.alert('Friend Request Sent! 🤝', `Your friend request has been sent to ${targetUser.name || 'Co-learner'}. When accepted, you can chat, video call, and voice call directly from Friends.`);
+      setFriendRequestSentInCall(true);
+      loadFriends();
+      Alert.alert('Friend Request Sent! 🤝', `Your friend request has been sent to ${targetUser.name || 'Co-learner'}. When accepted, you can chat, video call, and voice call directly from Friends.`);
+    } catch (err) {
+      if (err.code === 'PRO_SUBSCRIPTION_REQUIRED' || (err.message && err.message.includes('PRO subscriber'))) {
+        Alert.alert(
+          'PRO Exclusive Feature ⭐',
+          'Sending friend requests is an exclusive feature for PRO members. Upgrade now to connect, message, and practice speaking anytime!',
+          [
+            { text: 'Later', style: 'cancel' },
+            { text: 'Upgrade to PRO', onPress: () => setScreen('premium') },
+          ]
+        );
+      } else {
+        Alert.alert('Notice', err.message || 'Could not send friend request.');
+      }
+    }
   };
 
   const handleAcceptFriendRequest = async (req) => {
@@ -1761,6 +1798,7 @@ function App() {
 
   function finishCallLocally(status, notice = '', details = {}) {
     stopSpeech();
+    ringtoneManager.stopRinging();
     const currentCall = callRef.current;
     if (!currentCall || callCompletion) return;
     if (callExitTimerRef.current) clearTimeout(callExitTimerRef.current);
@@ -1774,6 +1812,8 @@ function App() {
       : calculatedDuration;
     setCallNotice(notice);
     releaseCallMedia();
+    updateCall(null);
+    callRef.current = null;
     setCallCompletion({ ...currentCall, status, endedAt, durationSeconds });
     setFeedbackRating(5);
     setFeedbackTags([]);
@@ -1789,8 +1829,10 @@ function App() {
   }
 
   function leaveCallCompletion() {
+    ringtoneManager.stopRinging();
     setCallCompletion(null);
     updateCall(null);
+    callRef.current = null;
     setActiveBottomTab('call');
     setScreen('call-tab');
   }
@@ -1841,6 +1883,7 @@ function App() {
 
   async function startCall(partner, type) {
     console.log('[BYTALK call] button pressed', { partnerId: partner?.id, type });
+    ringtoneManager.unlockAudio();
     if (!activeAuthToken) {
       Alert.alert('Sign in required', 'Sign in before starting a private call.');
       return;
@@ -1923,6 +1966,7 @@ function App() {
       }
     } catch (error) {
       console.warn('[BYTALK call] failed', error.message || error);
+      ringtoneManager.stopRinging();
       releaseCallMedia();
       updateCall(null);
       if (error.code === 'video_plan_required' || error.code === 'subscription_required') {
@@ -1985,6 +2029,7 @@ function App() {
 
   async function endCall(notice = '') {
     stopSpeech();
+    ringtoneManager.stopRinging();
     const currentCall = callRef.current;
     if (!currentCall) return;
     if (currentCall.id && !currentCall.peer?.isAi && !currentCall.id.startsWith('call_sarah_') && !currentCall.id.startsWith('call_partner_')) {
@@ -2253,6 +2298,22 @@ function App() {
         if (payload?.message) {
           Alert.alert('🎉 Subscription Active', payload.message);
         }
+      });
+      socket.on('friend:request', (payload) => {
+        console.log('[BYTALK socket] friend:request received', payload);
+        loadFriends();
+        Alert.alert(
+          'Friend Request 🤝',
+          payload?.message || `${payload?.from?.name || 'A co-learner'} sent you a friend request!`
+        );
+      });
+      socket.on('friend:accepted', (payload) => {
+        console.log('[BYTALK socket] friend:accepted received', payload);
+        loadFriends();
+        Alert.alert(
+          'Friend Request Accepted 🎉',
+          payload?.message || `${payload?.name || 'Your friend'} accepted your friend request!`
+        );
       });
       socket.on('subscription:plans_updated', (payload) => {
         console.log('[BYTALK socket] subscription:plans_updated received', payload);
@@ -3413,6 +3474,7 @@ function App() {
               user={{ displayName: name, streak }}
               onPressHistory={() => setShowHistoryModal(true)}
               onAddStars={(amount) => setUserStars((prev) => prev + amount)}
+              request={request}
             />
           )}
 
@@ -3597,7 +3659,7 @@ function App() {
               </View>
 
               {/* Elevated Card Container */}
-              <View style={styles.authCardBox}>
+              <Animated.View style={[styles.authCardBox, { opacity: authFadeAnim, transform: [{ translateY: authSlideAnim }] }]}>
                 {/* Centered Brand Header */}
                 <View style={styles.authBrandHeader}>
                   <View style={styles.authBrandRow}>
@@ -3730,7 +3792,7 @@ function App() {
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
 
               {/* Bottom Link to Registration */}
               <View style={[styles.footerLinkRow, styles.authFooterLinkRow]}>
@@ -3775,7 +3837,7 @@ function App() {
               </View>
 
               {/* Elevated Card Container */}
-              <View style={styles.authCardBox}>
+              <Animated.View style={[styles.authCardBox, { opacity: authFadeAnim, transform: [{ translateY: authSlideAnim }] }]}>
                 {/* Centered Brand Header */}
                 <View style={styles.authBrandHeader}>
                   <View style={styles.authBrandRow}>
@@ -3970,7 +4032,7 @@ function App() {
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
 
               {/* Bottom Link to Login */}
               <View style={[styles.footerLinkRow, styles.authFooterLinkRow]}>
@@ -5030,11 +5092,7 @@ function App() {
                       accessibilityRole="button"
                       accessibilityLabel="Disconnect video call"
                       onPress={() => {
-                        if (call.status !== 'Connected') {
-                          endCall();
-                        } else {
-                          setShowEarlyDisconnectModal(true);
-                        }
+                        endCall();
                       }}
                       style={styles.videoControlBtn}
                       activeOpacity={0.8}
@@ -5412,7 +5470,7 @@ function App() {
           )}
 
           {/* Top Banner for Incoming Call when user is on other screens */}
-          {call && call.direction === 'incoming' && (call.status === 'Ringing' || call.status === 'Calling') && screen !== 'call' && (
+          {call && call.direction === 'incoming' && (call.status === 'Ringing' || call.status === 'Calling') && !callCompletion && screen !== 'call' && screen !== 'call-complete' && (
             <View style={styles.incomingCallTopBanner}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }}>
                 <Image

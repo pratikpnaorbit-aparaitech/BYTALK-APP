@@ -24,6 +24,16 @@ class RingtoneManager {
     return this.audioContext;
   }
 
+  // Synchronously unlock and resume AudioContext from a user click/touch event
+  unlockAudio() {
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+    } catch {}
+  }
+
   // Generate a telephone ring burst using dual tones (440Hz + 480Hz)
   playToneBurst(durationSec = 1.6) {
     const ctx = this.getAudioContext();

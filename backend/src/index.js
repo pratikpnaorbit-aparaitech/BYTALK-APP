@@ -49,8 +49,8 @@ if (!LIVEKIT_AVAILABLE) {
 const REVENUECAT_WEBHOOK_AUTH = process.env.REVENUECAT_WEBHOOK_AUTH || '';
 const REVENUECAT_PLUS_ENTITLEMENT = process.env.REVENUECAT_PLUS_ENTITLEMENT || 'bytalk_plus';
 const REVENUECAT_PRO_ENTITLEMENT = process.env.REVENUECAT_PRO_ENTITLEMENT || 'bytalk_pro';
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_TvoCCSairIqmOY';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'TE12vGfhhrOJfbYUXQawyayi';
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_TwmnKWWhKKWPcz';
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'SoF1sQ74KFq4Cpo26P5lfLth';
 const RAZORPAY_AVAILABLE = Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
 if (RAZORPAY_AVAILABLE) {
   console.log(`Razorpay payment gateway initialized with Key: ${RAZORPAY_KEY_ID.slice(0, 12)}...`);
@@ -387,7 +387,7 @@ const save = () => fs.writeFileSync(dbFile, JSON.stringify(store, null, 2));
 
 const auditLogs = [
   { id: 'aud-1', timestamp: new Date(Date.now() - 3600000).toISOString(), actor: 'System', eventType: 'SYSTEM_BOOT', target: 'BYTALK Server Online' },
-  { id: 'aud-2', timestamp: new Date(Date.now() - 1800000).toISOString(), actor: 'Razorpay Gateway', eventType: 'PAYMENT_GATEWAY_INITIALIZED', target: 'rzp_live_TvoCCSairIqmOY' },
+  { id: 'aud-2', timestamp: new Date(Date.now() - 1800000).toISOString(), actor: 'Razorpay Gateway', eventType: 'PAYMENT_GATEWAY_INITIALIZED', target: 'rzp_live_TwmnKWWhKKWPcz' },
 ];
 
 const mongoUri = process.env.MONGODB_URI;
@@ -2080,6 +2080,25 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid target user' });
     }
 
+    const sender = await User.findById(currentUserId).lean();
+    const hasActiveSubscription = sender && (
+      sender.subscriptionPlan === 'pro' ||
+      sender.subscriptionPlan === 'plus' ||
+      sender.subscriptionPlan === 'basic' ||
+      sender.subscriptionPlan === '1month' ||
+      sender.subscriptionPlan === '3months' ||
+      sender.subscriptionPlan === '1year' ||
+      sender.subscriptionStatus === 'active' ||
+      isPaidSubscriber(sender)
+    );
+
+    if (!hasActiveSubscription) {
+      return res.status(403).json({
+        error: 'Sending friend requests is an exclusive PRO subscriber feature. Upgrade your subscription to connect and practice speaking anytime!',
+        code: 'PRO_SUBSCRIPTION_REQUIRED',
+      });
+    }
+
     const requestId = `fr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     friendRequestsStore.set(requestId, {
       id: requestId,
@@ -2087,6 +2106,18 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
       to: String(targetUserId),
       status: 'pending',
       createdAt: new Date().toISOString(),
+    });
+
+    // Real-time notification to recipient
+    emitToUser(String(targetUserId), 'friend:request', {
+      requestId,
+      from: {
+        id: currentUserId,
+        name: sender.displayName || sender.name || 'A co-learner',
+        profilePhotoUrl: sender.profilePhotoUrl || null,
+        level: sender.level || 'Beginner',
+      },
+      message: `${sender.displayName || sender.name || 'A co-learner'} sent you a friend request!`,
     });
 
     res.json({ ok: true, requestId, message: 'Friend request sent successfully!' });
@@ -2113,6 +2144,13 @@ app.post('/api/friends/accept', requireAuth, async (req, res) => {
       if (!userFriendsStore.has(targetId)) userFriendsStore.set(targetId, new Set());
       userFriendsStore.get(currentUserId).add(targetId);
       userFriendsStore.get(targetId).add(currentUserId);
+
+      // Real-time notification to requester
+      emitToUser(targetId, 'friend:accepted', {
+        userId: currentUserId,
+        name: req.authenticatedUser?.displayName || req.authenticatedUser?.name || 'Your friend',
+        message: `${req.authenticatedUser?.displayName || 'Your friend'} accepted your friend request!`,
+      });
     }
 
     res.json({ ok: true, message: 'Friend request accepted!' });

@@ -95,13 +95,12 @@ async function callGeminiApi({ systemInstruction, messages, topic, language, lev
   }
 
   // Fast, responsive candidates for real-time conversation
-  const preferredModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+  const preferredModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
   const candidateModels = [
     preferredModel,
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
+    'gemini-3.8-flash',
     'gemini-flash-latest',
-    'gemini-2.5-flash'
+    'gemini-3.5-flash-lite'
   ].filter((v, i, a) => a.indexOf(v) === i);
 
   // Format messages into Gemini contents array
