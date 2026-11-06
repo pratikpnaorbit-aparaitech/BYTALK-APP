@@ -322,7 +322,7 @@ export default function CallTabScreen({
                     styles.progressBarFill,
                     {
                       width: `${Math.round(progressRatio * 100)}%`,
-                      backgroundColor: progressRatio >= 1 ? '#EF4444' : '#6366F1',
+                      backgroundColor: isSubscribed ? '#10B981' : (progressRatio >= 1 ? '#EF4444' : '#6366F1'),
                     },
                   ]}
                 />

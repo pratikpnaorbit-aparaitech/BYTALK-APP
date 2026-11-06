@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,319 +19,165 @@ import { speakEnglish, stopSpeech } from '../utils/speechHelper';
 
 const { width: windowWidth } = Dimensions.get('window');
 
-// 3 Structured Levels with 14 Complete Chapters
-export const LEARNING_LEVELS = [
-  {
-    id: 1,
-    name: 'Beginner',
-    tag: 'Level 1',
-    description: 'Master everyday greetings, basics, and daily routines',
-    color: '#10B981',
-    units: [
-      {
-        unitNumber: 1,
-        title: 'Meet and Greet',
-        chapters: [
-          {
-            id: 1,
-            num: 1,
-            title: 'Informal Opening Greetings',
-            subtitle: 'Everyday casual greetings for friends and peers',
-            phrases: [
-              { phrase: "Hey, what's up?", phonetic: '/heɪ wʌts ʌp/', meaning: 'Casual friendly greeting used with peers and friends', example: "Hey, what's up? Long time no see!" },
-              { phrase: "How's it going?", phonetic: '/haʊz ɪt ˈɡoʊɪŋ/', meaning: 'Inquiring how someone is doing in an informal way', example: "Hey Sarah! How's it going with your new course?" },
-              { phrase: "Great to meet you!", phonetic: '/ɡreɪt tu miːt juː/', meaning: 'Warm greeting when meeting someone for the first time', example: "Great to meet you, David. Welcome to BYTALK!" },
-              { phrase: "Catch you later!", phonetic: '/kætʃ juː ˈleɪtər/', meaning: 'Casual goodbye phrase for everyday talk', example: "I have to jump into a call now. Catch you later!" },
-            ],
-            quiz: {
-              scenario: "You meet an acquaintance at a coffee shop in the afternoon. What is the most natural greeting?",
-              question: "Choose the best informal greeting:",
-              options: ["How do you do, sir?", "Hey, how's it going?", "Farewell to thee", "I am standing here"],
-              correctIndex: 1,
-              explanation: "'Hey, how's it going?' is natural and friendly between peers."
-            }
-          },
-          {
-            id: 2,
-            num: 2,
-            title: 'Introductions & Small Talk',
-            subtitle: 'Sharing names, origins, and making friends',
-            phrases: [
-              { phrase: "Where are you based?", phonetic: '/wɛər ɑːr juː beɪst/', meaning: 'Asking what city or place someone currently lives in', example: "Nice to meet you! Where are you based currently?" },
-              { phrase: "What do you do for fun?", phonetic: '/wʌt duː juː duː fɔːr fʌn/', meaning: 'Friendly way to ask someone about their hobbies', example: "On weekends, what do you usually do for fun?" },
-              { phrase: "I'm originally from...", phonetic: '/aɪm əˈrɪdʒɪnəli frʌm/', meaning: 'Stating your hometown or birthplace', example: "I'm originally from Mumbai, but now I live in Pune." },
-              { phrase: "It was lovely chatting!", phonetic: '/ɪt wʌz ˈlʌvli ˈtʃætɪŋ/', meaning: 'Polite wrap-up phrase when ending a pleasant conversation', example: "It was lovely chatting with you! Let's connect again." },
-            ],
-            quiz: {
-              scenario: "Your new speaking partner asks about where you live. How do you answer naturally?",
-              question: "Select the most conversational response:",
-              options: ["I reside in location coordinate X.", "I am based in Delhi, living here for two years.", "No comment on my geography.", "I am a human."],
-              correctIndex: 1,
-              explanation: "'I am based in...' is the standard modern conversational expression."
-            }
-          },
-          {
-            id: 3,
-            num: 3,
-            title: 'Everyday Polite Phrases',
-            subtitle: 'Saying thanks, pardons, and clarifying ideas',
-            phrases: [
-              { phrase: "Could you repeat that?", phonetic: '/kʊd juː rɪˈpiːt ðæt/', meaning: 'Polite request when you did not catch what someone said', example: "Sorry, the connection dipped. Could you repeat that?" },
-              { phrase: "I appreciate your help!", phonetic: '/aɪ əˈpriːʃieɪt jʊər hɛlp/', meaning: 'Warmly expressing gratitude', example: "Thank you for practicing with me, I appreciate your help!" },
-              { phrase: "No worries at all!", phonetic: '/noʊ ˈwʌriz æt ɔːl/', meaning: 'Casual way to say you are welcome or it is okay', example: "Thanks for waiting! — No worries at all, take your time." },
-              { phrase: "Could you speak slower?", phonetic: '/kʊd juː spiːk ˈsloʊər/', meaning: 'Helpful phrase when someone is speaking too fast', example: "I'm learning English, could you speak a little slower please?" },
-            ],
-            quiz: {
-              scenario: "Your partner spoke quickly and you didn't hear the last sentence. What should you say?",
-              question: "What is the best polite request?",
-              options: ["Speak again now!", "Could you repeat that, please?", "You talk bad.", "Why are you fast?"],
-              correctIndex: 1,
-              explanation: "'Could you repeat that, please?' is polite and clear."
-            }
-          },
-        ]
-      },
-      {
-        unitNumber: 2,
-        title: 'Daily Life & Routines',
-        chapters: [
-          {
-            id: 4,
-            num: 4,
-            title: 'Morning Routines & Habits',
-            subtitle: 'Talking about daily schedules and mornings',
-            phrases: [
-              { phrase: "I'm an early riser", phonetic: '/aɪm ən ˈɜːrli ˈraɪzər/', meaning: 'Someone who naturally wakes up early in the morning', example: "I'm an early riser, so I love jogging at 6 AM." },
-              { phrase: "Grabbing a quick bite", phonetic: '/ˈɡræbɪŋ ə kwɪk baɪt/', meaning: 'Getting food quickly when you have limited time', example: "I'm grabbing a quick bite before my morning meeting." },
-              { phrase: "Commuting to work", phonetic: '/kəˈmjuːtɪŋ tu wɜːrk/', meaning: 'Traveling from home to your workplace or university', example: "I spend about 30 minutes commuting to work by metro." },
-              { phrase: "Winding down for bed", phonetic: '/ˈwaɪndɪŋ daʊn fɔːr bɛd/', meaning: 'Relaxing activities before going to sleep', example: "I usually wind down with a book before going to sleep." },
-            ],
-            quiz: {
-              scenario: "Your friend asks what you do after work to relax before sleeping.",
-              question: "Which phrase best expresses relaxing before bed?",
-              options: ["I run 20 km at midnight.", "I like winding down with some peaceful music.", "I wake up immediately.", "I start my workday."],
-              correctIndex: 1,
-              explanation: "'Winding down' means gradually relaxing before sleep."
-            }
-          },
-          {
-            id: 5,
-            num: 5,
-            title: 'Asking Directions & Places',
-            subtitle: 'Navigating cities, streets, and finding locations',
-            phrases: [
-              { phrase: "Excuse me, how do I get to...?", phonetic: '/ɪkˈskjuːz miː haʊ duː aɪ ɡɛt tuː/', meaning: 'Standard polite way to ask for directions', example: "Excuse me, how do I get to the central train station?" },
-              { phrase: "Is it within walking distance?", phonetic: '/ɪz ɪt wɪˈðɪn ˈwɔːkɪŋ ˈdɪstəns/', meaning: 'Asking if you can walk there or need transport', example: "Is the museum within walking distance from here?" },
-              { phrase: "Take the second right", phonetic: '/teɪk ðə ˈsɛkənd raɪt/', meaning: 'Direction instruction to turn at the second street on the right', example: "Go straight down this avenue and take the second right." },
-              { phrase: "You can't miss it!", phonetic: '/juː kænt mɪs ɪt/', meaning: 'The destination is very obvious and easy to spot', example: "It's a big glass building with a blue sign, you can't miss it!" },
-            ],
-            quiz: {
-              scenario: "You want to know if a cafe is close enough to reach on foot.",
-              question: "Which question is most natural?",
-              options: ["Are my legs able to proceed?", "Is it within walking distance?", "Can you drive me immediately?", "Do they sell food there?"],
-              correctIndex: 1,
-              explanation: "'Within walking distance' is the standard English idiom."
-            }
-          },
-        ]
-      }
-    ]
-  },
-  {
-    id: 2,
-    name: 'Intermediate',
-    tag: 'Level 2',
-    description: 'Order food, make plans, express hobbies, and travel with ease',
-    color: '#3B82F6',
-    units: [
-      {
-        unitNumber: 3,
-        title: 'Social & Dining',
-        chapters: [
-          {
-            id: 6,
-            num: 6,
-            title: 'Ordering at a Restaurant',
-            subtitle: 'Navigating menus, ordering, and paying the bill',
-            phrases: [
-              { phrase: "Could we get a table for two?", phonetic: '/kʊd wiː ɡɛt ə ˈteɪbəl fɔːr tuː/', meaning: 'Asking the restaurant host for seating', example: "Good evening! Could we get a table for two by the window?" },
-              { phrase: "What do you recommend?", phonetic: '/wʌt duː juː ˌrɛkəˈmɛnd/', meaning: 'Asking the server for their top dish suggestions', example: "Everything looks delicious! What do you recommend today?" },
-              { phrase: "Can we have the dressing on the side?", phonetic: '/kæn wiː hæv ðə ˈdrɛsɪŋ ɒn ðə saɪd/', meaning: 'Requesting sauce or dressing served separately', example: "I'd love the Caesar salad, but can I have dressing on the side?" },
-              { phrase: "Could we split the bill?", phonetic: '/kʊd wiː splɪt ðə bɪl/', meaning: 'Paying for your meal separately with friends', example: "The meal was fantastic! Could we split the bill two ways?" },
-            ],
-            quiz: {
-              scenario: "You are dining with a friend and want to divide the expense equally.",
-              question: "What do you say to the waiter?",
-              options: ["Take money from everyone randomly.", "Could we split the bill, please?", "You pay for us today.", "We refuse the invoice."],
-              correctIndex: 1,
-              explanation: "'Could we split the bill?' is the standard and polite expression."
-            }
-          },
-          {
-            id: 7,
-            num: 7,
-            title: 'Hobbies, Music & Films',
-            subtitle: 'Sharing opinions on cinema, playlists, and entertainment',
-            phrases: [
-              { phrase: "I'm really into...", phonetic: '/aɪm ˈrɪəli ˈɪntuː/', meaning: 'Expressing that you enjoy or are enthusiastic about something', example: "Lately I'm really into documentary podcasts about science." },
-              { phrase: "It kept me on the edge of my seat!", phonetic: '/ɪt kɛpt miː ɒn ði ɛdʒ ʌv maɪ siːt/', meaning: 'A movie or book that was thrilling and suspenseful', example: "That thriller was brilliant, it kept me on the edge of my seat!" },
-              { phrase: "I can't get enough of this song!", phonetic: '/aɪ kænt ɡɛt ɪˈnʌf ʌv ðɪs sɔːŋ/', meaning: 'You love listening to this music on repeat', example: "This melody is so catchy, I can't get enough of it." },
-              { phrase: "What kind of genre do you prefer?", phonetic: '/wʌt kaɪnd ʌv ˈʒɑːnrə duː juː prɪˈfɜːr/', meaning: 'Asking what category of music or film someone likes', example: "Do you like sci-fi or are comedy dramas more your genre?" },
-            ],
-            quiz: {
-              scenario: "You want to say that you find an adventure movie extremely exciting.",
-              question: "Which idiom fits best?",
-              options: ["It put me to sleep.", "It kept me on the edge of my seat!", "It was a plate of salad.", "I broke a leg watching."],
-              correctIndex: 1,
-              explanation: "'Kept me on the edge of my seat' means thrilling and suspenseful."
-            }
-          },
-          {
-            id: 8,
-            num: 8,
-            title: 'Making & Rescheduling Plans',
-            subtitle: 'Setting up dates, invites, and calendar coordination',
-            phrases: [
-              { phrase: "Are you free this weekend?", phonetic: '/ɑːr juː friː ðɪs ˈwiːkˌɛnd/', meaning: 'Checking someone’s availability for an outing', example: "Are you free this weekend? Let's check out the new art gallery." },
-              { phrase: "Does 4 PM work for you?", phonetic: '/dʌz fɔːr piː-ɛm wɜːrk fɔːr juː/', meaning: 'Confirming if a proposed time is convenient', example: "I have an opening in the afternoon. Does 4 PM work for you?" },
-              { phrase: "Something came up", phonetic: '/ˈsʌmθɪŋ keɪm ʌp/', meaning: 'An unexpected event happened that requires rescheduling', example: "I'm so sorry, something urgent came up at work. Can we postpone?" },
-              { phrase: "Let's take a rain check!", phonetic: '/lɛts teɪk ə reɪn tʃɛk/', meaning: 'Politely declining now but agreeing to do it another time', example: "I'm overloaded tonight, but let's take a rain check for next Tuesday!" },
-            ],
-            quiz: {
-              scenario: "A friend invites you to dinner, but you have an urgent deadline tonight. You want to go next week.",
-              question: "What is a polite idiom to suggest doing it later?",
-              options: ["Never invite me again.", "Can we take a rain check for next week?", "I am disappearing.", "Rain is falling."],
-              correctIndex: 1,
-              explanation: "'Take a rain check' means postponing a social invite to a later time."
-            }
-          },
-        ]
-      },
-      {
-        unitNumber: 4,
-        title: 'Travel & Adventures',
-        chapters: [
-          {
-            id: 9,
-            num: 9,
-            title: 'Airport & Flight Navigation',
-            subtitle: 'Boarding gates, luggage, and customs check',
-            phrases: [
-              { phrase: "Where is the boarding gate?", phonetic: '/wɛər ɪz ðə ˈbɔːrdɪŋ ɡeɪt/', meaning: 'Locating the departure area for your airplane', example: "Excuse me, which way to boarding gate B14?" },
-              { phrase: "Window or aisle seat?", phonetic: '/ˈwɪndoʊ ɔːr aɪl siːt/', meaning: 'Choosing seat placement in an aircraft', example: "I prefer an aisle seat so I can stretch my legs easily." },
-              { phrase: "Do you have baggage to check in?", phonetic: '/duː juː hæv ˈbæɡɪdʒ tu tʃɛk ɪn/', meaning: 'Airport agent asking if you have large luggage', example: "I only have this carry-on backpack, no checked baggage." },
-              { phrase: "Have a safe flight!", phonetic: '/hæv ə seɪf flaɪt/', meaning: 'Wishing someone well before airplane departure', example: "It was great seeing you! Have a safe flight back home!" },
-            ],
-            quiz: {
-              scenario: "At airport check-in, you prefer sitting near the walkway rather than next to the glass.",
-              question: "Which seat do you request?",
-              options: ["The cockpit seat", "An aisle seat, please", "A cloud seat", "A window seat"],
-              correctIndex: 1,
-              explanation: "An 'aisle seat' is located beside the walking corridor of the plane."
-            }
-          },
-        ]
-      }
-    ]
-  },
-  {
-    id: 3,
-    name: 'Advanced',
-    tag: 'Level 3',
-    description: 'Professional presentations, job interviews, debates, and idioms',
-    color: '#8B5CF6',
-    units: [
-      {
-        unitNumber: 5,
-        title: 'Career & Business',
-        chapters: [
-          {
-            id: 11,
-            num: 11,
-            title: 'Job Interview Excellence',
-            subtitle: 'Highlighting skills, experience, and leadership',
-            phrases: [
-              { phrase: "My core strength lies in...", phonetic: '/maɪ kɔːr strɛŋkθ laɪz ɪn/', meaning: 'Highlighting your primary professional ability', example: "My core strength lies in rapid cross-functional problem solving." },
-              { phrase: "I led a high-impact project", phonetic: '/aɪ lɛd ə haɪ ˈɪmpækt ˈprɒdʒɛkt/', meaning: 'Demonstrating initiative and quantifiable success', example: "In my previous role, I led a high-impact team that reduced churn by 18%." },
-              { phrase: "I thrive in dynamic environments", phonetic: '/aɪ θraɪv ɪn daɪˈnæmɪk ɪnˈvaɪrənmənts/', meaning: 'Expressing adaptability to fast-paced team challenges', example: "I thrive in dynamic environments where innovation is prioritized." },
-              { phrase: "Thank you for this opportunity!", phonetic: '/θæŋk juː fɔːr ðɪs ˌɒpərˈtjuːnɪti/', meaning: 'Professional closing at the end of an interview', example: "Thank you for your time and for this opportunity to discuss the role." },
-            ],
-            quiz: {
-              scenario: "An interviewer asks what makes you stand out for this software role.",
-              question: "What is an impressive opening statement?",
-              options: ["I need money immediately.", "My core strength lies in designing scalable, reliable systems.", "I don't know much.", "Ask someone else."],
-              correctIndex: 1,
-              explanation: "'My core strength lies in...' sounds authoritative and professional."
-            }
-          },
-          {
-            id: 12,
-            num: 12,
-            title: 'Business Meetings & Alignment',
-            subtitle: 'Expressing viewpoints, agendas, and consensus',
-            phrases: [
-              { phrase: "Let's align on key milestones", phonetic: '/lɛts əˈlaɪn ɒn kiː ˈmaɪlˌstoʊnz/', meaning: 'Ensuring all team members share the same goals', example: "Before concluding, let's align on key deliverables for Q2." },
-              { phrase: "From my perspective...", phonetic: '/frʌm maɪ pərˈspɛktɪv/', meaning: 'Politely voicing your professional viewpoint', example: "From my perspective, focusing on user feedback is the highest priority." },
-              { phrase: "Let's circle back on this", phonetic: '/lɛts ˈsɜːrkəl bæk ɒn ðɪs/', meaning: 'Revisiting an agenda topic after gathering more information', example: "We need more data from marketing, so let's circle back on this Thursday." },
-              { phrase: "Can you walk us through that?", phonetic: '/kæn juː wɔːk ʌs θruː ðæt/', meaning: 'Asking a presenter to explain their proposal step by step', example: "Great proposal! Can you walk us through the implementation timeline?" },
-            ],
-            quiz: {
-              scenario: "During a meeting, an unresolved topic needs more research before deciding.",
-              question: "What is standard professional business phrasing?",
-              options: ["Forget about this forever.", "Let's circle back on this once we have the user metrics.", "Everyone leave the room.", "Stop discussing."],
-              correctIndex: 1,
-              explanation: "'Circle back' is standard business phrasing for returning to an item later."
-            }
-          },
-        ]
-      },
-      {
-        unitNumber: 6,
-        title: 'Fluent Debates & Idioms',
-        chapters: [
-          {
-            id: 13,
-            num: 13,
-            title: 'Popular Idiomatic Expressions',
-            subtitle: 'Speaking naturally with native idioms',
-            phrases: [
-              { phrase: "Hit the nail on the head", phonetic: '/hɪt ðə neɪl ɒn ðə hɛd/', meaning: 'Describing exactly what is causing a situation or issue', example: "Your analysis hit the nail on the head; that's exactly the bottleneck." },
-              { phrase: "Bite the bullet", phonetic: '/baɪt ðə ˈbʊlɪt/', meaning: 'Deciding to do something difficult that you have avoided', example: "I was dreading the dentist, but I had to bite the bullet and go." },
-              { phrase: "Once in a blue moon", phonetic: '/wʌns ɪn ə bluː muːn/', meaning: 'Happening very rarely or infrequently', example: "He lives overseas, so we only meet once in a blue moon." },
-              { phrase: "Break the ice", phonetic: '/breɪk ði aɪs/', meaning: 'Do or say something to relieve tension when strangers meet', example: "Playing a quick language game helped break the ice between learners." },
-            ],
-            quiz: {
-              scenario: "Someone made an observation that was 100% accurate and precise.",
-              question: "Which idiom describes their statement?",
-              options: ["You broke a leg.", "You hit the nail on the head!", "You spilled the milk.", "You bit the dust."],
-              correctIndex: 1,
-              explanation: "'Hit the nail on the head' means to say or do something exactly right."
-            }
-          },
-          {
-            id: 14,
-            num: 14,
-            title: 'Expressing Nuanced Opinions',
-            subtitle: 'Debating with tact, respect, and persuasion',
-            phrases: [
-              { phrase: "I see your point, however...", phonetic: '/aɪ siː jʊər pɔɪnt haʊˈɛvər/', meaning: 'Politely acknowledging their logic before presenting a counterpoint', example: "I see your point, however cost efficiency is equally vital here." },
-              { phrase: "On the flip side...", phonetic: '/ɒn ðə flɪp saɪd/', meaning: 'Looking at the alternate perspective or other side of an issue', example: "Remote work is flexible, but on the flip side, team bonding takes extra effort." },
-              { phrase: "It goes without saying", phonetic: '/ɪt ɡoʊz wɪˈðaʊt ˈseɪɪŋ/', meaning: 'Something that is obvious or generally accepted', example: "It goes without saying that consistent daily practice leads to fluency." },
-              { phrase: "I wholeheartedly agree!", phonetic: '/aɪ ˌhoʊlˈhɑːrtɪdli əˈɡriː/', meaning: 'Agreeing with enthusiasm and complete sincerity', example: "I wholeheartedly agree with your suggestion to practice daily." },
-            ],
-            quiz: {
-              scenario: "You want to acknowledge someone's argument respectfully while presenting a different viewpoint.",
-              question: "Which phrase creates the most diplomatic transition?",
-              options: ["You are completely wrong.", "I see your point, however let's also consider...", "I refuse to hear that.", "End of debate."],
-              correctIndex: 1,
-              explanation: "'I see your point, however...' validates the other speaker while introducing a counterpoint."
-            }
-          },
-        ]
-      }
-    ]
-  }
+// 5 Core Progression Stages for 1,000 Levels
+export const STAGES = [
+  { id: 1, name: 'Everyday Foundations', range: '1–200', start: 1, end: 200, color: '#10B981' },
+  { id: 2, name: 'Travel & Social Life', range: '201–400', start: 201, end: 400, color: '#3B82F6' },
+  { id: 3, name: 'Career & Workplace', range: '401–600', start: 401, end: 600, color: '#8B5CF6' },
+  { id: 4, name: 'Business Leadership', range: '601–800', start: 601, end: 800, color: '#F59E0B' },
+  { id: 5, name: 'Native Fluency & Idioms', range: '801–1000', start: 801, end: 1000, color: '#EC4899' },
 ];
+
+// 50 High-Frequency Real-World English Conversational Modules
+const CONVERSATION_MODULES = [
+  {
+    topic: 'Warm Greetings & Openers',
+    phrases: [
+      { phrase: "Hey, how's it going?", phonetic: '/heɪ haʊz ɪt ˈɡoʊɪŋ/', meaning: 'Natural casual greeting for peers and colleagues', example: "Hey Sarah, how's it going today?" },
+      { phrase: "Great to see you again!", phonetic: '/ɡreɪt tu siː juː əˈɡɛn/', meaning: 'Warm welcome when reconnecting with someone', example: "David! Great to see you again, it's been ages." },
+      { phrase: "What have you been up to?", phonetic: '/wʌt hæv juː biːn ʌp tuː/', meaning: 'Asking about recent activities and life updates', example: "Long time no see! What have you been up to lately?" },
+      { phrase: "Catch you later!", phonetic: '/kætʃ juː ˈleɪtər/', meaning: 'Casual friendly farewell for everyday talk', example: "I have to jump into a call now. Catch you later!" },
+    ],
+    quiz: {
+      scenario: 'You bump into an acquaintance at lunch and want to ask about their recent news.',
+      question: 'Which question is most natural and polite?',
+      options: ['Give me your life history now.', "Hey! What have you been up to lately?", 'Why are you walking here?', 'I require your news report.'],
+      correctIndex: 1,
+      explanation: "'What have you been up to?' is the standard natural way to ask for life updates.",
+    },
+  },
+  {
+    topic: 'Personal Introductions',
+    phrases: [
+      { phrase: "I'm originally from...", phonetic: '/aɪm əˈrɪdʒɪnəli frʌm/', meaning: 'Explaining your hometown or roots', example: "I'm originally from Pune, but I've lived in London for 3 years." },
+      { phrase: "Where are you based?", phonetic: '/wɛər ɑːr juː beɪst/', meaning: 'Asking where someone currently lives or works', example: "Pleasure to meet you! Where are you based currently?" },
+      { phrase: "I work in tech and education", phonetic: '/aɪ wɜːrk ɪn tɛk ænd ˌɛdʒʊˈkeɪʃən/', meaning: 'Describing your industry clearly', example: "I work in tech and education, focusing on language learning." },
+      { phrase: "In my free time, I love...", phonetic: '/ɪn maɪ friː taɪm aɪ lʌv/', meaning: 'Sharing hobbies and personal passions', example: "In my free time, I love cooking and photography." },
+    ],
+    quiz: {
+      scenario: 'Your speaking partner asks where your home is.',
+      question: 'Select the most natural English phrasing:',
+      options: ['My physical body was birthed at coordinates.', "I'm originally from Delhi, but currently based in Mumbai.", 'Location is classified.', 'I am present in reality.'],
+      correctIndex: 1,
+      explanation: "'I'm originally from... but currently based in...' is polished and natural.",
+    },
+  },
+  {
+    topic: 'Ordering Coffee & Food',
+    phrases: [
+      { phrase: "Could I get a large cappuccino?", phonetic: '/kʊd aɪ ɡɛt ə lɑːrdʒ ˌkæpəˈtʃiːnoʊ/', meaning: 'Polite way to order a drink at a cafe', example: "Could I get a large cappuccino with oat milk, please?" },
+      { phrase: "For here or to go?", phonetic: '/fɔːr hɪər ɔːr tu ɡoʊ/', meaning: 'Clarifying if eating at the venue or taking away', example: "Will that coffee be for here or to go today?" },
+      { phrase: "Could we split the bill?", phonetic: '/kʊd wiː splɪt ðə bɪl/', meaning: 'Asking to pay separately among friends', example: "The pasta was amazing! Could we split the bill two ways?" },
+      { phrase: "Keep the change!", phonetic: '/kiːp ðə tʃeɪndʒ/', meaning: 'Offering a tip to the barista or server', example: "Here is twenty dollars, please keep the change!" },
+    ],
+    quiz: {
+      scenario: 'You want to order breakfast at a cafe with polite manners.',
+      question: 'Which phrase is best?',
+      options: ['Give me coffee fast!', 'Could I get a large cappuccino with oat milk, please?', 'Hand over drink immediately.', 'Coffee is needed by me.'],
+      correctIndex: 1,
+      explanation: "'Could I get... please?' is polite, friendly, and universally accepted.",
+    },
+  },
+  {
+    topic: 'Asking Directions & Commuting',
+    phrases: [
+      { phrase: "Excuse me, how do I get to...?", phonetic: '/ɪkˈskjuːz miː haʊ duː aɪ ɡɛt tuː/', meaning: 'Polite opener when asking for directions', example: "Excuse me, how do I get to the central train station?" },
+      { phrase: "Is it within walking distance?", phonetic: '/ɪz ɪt wɪˈðɪn ˈwɔːkɪŋ ˈdɪstəns/', meaning: 'Asking if you can walk there comfortably', example: "Is the museum within walking distance from here?" },
+      { phrase: "Take the second exit", phonetic: '/teɪk ðə ˈsɛkənd ˈɛɡzɪt/', meaning: 'Navigation instruction at a roundabout or station', example: "Follow this avenue and take the second exit on your right." },
+      { phrase: "You can't miss it!", phonetic: '/juː kænt mɪs ɪt/', meaning: 'The destination is very easy to find', example: "It has a large glowing blue sign, you can't miss it!" },
+    ],
+    quiz: {
+      scenario: 'You are in a new city and want to know if you need transport or can walk.',
+      question: 'What is the natural question to ask?',
+      options: ['Can my feet transport me?', 'Is it within walking distance from here?', 'Do cars go there only?', 'I want to walk now.'],
+      correctIndex: 1,
+      explanation: "'Is it within walking distance?' is the authentic native idiom.",
+    },
+  },
+  {
+    topic: 'Making Plans & Scheduling',
+    phrases: [
+      { phrase: "Are you free this weekend?", phonetic: '/ɑːr juː friː ðɪs ˈwiːkˌɛnd/', meaning: 'Checking someone’s schedule for an outing', example: "Are you free this weekend? Let's check out the new art festival." },
+      { phrase: "Does 3 PM work for you?", phonetic: '/dʌz θriː piː-ɛm wɜːrk fɔːr juː/', meaning: 'Proposing a specific time slot', example: "I have a gap in the afternoon. Does 3 PM work for you?" },
+      { phrase: "Something came up", phonetic: '/ˈsʌmθɪŋ keɪm ʌp/', meaning: 'An unexpected event requires rescheduling', example: "I'm so sorry, something urgent came up at the office." },
+      { phrase: "Let's take a rain check!", phonetic: '/lɛts teɪk ə reɪn tʃɛk/', meaning: 'Politely postponing plans to a later date', example: "I'm overloaded tonight, but let's take a rain check for Friday!" },
+    ],
+    quiz: {
+      scenario: 'You cannot make it to dinner tonight due to work, but genuinely want to meet next week.',
+      question: 'Which idiom conveys this politely?',
+      options: ['I cancel you forever.', 'Can we take a rain check for next week?', 'Work is bad today.', 'Never call me again.'],
+      correctIndex: 1,
+      explanation: "'Take a rain check' means postponing with genuine intent to meet later.",
+    },
+  },
+  {
+    topic: 'Job Interview Excellence',
+    phrases: [
+      { phrase: "My core strength lies in...", phonetic: '/maɪ kɔːr strɛŋkθ laɪz ɪn/', meaning: 'Highlighting your key professional skill', example: "My core strength lies in data-driven decision making and leadership." },
+      { phrase: "I led a cross-functional team", phonetic: '/aɪ lɛd ə krɔːs ˈfʌŋkʃənl tiːm/', meaning: 'Demonstrating leadership and teamwork', example: "In my previous role, I led a cross-functional team of 8 engineers." },
+      { phrase: "I thrive in fast-paced environments", phonetic: '/aɪ θraɪv ɪn fæst peɪst ɪnˈvaɪrənmənts/', meaning: 'Expressing adaptability and high performance', example: "I thrive in fast-paced environments where agility is valued." },
+      { phrase: "Thank you for your time today", phonetic: '/θæŋk juː fɔːr jʊər taɪm tuˈdeɪ/', meaning: 'Professional interview closing', example: "Thank you for your time today, I look forward to hearing from you." },
+    ],
+    quiz: {
+      scenario: 'An interviewer asks why you are a strong candidate for this leadership position.',
+      question: 'What is a compelling professional response?',
+      options: ['I need the salary.', 'My core strength lies in building high-performing, collaborative teams.', 'I am the best human alive.', 'Hire me now.'],
+      correctIndex: 1,
+      explanation: "'My core strength lies in...' sets a confident, articulate tone.",
+    },
+  },
+  {
+    topic: 'Expressing Opinions & Debates',
+    phrases: [
+      { phrase: "From my perspective...", phonetic: '/frʌm maɪ pərˈspɛktɪv/', meaning: 'Stating your viewpoint diplomatically', example: "From my perspective, user experience should always come first." },
+      { phrase: "I see your point, however...", phonetic: '/aɪ siː jʊər pɔɪnt haʊˈɛvər/', meaning: 'Respectfully acknowledging before countering', example: "I see your point, however we must also consider the timeline." },
+      { phrase: "On the flip side...", phonetic: '/ɒn ðə flɪp saɪd/', meaning: 'Examining the opposing angle', example: "Remote work is flexible; on the flip side, in-person workshops build camaraderie." },
+      { phrase: "I wholeheartedly agree!", phonetic: '/aɪ ˌhoʊlˈhɑːrtɪdli əˈɡriː/', meaning: 'Expressing complete and genuine agreement', example: "I wholeheartedly agree that daily speaking practice builds fluency." },
+    ],
+    quiz: {
+      scenario: 'You want to disagree tactfully during a team discussion.',
+      question: 'Which phrase is the most professional and persuasive?',
+      options: ['You are completely wrong.', 'I see your point, however let us also weigh the budget impact.', 'Shut down that opinion.', 'I disagree with your brain.'],
+      correctIndex: 1,
+      explanation: "'I see your point, however...' bridges agreement with constructive critique.",
+    },
+  },
+  {
+    topic: 'Everyday Idioms & Expressions',
+    phrases: [
+      { phrase: "Hit the nail on the head", phonetic: '/hɪt ðə neɪl ɒn ðə hɛd/', meaning: 'Saying or identifying something with exact accuracy', example: "Your summary hit the nail on the head, that's exactly the issue." },
+      { phrase: "Bite the bullet", phonetic: '/baɪt ðə ˈbʊlɪt/', meaning: 'Facing a difficult task with courage', example: "I dreaded speaking in public, but I had to bite the bullet and present." },
+      { phrase: "Once in a blue moon", phonetic: '/wʌns ɪn ə bluː muːn/', meaning: 'Something that happens extremely rarely', example: "He travels abroad only once in a blue moon." },
+      { phrase: "Break the ice", phonetic: '/breɪk ði aɪs/', meaning: 'Relieving social awkwardness when strangers meet', example: "A quick lighthearted game helped break the ice between learners." },
+    ],
+    quiz: {
+      scenario: 'Your colleague pinpointed the exact root cause of a software bug.',
+      question: 'Which idiom compliments them accurately?',
+      options: ['You spilled the beans.', 'You hit the nail on the head!', 'You broke a leg.', 'You bit the dust.'],
+      correctIndex: 1,
+      explanation: "'Hit the nail on the head' means pinpointing the exact truth or issue.",
+    },
+  },
+];
+
+// Generates dynamic data for any level from 1 to 1000
+function getLevelData(levelNum) {
+  const modIdx = (levelNum - 1) % CONVERSATION_MODULES.length;
+  const baseModule = CONVERSATION_MODULES[modIdx];
+  const unitNum = Math.ceil(levelNum / 10);
+  const stage = STAGES.find((s) => levelNum >= s.start && levelNum <= s.end) || STAGES[0];
+
+  return {
+    level: levelNum,
+    unit: unitNum,
+    stageName: stage.name,
+    stageColor: stage.color,
+    title: `Level ${levelNum}: ${baseModule.topic}`,
+    subtitle: `Unit ${unitNum} • Practical Spoken English`,
+    phrases: baseModule.phrases,
+    quiz: baseModule.quiz,
+  };
+}
 
 export default function LearnScreen({
   user,
@@ -339,26 +186,32 @@ export default function LearnScreen({
   onAddStars,
   request,
 }) {
-  const [selectedLevelId, setSelectedLevelId] = useState(1);
+  // Current unlocked level: Level 1 is unlocked initially, Levels 2-1000 are locked until solved!
+  const [unlockedLevel, setUnlockedLevel] = useState(1);
+  const [completedLevels, setCompletedLevels] = useState([]);
+  const [activeLevelNumber, setActiveLevelNumber] = useState(1);
   const [showTooltip, setShowTooltip] = useState(true);
-  const [activeChapter, setActiveChapter] = useState(LEARNING_LEVELS[0].units[0].chapters[0]);
-  const [completedChapterIds, setCompletedChapterIds] = useState([1]);
-  
-  // Lesson Modal State
+
+  // Pagination for 1,000 levels (50 levels per page view)
+  const [currentBatchPage, setCurrentBatchPage] = useState(1);
+  const batchSize = 50;
+  const totalPages = Math.ceil(1000 / batchSize); // 20 pages
+
+  // Modal State
   const [showLessonModal, setShowLessonModal] = useState(false);
   const [activePhraseIndex, setActivePhraseIndex] = useState(0);
   const [speakingIndex, setSpeakingIndex] = useState(null);
   const [lessonCompleted, setLessonCompleted] = useState(false);
 
-  // Gemini AI Practice Modal State
+  // AI Speaking Practice Modal State (NO "Gemini" branding)
   const [showAiModal, setShowAiModal] = useState(false);
-  const [aiQuiz, setAiQuiz] = useState(null);
   const [aiSelectedOption, setAiSelectedOption] = useState(null);
   const [aiQuizSubmitted, setAiQuizSubmitted] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
   const [aiFeedback, setAiFeedback] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [dynamicAiQuiz, setDynamicAiQuiz] = useState(null);
 
-  // Daily study countdown timer (starts at 20:00)
+  // Daily study timer countdown (starts at 20:00)
   const [secondsRemaining, setSecondsRemaining] = useState(20 * 60);
 
   useEffect(() => {
@@ -368,29 +221,63 @@ export default function LearnScreen({
     return () => clearInterval(timer);
   }, []);
 
-  // Restore completed chapters from local storage
+  // Restore progression from persistent storage
   useEffect(() => {
-    AsyncStorage.getItem('bytalk_completed_chapters').then((stored) => {
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setCompletedChapterIds(parsed);
+    async function loadProgression() {
+      try {
+        const [savedUnlocked, savedCompleted] = await Promise.all([
+          AsyncStorage.getItem('bytalk_unlocked_level'),
+          AsyncStorage.getItem('bytalk_completed_levels'),
+        ]);
+
+        if (savedUnlocked) {
+          const uNum = parseInt(savedUnlocked, 10);
+          if (!isNaN(uNum) && uNum >= 1 && uNum <= 1000) {
+            setUnlockedLevel(uNum);
+            setActiveLevelNumber(uNum);
+            // Automatically switch to the page containing the current active level
+            const targetPage = Math.ceil(uNum / batchSize);
+            setCurrentBatchPage(targetPage);
           }
-        } catch {}
+        }
+
+        if (savedCompleted) {
+          const cArr = JSON.parse(savedCompleted);
+          if (Array.isArray(cArr)) {
+            setCompletedLevels(cArr);
+          }
+        }
+      } catch (err) {
+        console.warn('[LearnScreen restore]', err);
       }
-    }).catch(() => {});
+    }
+    loadProgression();
   }, []);
 
-  const saveCompletedChapter = async (chapId) => {
-    setCompletedChapterIds((prev) => {
-      if (!prev.includes(chapId)) {
-        const updated = [...prev, chapId];
-        AsyncStorage.setItem('bytalk_completed_chapters', JSON.stringify(updated)).catch(() => {});
-        return updated;
+  // Save progression whenever a level is solved
+  const unlockNextLevel = async (currentLvl) => {
+    try {
+      const nextLvl = Math.min(1000, currentLvl + 1);
+
+      // Add to completed levels
+      setCompletedLevels((prev) => {
+        const nextList = prev.includes(currentLvl) ? prev : [...prev, currentLvl];
+        AsyncStorage.setItem('bytalk_completed_levels', JSON.stringify(nextList)).catch(() => {});
+        return nextList;
+      });
+
+      // Unlock next level if advancing
+      if (nextLvl > unlockedLevel) {
+        setUnlockedLevel(nextLvl);
+        setActiveLevelNumber(nextLvl);
+        await AsyncStorage.setItem('bytalk_unlocked_level', String(nextLvl));
       }
-      return prev;
-    });
+
+      // Award +20 stars
+      if (onAddStars) onAddStars(20);
+    } catch (e) {
+      console.warn('[unlockNextLevel]', e);
+    }
   };
 
   const formatTimer = (totalSeconds) => {
@@ -399,15 +286,33 @@ export default function LearnScreen({
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const currentLevel = LEARNING_LEVELS.find((lvl) => lvl.id === selectedLevelId) || LEARNING_LEVELS[0];
+  // Levels visible on the current page batch (e.g. 1–50, 51–100, etc.)
+  const visibleLevels = useMemo(() => {
+    const start = (currentBatchPage - 1) * batchSize + 1;
+    const end = Math.min(1000, currentBatchPage * batchSize);
+    const list = [];
+    for (let i = start; i <= end; i++) {
+      list.push(getLevelData(i));
+    }
+    return list;
+  }, [currentBatchPage]);
 
-  const handleOpenChapter = (chap) => {
-    setActiveChapter(chap);
+  const activeLevelData = useMemo(() => getLevelData(activeLevelNumber), [activeLevelNumber]);
+
+  const handleSelectLevelNode = (lvlNum) => {
+    if (lvlNum > unlockedLevel) {
+      Alert.alert(
+        '🔒 Level Locked',
+        `Level ${lvlNum} is locked!\n\nPlease solve Level ${lvlNum - 1} first to unlock this English speaking practice.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    setActiveLevelNumber(lvlNum);
     setShowTooltip(true);
   };
 
   const handleStartLesson = () => {
-    if (!activeChapter) return;
     setShowLessonModal(true);
     setActivePhraseIndex(0);
     setLessonCompleted(false);
@@ -424,109 +329,87 @@ export default function LearnScreen({
 
   const handleNextPhrase = () => {
     stopSpeech();
-    if (activeChapter && activePhraseIndex < activeChapter.phrases.length - 1) {
+    if (activePhraseIndex < activeLevelData.phrases.length - 1) {
       setActivePhraseIndex((prev) => prev + 1);
     } else {
       setLessonCompleted(true);
-      if (activeChapter) {
-        saveCompletedChapter(activeChapter.id);
-      }
-      if (onAddStars) onAddStars(20);
+      unlockNextLevel(activeLevelNumber);
     }
   };
 
-  // Start Gemini AI Practice for the active chapter
+  // Launch AI Speaking Challenge (labeled "AI Practice", never showing "Gemini")
   const handleStartAiPractice = async () => {
-    if (!activeChapter) return;
     setShowLessonModal(false);
     setShowAiModal(true);
     setAiSelectedOption(null);
     setAiQuizSubmitted(false);
     setAiFeedback('');
-    setAiLoading(true);
+    setDynamicAiQuiz(activeLevelData.quiz);
 
-    const fallbackQuiz = activeChapter.quiz || {
-      scenario: `You are practicing ${activeChapter.title} in a realistic conversation.`,
-      question: "Which expression is the most natural in this context?",
-      options: [
-        activeChapter.phrases[0]?.phrase || "Good morning!",
-        "I have no response.",
-        "Incorrect sentence here.",
-        "None of the above."
-      ],
-      correctIndex: 0,
-      explanation: "This phrase represents the authentic everyday expression for this situation."
-    };
-
-    setAiQuiz(fallbackQuiz);
-
-    // Call Gemini API via backend /api/ai/chat if available
+    // Optional dynamic AI generation via backend
     if (request) {
+      setAiLoading(true);
       try {
-        const prompt = `Generate a 1-question conversational English quiz for Chapter: "${activeChapter.title}" (${currentLevel.name} level).
-Return ONLY valid JSON in this exact structure:
-{
-  "scenario": "Brief 1-sentence real-world situation",
-  "question": "The question to ask the learner",
-  "options": ["Option A", "Option B", "Option C", "Option D"],
-  "correctIndex": 0,
-  "explanation": "Why the correct answer is the most natural choice"
-}`;
         const res = await request('ai/chat', {
           method: 'POST',
-          body: JSON.stringify({
-            message: prompt,
-            topic: activeChapter.title,
-            proficiencyLevel: currentLevel.name,
-          }),
+          body: {
+            message: `Generate a 1-question conversational English quiz for Level ${activeLevelNumber}: "${activeLevelData.title}".
+Return strictly valid JSON:
+{"scenario": "Brief 1-sentence real situation", "question": "Question text", "options": ["Option A", "Option B", "Option C", "Option D"], "correctIndex": 0, "explanation": "Why this option is authentic English"}`,
+            topic: activeLevelData.title,
+            proficiencyLevel: activeLevelData.stageName,
+          },
         });
-
-        if (res && res.message) {
-          const jsonMatch = res.message.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
+        if (res?.message) {
+          const match = res.message.match(/\{[\s\S]*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
             if (parsed.question && Array.isArray(parsed.options) && parsed.options.length === 4) {
-              setAiQuiz(parsed);
+              setDynamicAiQuiz(parsed);
             }
           }
         }
       } catch (err) {
-        console.log('[LearnScreen Gemini Quiz] Using local dynamic quiz:', err.message);
+        // Fallback to pre-built level quiz
       } finally {
         setAiLoading(false);
       }
-    } else {
-      setAiLoading(false);
     }
   };
 
   const handleCheckAiAnswer = () => {
-    if (aiSelectedOption === null || !aiQuiz) return;
+    const currentQuiz = dynamicAiQuiz || activeLevelData.quiz;
+    if (aiSelectedOption === null || !currentQuiz) return;
+
     setAiQuizSubmitted(true);
-    const isCorrect = aiSelectedOption === aiQuiz.correctIndex;
+    const isCorrect = aiSelectedOption === currentQuiz.correctIndex;
     if (isCorrect) {
-      setAiFeedback(`🎉 Excellent! That is exactly right.\n\n${aiQuiz.explanation}`);
-      if (activeChapter) {
-        saveCompletedChapter(activeChapter.id);
-      }
-      if (onAddStars) onAddStars(20);
+      setAiFeedback(`🎉 Excellent! You solved Level ${activeLevelNumber}.\n\n${currentQuiz.explanation}`);
+      unlockNextLevel(activeLevelNumber);
     } else {
-      setAiFeedback(`Keep practicing! The best answer was "${aiQuiz.options[aiQuiz.correctIndex]}".\n\n${aiQuiz.explanation}`);
+      setAiFeedback(`Keep practicing! The natural response was "${currentQuiz.options[currentQuiz.correctIndex]}".\n\n${currentQuiz.explanation}`);
     }
   };
 
+  // Jump directly to current active level page
+  const handleJumpToMyLevel = () => {
+    const page = Math.ceil(unlockedLevel / batchSize);
+    setCurrentBatchPage(page);
+    setActiveLevelNumber(unlockedLevel);
+    setShowTooltip(true);
+  };
+
+  const progressPercent = Math.min(100, Math.round(((unlockedLevel - 1) / 1000) * 100));
+
   return (
     <View style={styles.screenContainer}>
-      {/* Sub Header: Learning Pathway | Timer Pill | History */}
+      {/* ================= TOP SUB-HEADER ================= */}
       <View style={styles.subHeader}>
         <View style={styles.pathwayTitleGroup}>
-          <Text style={styles.pathwayTitleText}>Learning Pathway</Text>
-          <TouchableOpacity
-            onPress={() => Alert.alert('Learning Pathway', 'Follow the units and chapters step-by-step to master spoken English with audio and AI!')}
-            style={styles.helpCircle}
-          >
-            <Ionicons name="help-circle-outline" size={17} color="#64748B" />
-          </TouchableOpacity>
+          <Text style={styles.pathwayTitleText}>English Mastery</Text>
+          <View style={styles.totalBadge}>
+            <Text style={styles.totalBadgeText}>1,000 Levels</Text>
+          </View>
         </View>
 
         {/* Timer Pill: ⏱️ 20:00 */}
@@ -546,148 +429,193 @@ Return ONLY valid JSON in this exact structure:
         </TouchableOpacity>
       </View>
 
-      {/* Level Selector Tabs */}
-      <View style={styles.levelTabsContainer}>
-        {LEARNING_LEVELS.map((lvl) => {
-          const isSelected = lvl.id === selectedLevelId;
-          return (
-            <TouchableOpacity
-              key={lvl.id}
-              onPress={() => {
-                setSelectedLevelId(lvl.id);
-                const firstChap = lvl.units[0]?.chapters[0];
-                if (firstChap) {
-                  setActiveChapter(firstChap);
-                  setShowTooltip(true);
-                }
-              }}
-              style={[
-                styles.levelTabPill,
-                isSelected && { backgroundColor: lvl.color, borderColor: lvl.color },
-              ]}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.levelTabTag, isSelected && { color: '#FFFFFF' }]}>
-                {lvl.tag}
-              </Text>
-              <Text style={[styles.levelTabName, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
-                {lvl.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+      {/* ================= OVERALL PROGRESS CARD ================= */}
+      <View style={styles.progressCard}>
+        <View style={styles.progressCardHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.progressLevelText}>
+              Current: <Text style={{ color: '#4F46E5', fontWeight: '900' }}>Level {unlockedLevel}</Text> of 1,000
+            </Text>
+            <Text style={styles.progressSubText}>
+              {completedLevels.length} Levels Solved • {completedLevels.length * 20} Stars Earned ⭐
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={handleJumpToMyLevel}
+            style={styles.jumpBtn}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="locate-outline" size={15} color="#FFFFFF" style={{ marginRight: 4 }} />
+            <Text style={styles.jumpBtnText}>My Level</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Progress Bar */}
+        <View style={styles.progressBarTrack}>
+          <View style={[styles.progressBarFill, { width: `${Math.max(2, progressPercent)}%` }]} />
+        </View>
       </View>
 
-      {/* Sky Blue Cloud Background & Scrollable Pathway */}
+      {/* ================= PAGE / BATCH SELECTOR (e.g. 1–50, 51–100) ================= */}
+      <View style={styles.batchPaginationBar}>
+        <TouchableOpacity
+          onPress={() => setCurrentBatchPage((prev) => Math.max(1, prev - 1))}
+          disabled={currentBatchPage === 1}
+          style={[styles.pageNavBtn, currentBatchPage === 1 && { opacity: 0.35 }]}
+        >
+          <Ionicons name="chevron-back" size={18} color="#4F46E5" />
+        </TouchableOpacity>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingHorizontal: 4 }}>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+            const isSelected = p === currentBatchPage;
+            const startNum = (p - 1) * batchSize + 1;
+            const endNum = p * batchSize;
+            const hasUnlocked = unlockedLevel >= startNum;
+
+            return (
+              <TouchableOpacity
+                key={p}
+                onPress={() => setCurrentBatchPage(p)}
+                style={[
+                  styles.batchPill,
+                  isSelected && styles.batchPillActive,
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.batchPillText, isSelected && styles.batchPillTextActive]}>
+                  {startNum}–{endNum}
+                </Text>
+                {hasUnlocked && !isSelected && (
+                  <View style={styles.unlockedDot} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <TouchableOpacity
+          onPress={() => setCurrentBatchPage((prev) => Math.min(totalPages, prev + 1))}
+          disabled={currentBatchPage === totalPages}
+          style={[styles.pageNavBtn, currentBatchPage === totalPages && { opacity: 0.35 }]}
+        >
+          <Ionicons name="chevron-forward" size={18} color="#4F46E5" />
+        </TouchableOpacity>
+      </View>
+
+      {/* ================= 1000 LEVEL ROADMAP CANVAS ================= */}
       <LinearGradient
         colors={['#BFDBFE', '#DBEAFE', '#EFF6FF', '#F8FAFC']}
         style={styles.skyGradient}
       >
         <ScrollView contentContainerStyle={styles.pathwayScroll} showsVerticalScrollIndicator={false}>
-          {currentLevel.units.map((unit) => (
-            <View key={unit.unitNumber} style={styles.unitSection}>
-              {/* Unit Frosted Header */}
-              <View style={styles.unitHeaderCard}>
-                <Text style={styles.unitBadgeText}>Unit {unit.unitNumber}</Text>
-                <Text style={styles.unitTitleText}>{unit.title}</Text>
-              </View>
+          {visibleLevels.map((lvl, idx) => {
+            const isCompleted = completedLevels.includes(lvl.level);
+            const isUnlocked = lvl.level <= unlockedLevel;
+            const isSelected = activeLevelNumber === lvl.level;
+            const isRightSide = idx % 2 === 1;
 
-              {/* Pathway Canvas with Chapters */}
-              <View style={styles.pathwayCanvas}>
-                {unit.chapters.map((chap, idx) => {
-                  const isCompleted = completedChapterIds.includes(chap.id);
-                  const isSelected = activeChapter?.id === chap.id;
-                  const isRightSide = idx % 2 === 1;
+            return (
+              <View key={lvl.level} style={{ width: '100%', alignItems: 'center', marginBottom: 16 }}>
+                {/* Milestone Node */}
+                <View
+                  style={[
+                    styles.milestoneNode,
+                    isRightSide
+                      ? { alignSelf: 'flex-end', marginRight: 48 }
+                      : { alignSelf: 'flex-start', marginLeft: 48 },
+                  ]}
+                >
+                  <TouchableOpacity
+                    onPress={() => handleSelectLevelNode(lvl.level)}
+                    activeOpacity={0.85}
+                    style={[
+                      styles.hexagonShape,
+                      isCompleted && styles.hexagonShapeCompleted,
+                      isSelected && isUnlocked && styles.hexagonShapeSelected,
+                      !isUnlocked && styles.hexagonShapeLocked,
+                    ]}
+                  >
+                    {isCompleted ? (
+                      <Ionicons name="checkmark-sharp" size={26} color="#FFFFFF" />
+                    ) : !isUnlocked ? (
+                      <Ionicons name="lock-closed" size={22} color="#94A3B8" />
+                    ) : (
+                      <Text style={styles.hexagonNum}>{lvl.level}</Text>
+                    )}
+                    <Text
+                      style={[
+                        styles.hexagonLabel,
+                        isCompleted && { color: '#FFFFFF' },
+                        !isUnlocked && { color: '#94A3B8' },
+                      ]}
+                    >
+                      {isCompleted ? 'Solved' : !isUnlocked ? 'Locked' : 'Level'}
+                    </Text>
+                  </TouchableOpacity>
 
-                  return (
-                    <View key={chap.id} style={{ width: '100%', alignItems: 'center' }}>
-                      <View
-                        style={[
-                          styles.milestoneNode,
-                          isRightSide
-                            ? { alignSelf: 'flex-end', marginRight: 42, marginTop: 24 }
-                            : { alignSelf: 'flex-start', marginLeft: 42, marginTop: 24 },
-                        ]}
+                  <Text style={styles.chapterSubtitle} numberOfLines={1}>
+                    {lvl.title.replace(`Level ${lvl.level}: `, '')}
+                  </Text>
+                </View>
+
+                {/* Active Unlocked Level Interactive Callout Card */}
+                {isSelected && isUnlocked && showTooltip && (
+                  <View style={styles.tooltipCalloutBox}>
+                    <View style={styles.tooltipArrowUp} />
+                    <View style={styles.tooltipCard}>
+                      <TouchableOpacity
+                        onPress={() => setShowTooltip(false)}
+                        style={styles.tooltipCloseBtn}
                       >
-                        <TouchableOpacity
-                          onPress={() => handleOpenChapter(chap)}
-                          activeOpacity={0.85}
-                          style={[
-                            styles.hexagonShape,
-                            isCompleted && styles.hexagonShapeCompleted,
-                            isSelected && styles.hexagonShapeSelected,
-                          ]}
-                        >
-                          {isCompleted ? (
-                            <Ionicons name="checkmark-sharp" size={26} color="#FFFFFF" />
-                          ) : (
-                            <Text style={styles.hexagonNum}>{chap.num}</Text>
-                          )}
-                          <Text style={[styles.hexagonLabel, isCompleted && { color: '#FFFFFF' }]}>
-                            Chapter
-                          </Text>
-                        </TouchableOpacity>
+                        <Ionicons name="close" size={18} color="#64748B" />
+                      </TouchableOpacity>
 
-                        <Text style={styles.chapterSubtitle} numberOfLines={1}>
-                          {chap.title}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            isCompleted ? { backgroundColor: '#10B981' } : { backgroundColor: '#F59E0B' },
+                          ]}
+                        />
+                        <Text style={styles.tooltipBadge}>
+                          {isCompleted ? 'Level Solved ✓' : 'Ready to Practice'}
                         </Text>
                       </View>
 
-                      {/* Tooltip Card for Active Chapter */}
-                      {isSelected && showTooltip && (
-                        <View style={styles.tooltipCalloutBox}>
-                          <View style={styles.tooltipArrowUp} />
-                          <View style={styles.tooltipCard}>
-                            <TouchableOpacity
-                              onPress={() => setShowTooltip(false)}
-                              style={styles.tooltipCloseBtn}
-                            >
-                              <Ionicons name="close" size={18} color="#64748B" />
-                            </TouchableOpacity>
+                      <Text style={styles.tooltipTitle}>{lvl.title}</Text>
+                      <Text style={styles.tooltipSubtitle}>{lvl.subtitle}</Text>
 
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                              <View style={[styles.statusDot, isCompleted ? { backgroundColor: '#10B981' } : { backgroundColor: '#F59E0B' }]} />
-                              <Text style={styles.tooltipBadge}>
-                                {isCompleted ? 'Completed' : 'Ready to Start'}
-                              </Text>
-                            </View>
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                        <TouchableOpacity
+                          onPress={handleStartLesson}
+                          style={styles.startStarsBtn}
+                          activeOpacity={0.88}
+                        >
+                          <Ionicons name="book-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <Text style={styles.startStarsBtnText}>LEARN +20 STARS</Text>
+                        </TouchableOpacity>
 
-                            <Text style={styles.tooltipTitle}>{chap.title}</Text>
-                            <Text style={styles.tooltipSubtitle}>{chap.subtitle}</Text>
-
-                            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                              <TouchableOpacity
-                                onPress={handleStartLesson}
-                                style={styles.startStarsBtn}
-                                activeOpacity={0.88}
-                              >
-                                <Ionicons name="book-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                                <Text style={styles.startStarsBtnText}>LEARN +20 STARS</Text>
-                              </TouchableOpacity>
-
-                              <TouchableOpacity
-                                onPress={handleStartAiPractice}
-                                style={styles.geminiAiBtn}
-                                activeOpacity={0.88}
-                              >
-                                <Ionicons name="sparkles" size={15} color="#4338CA" style={{ marginRight: 5 }} />
-                                <Text style={styles.geminiAiBtnText}>Gemini AI</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        </View>
-                      )}
+                        <TouchableOpacity
+                          onPress={handleStartAiPractice}
+                          style={styles.aiSpeakingBtn}
+                          activeOpacity={0.88}
+                        >
+                          <Ionicons name="sparkles" size={15} color="#4338CA" style={{ marginRight: 5 }} />
+                          <Text style={styles.aiSpeakingBtnText}>AI Practice</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  );
-                })}
+                  </View>
+                )}
               </View>
-            </View>
-          ))}
+            );
+          })}
           <View style={{ height: 60 }} />
         </ScrollView>
       </LinearGradient>
 
-      {/* ================= MODAL 1: CHAPTER LESSON PHRASES ================= */}
+      {/* ================= MODAL 1: CHAPTER PHRASES PRACTICE ================= */}
       <Modal
         visible={showLessonModal}
         transparent
@@ -702,9 +630,9 @@ Return ONLY valid JSON in this exact structure:
             <View style={styles.lessonSheetHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.lessonSheetCategory}>
-                  {currentLevel.name} • Chapter {activeChapter?.num}
+                  Level {activeLevelData.level} • {activeLevelData.stageName}
                 </Text>
-                <Text style={styles.lessonSheetTitle}>{activeChapter?.title}</Text>
+                <Text style={styles.lessonSheetTitle}>{activeLevelData.title}</Text>
               </View>
               <TouchableOpacity
                 onPress={() => {
@@ -717,32 +645,30 @@ Return ONLY valid JSON in this exact structure:
               </TouchableOpacity>
             </View>
 
-            {/* Lesson Progress Dots */}
-            {activeChapter && (
-              <View style={styles.progressDotsRow}>
-                {activeChapter.phrases.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.dotItem,
-                      i === activePhraseIndex && styles.dotItemActive,
-                      i < activePhraseIndex && styles.dotItemDone,
-                    ]}
-                  />
-                ))}
-              </View>
-            )}
+            {/* Dots Indicator */}
+            <View style={styles.progressDotsRow}>
+              {activeLevelData.phrases.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.dotItem,
+                    i === activePhraseIndex && styles.dotItemActive,
+                    i < activePhraseIndex && styles.dotItemDone,
+                  ]}
+                />
+              ))}
+            </View>
 
-            {!lessonCompleted && activeChapter ? (
+            {!lessonCompleted ? (
               <View style={styles.phraseCardBody}>
                 {/* Phrase Highlight Box */}
                 <View style={styles.phraseDisplayBox}>
                   <Text style={styles.phraseMainText}>
-                    "{activeChapter.phrases[activePhraseIndex].phrase}"
+                    "{activeLevelData.phrases[activePhraseIndex].phrase}"
                   </Text>
-                  {activeChapter.phrases[activePhraseIndex].phonetic ? (
+                  {activeLevelData.phrases[activePhraseIndex].phonetic ? (
                     <Text style={styles.phrasePhoneticText}>
-                      {activeChapter.phrases[activePhraseIndex].phonetic}
+                      {activeLevelData.phrases[activePhraseIndex].phonetic}
                     </Text>
                   ) : null}
 
@@ -750,7 +676,7 @@ Return ONLY valid JSON in this exact structure:
                   <TouchableOpacity
                     onPress={() =>
                       handlePlayAudio(
-                        activeChapter.phrases[activePhraseIndex].phrase,
+                        activeLevelData.phrases[activePhraseIndex].phrase,
                         activePhraseIndex
                       )
                     }
@@ -773,12 +699,12 @@ Return ONLY valid JSON in this exact structure:
                 <View style={styles.phraseMetaBox}>
                   <Text style={styles.phraseMetaLabel}>Meaning:</Text>
                   <Text style={styles.phraseMetaVal}>
-                    {activeChapter.phrases[activePhraseIndex].meaning}
+                    {activeLevelData.phrases[activePhraseIndex].meaning}
                   </Text>
 
-                  <Text style={[styles.phraseMetaLabel, { marginTop: 12 }]}>Example:</Text>
+                  <Text style={[styles.phraseMetaLabel, { marginTop: 12 }]}>Example in Context:</Text>
                   <Text style={[styles.phraseMetaVal, { fontStyle: 'italic', color: '#1E293B' }]}>
-                    "{activeChapter.phrases[activePhraseIndex].example}"
+                    "{activeLevelData.phrases[activePhraseIndex].example}"
                   </Text>
                 </View>
 
@@ -789,33 +715,35 @@ Return ONLY valid JSON in this exact structure:
                   activeOpacity={0.88}
                 >
                   <Text style={styles.nextPhraseBtnText}>
-                    {activePhraseIndex < activeChapter.phrases.length - 1 ? 'Next Phrase →' : 'Complete & Earn 20 Stars ⭐'}
+                    {activePhraseIndex < activeLevelData.phrases.length - 1
+                      ? 'Next Phrase →'
+                      : `Solve Level ${activeLevelData.level} & Unlock Next ⭐`}
                   </Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              /* Lesson Finished Celebration View */
+              /* Level Finished Celebration */
               <View style={styles.lessonDoneBox}>
                 <Ionicons name="trophy" size={60} color="#F59E0B" />
-                <Text style={styles.lessonDoneTitle}>Chapter Completed! 🎉</Text>
+                <Text style={styles.lessonDoneTitle}>Level {activeLevelData.level} Solved! 🎉</Text>
                 <Text style={styles.lessonDoneSubtitle}>
-                  You earned +20 Stars and unlocked your next milestone!
+                  You earned +20 Stars! Level {Math.min(1000, activeLevelData.level + 1)} is now UNLOCKED!
                 </Text>
 
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 22, width: '100%' }}>
                   <TouchableOpacity
                     onPress={handleStartAiPractice}
-                    style={[styles.geminiAiBtn, { flex: 1, paddingVertical: 14 }]}
+                    style={[styles.aiSpeakingBtn, { flex: 1, paddingVertical: 14 }]}
                   >
                     <Ionicons name="sparkles" size={17} color="#4338CA" style={{ marginRight: 6 }} />
-                    <Text style={styles.geminiAiBtnText}>Gemini AI Practice</Text>
+                    <Text style={styles.aiSpeakingBtnText}>AI Speaking Quiz</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     onPress={() => setShowLessonModal(false)}
                     style={[styles.startStarsBtn, { flex: 1, paddingVertical: 14 }]}
                   >
-                    <Text style={styles.startStarsBtnText}>Back to Pathway</Text>
+                    <Text style={styles.startStarsBtnText}>Continue Pathway</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -824,7 +752,7 @@ Return ONLY valid JSON in this exact structure:
         </View>
       </Modal>
 
-      {/* ================= MODAL 2: GEMINI AI PRACTICE QUIZ ================= */}
+      {/* ================= MODAL 2: AI SPEAKING QUIZ (NO GEMINI WORD) ================= */}
       <Modal
         visible={showAiModal}
         transparent
@@ -836,7 +764,7 @@ Return ONLY valid JSON in this exact structure:
             <View style={styles.lessonSheetHeader}>
               <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Ionicons name="sparkles" size={22} color="#6366F1" />
-                <Text style={styles.lessonSheetTitle}>Gemini AI Speaking Practice</Text>
+                <Text style={styles.lessonSheetTitle}>AI Speaking Challenge</Text>
               </View>
               <TouchableOpacity onPress={() => setShowAiModal(false)} style={styles.modalCloseBtn}>
                 <Ionicons name="close" size={22} color="#64748B" />
@@ -847,27 +775,32 @@ Return ONLY valid JSON in this exact structure:
               <View style={{ padding: 40, alignItems: 'center' }}>
                 <ActivityIndicator size="large" color="#6366F1" />
                 <Text style={{ marginTop: 14, color: '#4B5563', fontWeight: '600' }}>
-                  Gemini is crafting your personalized scenario…
+                  Preparing your personalized speaking challenge…
                 </Text>
               </View>
-            ) : aiQuiz ? (
+            ) : dynamicAiQuiz || activeLevelData.quiz ? (
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
                 {/* Scenario Card */}
                 <View style={styles.aiScenarioCard}>
-                  <Text style={styles.aiScenarioBadge}>CONVERSATION SCENARIO</Text>
-                  <Text style={styles.aiScenarioText}>"{aiQuiz.scenario}"</Text>
+                  <Text style={styles.aiScenarioBadge}>SPOKEN CONVERSATION SCENARIO</Text>
+                  <Text style={styles.aiScenarioText}>
+                    "{(dynamicAiQuiz || activeLevelData.quiz).scenario}"
+                  </Text>
                 </View>
 
                 {/* Question Prompt */}
-                <Text style={styles.aiQuestionText}>{aiQuiz.question}</Text>
+                <Text style={styles.aiQuestionText}>
+                  {(dynamicAiQuiz || activeLevelData.quiz).question}
+                </Text>
 
                 {/* 4 Multiple Choice Options */}
-                {aiQuiz.options.map((opt, idx) => {
+                {(dynamicAiQuiz || activeLevelData.quiz).options.map((opt, idx) => {
                   const isSelected = aiSelectedOption === idx;
+                  const currentQuiz = dynamicAiQuiz || activeLevelData.quiz;
                   let optStyle = styles.aiOptionBox;
                   if (isSelected) optStyle = [styles.aiOptionBox, styles.aiOptionBoxSelected];
                   if (aiQuizSubmitted) {
-                    if (idx === aiQuiz.correctIndex) {
+                    if (idx === currentQuiz.correctIndex) {
                       optStyle = [styles.aiOptionBox, styles.aiOptionBoxCorrect];
                     } else if (isSelected) {
                       optStyle = [styles.aiOptionBox, styles.aiOptionBoxWrong];
@@ -892,7 +825,7 @@ Return ONLY valid JSON in this exact structure:
                   );
                 })}
 
-                {/* Feedback Box after Submit */}
+                {/* Feedback Box */}
                 {aiQuizSubmitted && aiFeedback ? (
                   <View style={styles.aiFeedbackBox}>
                     <Text style={styles.aiFeedbackText}>{aiFeedback}</Text>
@@ -914,11 +847,19 @@ Return ONLY valid JSON in this exact structure:
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    onPress={() => setShowAiModal(false)}
+                    onPress={() => {
+                      setShowAiModal(false);
+                      // Auto advance to next level if solved
+                      if (activeLevelNumber < 1000) {
+                        setActiveLevelNumber(activeLevelNumber + 1);
+                      }
+                    }}
                     style={styles.nextPhraseBtn}
                     activeOpacity={0.88}
                   >
-                    <Text style={styles.nextPhraseBtnText}>Finish & Return to Pathway</Text>
+                    <Text style={styles.nextPhraseBtnText}>
+                      Proceed to Level {Math.min(1000, activeLevelNumber + 1)} 🚀
+                    </Text>
                   </TouchableOpacity>
                 )}
               </ScrollView>
@@ -948,6 +889,7 @@ const styles = StyleSheet.create({
   pathwayTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   pathwayTitleText: {
     fontSize: 16,
@@ -955,9 +897,16 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     fontFamily: Platform.OS === 'ios' ? 'Times New Roman' : 'serif',
   },
-  helpCircle: {
-    marginLeft: 5,
-    padding: 2,
+  totalBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  totalBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4F46E5',
   },
   timerPill: {
     flexDirection: 'row',
@@ -985,79 +934,106 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#4F46E5',
   },
-  levelTabsContainer: {
-    flexDirection: 'row',
+  progressCard: {
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
+    marginHorizontal: 14,
+    marginTop: 10,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  progressCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  progressLevelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  progressSubText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  jumpBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  jumpBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  progressBarTrack: {
+    height: 7,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#10B981',
+    borderRadius: 4,
+  },
+  batchPaginationBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     paddingVertical: 8,
-    gap: 8,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  levelTabPill: {
-    flex: 1,
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    borderRadius: 12,
+  pageNavBtn: {
+    padding: 6,
+  },
+  batchPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
-  levelTabTag: {
-    fontSize: 10,
+  batchPillActive: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
+  },
+  batchPillText: {
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
-    textTransform: 'uppercase',
   },
-  levelTabName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginTop: 1,
+  batchPillTextActive: {
+    color: '#FFFFFF',
+  },
+  unlockedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
   },
   skyGradient: {
     flex: 1,
   },
   pathwayScroll: {
     paddingVertical: 20,
-    alignItems: 'center',
-  },
-  unitSection: {
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  unitHeaderCard: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 24,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  unitBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#6366F1',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  unitTitleText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 2,
-  },
-  pathwayCanvas: {
-    width: '100%',
     alignItems: 'center',
   },
   milestoneNode: {
@@ -1086,8 +1062,12 @@ const styles = StyleSheet.create({
     borderColor: '#4F46E5',
     transform: [{ scale: 1.05 }],
   },
+  hexagonShapeLocked: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
+  },
   hexagonNum: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     color: '#1E293B',
   },
@@ -1102,7 +1082,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#334155',
     marginTop: 6,
-    maxWidth: 130,
+    maxWidth: 140,
     textAlign: 'center',
   },
   tooltipCalloutBox: {
@@ -1185,7 +1165,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.4,
   },
-  geminiAiBtn: {
+  aiSpeakingBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1196,7 +1176,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#C7D2FE',
   },
-  geminiAiBtnText: {
+  aiSpeakingBtnText: {
     fontSize: 12,
     fontWeight: '800',
     color: '#4338CA',

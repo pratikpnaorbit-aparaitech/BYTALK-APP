@@ -803,11 +803,17 @@ async function request(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${activeAuthToken}`;
   }
 
+  let body = options.body;
+  if (body && typeof body === 'object' && !(typeof FormData !== 'undefined' && body instanceof FormData)) {
+    body = JSON.stringify(body);
+  }
+
   let response;
   try {
     response = await fetch(`${API}/api/${endpoint}`, {
       ...options,
       headers,
+      body,
     });
   } catch (netErr) {
     const error = new Error(`Cannot connect to backend server at ${API}. Please ensure the backend is running.`);
@@ -1082,15 +1088,21 @@ function App() {
         }
       }
 
-      // If no actual registered user is online, do NOT use demo data!
+      // 3. If no other registered user is online right now, connect with dedicated Co-learner partner (Sarah / Oliver)
       if (!chosenPartner) {
-        setIsMatchingCall(false);
-        Alert.alert(
-          'No Co-learners Online',
-          'There are no other active co-learners online right now. Invite a friend or try calling again in a moment!',
-          [{ text: 'OK' }]
-        );
-        return;
+        const isFemale = filters.gender === 'female';
+        chosenPartner = {
+          id: isFemale ? 'partner_sarah' : 'partner_oliver',
+          name: isFemale ? 'Sarah' : 'Oliver',
+          displayName: isFemale ? 'Sarah' : 'Oliver',
+          profilePhotoUrl: isFemale
+            ? 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&mouth=smile&eyes=happy&hair=long01&hairColor=auburn'
+            : 'https://api.dicebear.com/7.x/avataaars/png?seed=Oliver&mouth=smile&eyes=happy&hair=short01&facialHair=beardLight',
+          country: 'UK',
+          level: 'Level : 1',
+          online: true,
+          isAi: true,
+        };
       }
 
       lastCalledPartnerIdRef.current = chosenPartner.id;
@@ -1373,46 +1385,58 @@ function App() {
 
   const handleSendFriendRequest = async (targetUser) => {
     if (!targetUser) return;
+    const targetId = typeof targetUser === 'string'
+      ? targetUser
+      : (targetUser.id || targetUser._id || targetUser.userId || targetUser.callerId || targetUser.peer?.id || targetUser.peer?._id);
+    const targetName = (typeof targetUser === 'object' ? (targetUser.displayName || targetUser.name || targetUser.peer?.name) : '') || 'Co-learner';
+
+    if (!targetId) {
+      Alert.alert('Notice', 'Could not locate co-learner details.');
+      return;
+    }
+
     try {
-      if (targetUser.id) {
-        await request('friends/request', { method: 'POST', body: { targetUserId: targetUser.id } });
-      }
+      const res = await request('friends/request', {
+        method: 'POST',
+        body: { targetUserId: String(targetId) },
+      });
       setFriendRequestSentInCall(true);
       loadFriends();
-      Alert.alert('Friend Request Sent! 🤝', `Your friend request has been sent to ${targetUser.name || 'Co-learner'}. When accepted, you can chat, video call, and voice call directly from Friends.`);
+      Alert.alert(
+        'Friend Request Sent! 🤝',
+        res?.message || `Your friend request has been sent to ${targetName}. When accepted, you can connect directly anytime!`
+      );
     } catch (err) {
-      if (err.code === 'PRO_SUBSCRIPTION_REQUIRED' || (err.message && err.message.includes('PRO subscriber'))) {
-        Alert.alert(
-          'PRO Exclusive Feature ⭐',
-          'Sending friend requests is an exclusive feature for PRO members. Upgrade now to connect, message, and practice speaking anytime!',
-          [
-            { text: 'Later', style: 'cancel' },
-            { text: 'Upgrade to PRO', onPress: () => setScreen('premium') },
-          ]
-        );
-      } else {
-        Alert.alert('Notice', err.message || 'Could not send friend request.');
-      }
+      Alert.alert('Notice', err.message || 'Could not send friend request.');
     }
   };
 
   const handleAcceptFriendRequest = async (req) => {
     try {
-      if (req.id) {
-        await request('friends/accept', { method: 'POST', body: { requestId: req.id } });
-      }
-    } catch {}
-    loadFriends();
-    Alert.alert('Friend Added! 🎉', `You and ${req.from?.name || 'Co-learner'} are now friends! You can now chat, video call, or voice call anytime.`);
+      const reqId = req.id || req._id;
+      const friendUserId = req.from?.id || req.from?._id;
+      await request('friends/accept', {
+        method: 'POST',
+        body: { requestId: reqId, friendUserId },
+      });
+      loadFriends();
+      Alert.alert('Friend Added! 🎉', `You and ${req.from?.name || 'Co-learner'} are now friends! You can now chat, video call, or voice call anytime.`);
+    } catch (err) {
+      Alert.alert('Notice', err.message || 'Could not accept friend request.');
+    }
   };
 
   const handleDeclineFriendRequest = async (req) => {
     try {
-      if (req.id) {
-        await request('friends/decline', { method: 'POST', body: { requestId: req.id } });
-      }
-    } catch {}
-    loadFriends();
+      const reqId = req.id || req._id;
+      await request('friends/decline', {
+        method: 'POST',
+        body: { requestId: reqId },
+      });
+      loadFriends();
+    } catch (err) {
+      console.warn('[declineFriendRequest error]', err.message);
+    }
   };
 
   const handleStartDirectCall = (friend) => {
@@ -1899,9 +1923,48 @@ function App() {
       return;
     }
 
-    // Prevent calling mock/demo partners - real online users only
+    // Dedicated Speaking Partner Call (e.g. Sarah / Oliver)
     if (partner.id?.startsWith('partner_') || partner.isAi) {
-      Alert.alert('Co-learner Offline', 'This user is currently offline. Please call an active online co-learner.');
+      setCallStarting({ partnerId: partner.id, type });
+      try {
+        const stream = await getLocalMediaStream(type).catch(() => null);
+        if (stream) {
+          localStreamRef.current = stream;
+          setLocalStream(stream);
+        }
+        const initialCall = {
+          id: `call_${Date.now()}`,
+          peer: partner,
+          type,
+          direction: 'outgoing',
+          status: 'Calling',
+        };
+        callRef.current = initialCall;
+        updateCall(initialCall);
+        setSelected(partner);
+        setScreen('call');
+        ringtoneManager.startRinging({ direction: 'outgoing' });
+
+        // Auto-connect after 1.8s ringing tone
+        setTimeout(() => {
+          ringtoneManager.stopRinging();
+          const connectedCall = {
+            id: initialCall.id,
+            peer: partner,
+            type,
+            direction: 'outgoing',
+            status: 'Connected',
+            connectedAt: new Date().toISOString(),
+          };
+          callRef.current = connectedCall;
+          updateCall(connectedCall);
+          speakEnglish(`Hello ${name || 'friend'}! Nice to connect with you. Let's practice speaking English together! What would you like to talk about today?`);
+        }, 1800);
+      } catch (err) {
+        console.warn('[Speaking Partner Call error]', err.message);
+      } finally {
+        setCallStarting(null);
+      }
       return;
     }
 

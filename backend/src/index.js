@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import dns from 'dns';
 import mongoose from 'mongoose';
 import { User, publicUser } from './models/User.js';
+import { Friendship } from './models/Friendship.js';
 import { Message, publicMessage } from './models/Message.js';
 import { CallHistory } from './models/CallHistory.js';
 import { PracticeSession } from './models/PracticeSession.js';
@@ -2037,30 +2038,40 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
 });
 
 // ==================== FRIENDS SYSTEM ====================
-const friendRequestsStore = new Map();
-const userFriendsStore = new Map();
-
+// Persistent Friendships & Friend Requests (MongoDB backed)
 app.get('/api/friends', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
-    const friendsSet = userFriendsStore.get(currentUserId) || new Set();
 
-    const friendUsers = [];
-    for (const fId of friendsSet) {
-      const u = await User.findById(fId).lean();
-      if (u) friendUsers.push(publicUser(u));
-    }
+    // 1. Fetch all accepted friendships
+    const acceptedFriendships = await Friendship.find({
+      status: 'accepted',
+      $or: [{ user1: currentUserId }, { user2: currentUserId }],
+    }).lean();
+
+    const friendIds = acceptedFriendships.map((f) =>
+      f.user1 === currentUserId ? f.user2 : f.user1
+    );
+
+    const friendUsers = friendIds.length > 0
+      ? (await User.find({ _id: { $in: friendIds } }).lean()).map(publicUser)
+      : [];
+
+    // 2. Fetch pending incoming requests
+    const pendingFriendships = await Friendship.find({
+      status: 'pending',
+      requesterId: { $ne: currentUserId },
+      $or: [{ user1: currentUserId }, { user2: currentUserId }],
+    }).lean();
 
     const pendingRequests = [];
-    for (const [rId, reqData] of friendRequestsStore.entries()) {
-      if (reqData.to === currentUserId && reqData.status === 'pending') {
-        const fromUser = await User.findById(reqData.from).lean();
-        pendingRequests.push({
-          id: rId,
-          from: fromUser ? publicUser(fromUser) : { id: reqData.from, name: 'Practice Learner' },
-          createdAt: reqData.createdAt,
-        });
-      }
+    for (const p of pendingFriendships) {
+      const fromUser = await User.findById(p.requesterId).lean();
+      pendingRequests.push({
+        id: String(p._id),
+        from: fromUser ? publicUser(fromUser) : { id: p.requesterId, name: 'Co-learner' },
+        createdAt: p.createdAt,
+      });
     }
 
     res.json({
@@ -2068,6 +2079,7 @@ app.get('/api/friends', requireAuth, async (req, res) => {
       pendingRequests,
     });
   } catch (err) {
+    console.warn('[GET /api/friends error]', err.message);
     res.status(500).json({ error: 'Failed to retrieve friends', details: err.message });
   }
 });
@@ -2075,42 +2087,78 @@ app.get('/api/friends', requireAuth, async (req, res) => {
 app.post('/api/friends/request', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
-    const { targetUserId } = req.body;
-    if (!targetUserId || String(targetUserId) === currentUserId) {
-      return res.status(400).json({ error: 'Invalid target user' });
+    let { targetUserId, friendId, userId: bodyUserId } = req.body || {};
+    targetUserId = String(targetUserId || friendId || bodyUserId || '').trim();
+
+    if (!targetUserId || targetUserId === currentUserId) {
+      return res.status(400).json({ error: 'Cannot send friend request to this user' });
     }
 
     const sender = await User.findById(currentUserId).lean();
-    const hasActiveSubscription = sender && (
-      sender.subscriptionPlan === 'pro' ||
-      sender.subscriptionPlan === 'plus' ||
-      sender.subscriptionPlan === 'basic' ||
-      sender.subscriptionPlan === '1month' ||
-      sender.subscriptionPlan === '3months' ||
-      sender.subscriptionPlan === '1year' ||
-      sender.subscriptionStatus === 'active' ||
-      isPaidSubscriber(sender)
-    );
+    if (!sender) return res.status(404).json({ error: 'Sender account not found' });
 
-    if (!hasActiveSubscription) {
-      return res.status(403).json({
-        error: 'Sending friend requests is an exclusive PRO subscriber feature. Upgrade your subscription to connect and practice speaking anytime!',
-        code: 'PRO_SUBSCRIPTION_REQUIRED',
-      });
-    }
+    const target = await User.findById(targetUserId).lean();
+    if (!target) return res.status(404).json({ error: 'Co-learner not found' });
 
-    const requestId = `fr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    friendRequestsStore.set(requestId, {
-      id: requestId,
-      from: currentUserId,
-      to: String(targetUserId),
-      status: 'pending',
-      createdAt: new Date().toISOString(),
+    // Check if friendship already exists
+    const existing = await Friendship.findOne({
+      $or: [
+        { user1: currentUserId, user2: targetUserId },
+        { user1: targetUserId, user2: currentUserId },
+      ],
     });
 
-    // Real-time notification to recipient
-    emitToUser(String(targetUserId), 'friend:request', {
-      requestId,
+    if (existing) {
+      if (existing.status === 'accepted') {
+        return res.json({ ok: true, message: 'You are already friends with this co-learner!' });
+      }
+      if (existing.status === 'pending') {
+        if (existing.requesterId === currentUserId) {
+          return res.json({ ok: true, message: 'Friend request already sent!' });
+        } else {
+          // Both requested each other -> auto-accept
+          existing.status = 'accepted';
+          await existing.save();
+
+          emitToUser(existing.requesterId, 'friend:accepted', {
+            userId: currentUserId,
+            name: sender.displayName || sender.name || 'Co-learner',
+            message: `${sender.displayName || sender.name || 'Co-learner'} accepted your friend request!`,
+          });
+
+          return res.json({ ok: true, message: 'You are now friends!' });
+        }
+      }
+      // Re-open if previously declined
+      existing.status = 'pending';
+      existing.requesterId = currentUserId;
+      await existing.save();
+
+      emitToUser(targetUserId, 'friend:request', {
+        requestId: String(existing._id),
+        from: {
+          id: currentUserId,
+          name: sender.displayName || sender.name || 'A co-learner',
+          profilePhotoUrl: sender.profilePhotoUrl || null,
+          level: sender.level || 'Beginner',
+        },
+        message: `${sender.displayName || sender.name || 'A co-learner'} sent you a friend request!`,
+      });
+
+      return res.json({ ok: true, requestId: String(existing._id), message: 'Friend request sent successfully!' });
+    }
+
+    // Create new persistent friendship
+    const newFriendship = await Friendship.create({
+      user1: currentUserId,
+      user2: targetUserId,
+      requesterId: currentUserId,
+      status: 'pending',
+    });
+
+    // Real-time WebSocket event to recipient
+    emitToUser(targetUserId, 'friend:request', {
+      requestId: String(newFriendship._id),
       from: {
         id: currentUserId,
         name: sender.displayName || sender.name || 'A co-learner',
@@ -2120,8 +2168,9 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
       message: `${sender.displayName || sender.name || 'A co-learner'} sent you a friend request!`,
     });
 
-    res.json({ ok: true, requestId, message: 'Friend request sent successfully!' });
+    res.json({ ok: true, requestId: String(newFriendship._id), message: 'Friend request sent successfully!' });
   } catch (err) {
+    console.warn('[POST /api/friends/request error]', err.message);
     res.status(500).json({ error: 'Failed to send friend request', details: err.message });
   }
 });
@@ -2129,24 +2178,28 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
 app.post('/api/friends/accept', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
-    const { requestId, friendUserId } = req.body;
+    const { requestId, friendUserId } = req.body || {};
 
-    let targetId = friendUserId;
-    if (requestId && friendRequestsStore.has(requestId)) {
-      const r = friendRequestsStore.get(requestId);
-      r.status = 'accepted';
-      targetId = r.from;
+    let friendship = null;
+    if (requestId) {
+      friendship = await Friendship.findById(requestId);
+    }
+    if (!friendship && friendUserId) {
+      friendship = await Friendship.findOne({
+        status: 'pending',
+        $or: [
+          { user1: currentUserId, user2: String(friendUserId) },
+          { user1: String(friendUserId), user2: currentUserId },
+        ],
+      });
     }
 
-    if (targetId) {
-      targetId = String(targetId);
-      if (!userFriendsStore.has(currentUserId)) userFriendsStore.set(currentUserId, new Set());
-      if (!userFriendsStore.has(targetId)) userFriendsStore.set(targetId, new Set());
-      userFriendsStore.get(currentUserId).add(targetId);
-      userFriendsStore.get(targetId).add(currentUserId);
+    if (friendship) {
+      friendship.status = 'accepted';
+      await friendship.save();
 
-      // Real-time notification to requester
-      emitToUser(targetId, 'friend:accepted', {
+      const otherId = friendship.user1 === currentUserId ? friendship.user2 : friendship.user1;
+      emitToUser(otherId, 'friend:accepted', {
         userId: currentUserId,
         name: req.authenticatedUser?.displayName || req.authenticatedUser?.name || 'Your friend',
         message: `${req.authenticatedUser?.displayName || 'Your friend'} accepted your friend request!`,
@@ -2155,18 +2208,38 @@ app.post('/api/friends/accept', requireAuth, async (req, res) => {
 
     res.json({ ok: true, message: 'Friend request accepted!' });
   } catch (err) {
+    console.warn('[POST /api/friends/accept error]', err.message);
     res.status(500).json({ error: 'Failed to accept friend request', details: err.message });
   }
 });
 
 app.post('/api/friends/decline', requireAuth, async (req, res) => {
   try {
-    const { requestId } = req.body;
-    if (requestId && friendRequestsStore.has(requestId)) {
-      friendRequestsStore.get(requestId).status = 'declined';
+    const currentUserId = String(req.authenticatedUser.id);
+    const { requestId, friendUserId } = req.body || {};
+
+    let friendship = null;
+    if (requestId) {
+      friendship = await Friendship.findById(requestId);
     }
+    if (!friendship && friendUserId) {
+      friendship = await Friendship.findOne({
+        status: 'pending',
+        $or: [
+          { user1: currentUserId, user2: String(friendUserId) },
+          { user1: String(friendUserId), user2: currentUserId },
+        ],
+      });
+    }
+
+    if (friendship) {
+      friendship.status = 'declined';
+      await friendship.save();
+    }
+
     res.json({ ok: true, message: 'Friend request declined.' });
   } catch (err) {
+    console.warn('[POST /api/friends/decline error]', err.message);
     res.status(500).json({ error: 'Failed to decline friend request', details: err.message });
   }
 });
