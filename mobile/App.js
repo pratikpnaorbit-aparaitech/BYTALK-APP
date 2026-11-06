@@ -1019,57 +1019,73 @@ function App() {
 
     setIsMatchingCall(true);
     try {
-      // 1. Check if any real human online users match the filters strictly and were not recently called
-      let onlineHumans = partners.filter((p) => p.id !== userId && p.online);
-      if (filters.gender && filters.gender !== 'all') {
-        const targetGender = filters.gender.toLowerCase().trim();
-        onlineHumans = onlineHumans.filter((p) => (p.gender || '').toLowerCase().trim() === targetGender);
-      }
-      if (filters.level && filters.level !== 'all') {
-        const byLevel = onlineHumans.filter((p) => (p.level || '').toLowerCase().includes(filters.level.toLowerCase()));
-        if (byLevel.length > 0) onlineHumans = byLevel;
-      }
-      if (filters.region && filters.region !== 'all') {
-        const byRegion = onlineHumans.filter((p) => (p.country || '').toLowerCase().includes(filters.region.toLowerCase()) || (p.region || '').toLowerCase().includes(filters.region.toLowerCase()));
-        if (byRegion.length > 0) onlineHumans = byRegion;
-      }
-
-      const recentHistory = recentPartnerHistoryRef.current || [];
-      const freshHumans = onlineHumans.filter((p) => !recentHistory.includes(p.id));
-      const eligibleHumans = freshHumans.length > 0 ? freshHumans : onlineHumans.filter((p) => p.id !== lastCalledPartnerIdRef.current);
-
       let chosenPartner = null;
-      if (eligibleHumans.length > 0) {
-        chosenPartner = eligibleHumans[Math.floor(Math.random() * eligibleHumans.length)];
-      } else {
-        // Pick a random active practice partner (strictly matching gender, never same person)
-        chosenPartner = pickRandomPracticePartner(filters, recentHistory, lastCalledPartnerIdRef.current);
+
+      // 1. First query backend for real online registered users currently connected
+      try {
+        const queryParams = `?gender=${encodeURIComponent(filters.gender || 'all')}&level=${encodeURIComponent(filters.level || 'all')}`;
+        const onlineRes = await request(`practice/random-online${queryParams}`);
+        if (onlineRes?.ok && onlineRes.user && !onlineRes.user.id?.startsWith('partner_')) {
+          chosenPartner = onlineRes.user;
+        }
+      } catch (e) {
+        console.warn('[random-online query]', e.message);
       }
 
-      if (chosenPartner) {
-        lastCalledPartnerIdRef.current = chosenPartner.id;
-        recentPartnerHistoryRef.current = [
-          chosenPartner.id,
-          ...recentHistory.filter((id) => id !== chosenPartner.id),
-        ].slice(0, 10);
+      // 2. If not returned from endpoint, check active online human users from state (excluding any demo data)
+      if (!chosenPartner) {
+        let onlineHumans = (partners || []).filter((p) =>
+          String(p.id) !== String(userId) &&
+          p.online &&
+          !String(p.id).startsWith('partner_') &&
+          !p.isAi
+        );
+        if (filters.gender && filters.gender !== 'all') {
+          const targetGender = filters.gender.toLowerCase().trim();
+          onlineHumans = onlineHumans.filter((p) => (p.gender || '').toLowerCase().trim() === targetGender);
+        }
+        if (filters.level && filters.level !== 'all') {
+          const byLevel = onlineHumans.filter((p) => (p.level || '').toLowerCase().includes(filters.level.toLowerCase()));
+          if (byLevel.length > 0) onlineHumans = byLevel;
+        }
+
+        const recentHistory = recentPartnerHistoryRef.current || [];
+        const freshHumans = onlineHumans.filter((p) => !recentHistory.includes(p.id));
+        const eligibleHumans = freshHumans.length > 0 ? freshHumans : onlineHumans.filter((p) => p.id !== lastCalledPartnerIdRef.current);
+
+        if (eligibleHumans.length > 0) {
+          chosenPartner = eligibleHumans[Math.floor(Math.random() * eligibleHumans.length)];
+        }
       }
+
+      // If no actual registered user is online, do NOT use demo data!
+      if (!chosenPartner) {
+        setIsMatchingCall(false);
+        Alert.alert(
+          'No Co-learners Online',
+          'There are no other active co-learners online right now. Invite a friend or try calling again in a moment!',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      lastCalledPartnerIdRef.current = chosenPartner.id;
+      recentPartnerHistoryRef.current = [
+        chosenPartner.id,
+        ...(recentPartnerHistoryRef.current || []).filter((id) => id !== chosenPartner.id),
+      ].slice(0, 10);
 
       setTimeout(() => {
         setIsMatchingCall(false);
         startCall(chosenPartner, 'audio');
-      }, 600);
+      }, 500);
     } catch (err) {
       console.warn('[BYTALK matching error]', err);
       setIsMatchingCall(false);
-      const fallbackPartner = pickRandomPracticePartner(filters, recentPartnerHistoryRef.current || [], lastCalledPartnerIdRef.current);
-      if (fallbackPartner) {
-        lastCalledPartnerIdRef.current = fallbackPartner.id;
-        recentPartnerHistoryRef.current = [
-          fallbackPartner.id,
-          ...(recentPartnerHistoryRef.current || []).filter((id) => id !== fallbackPartner.id),
-        ].slice(0, 10);
-      }
-      startCall(fallbackPartner, 'audio');
+      Alert.alert(
+        'Connection Notice',
+        'Could not search for online co-learners right now. Please check your connection and try again.'
+      );
     }
   };
   const [sessionChecking, setSessionChecking] = useState(true);
@@ -1840,49 +1856,18 @@ function App() {
       return;
     }
 
-    // Direct active practice partner connection (real human co-learner experience)
+    // Prevent calling mock/demo partners - real online users only
     if (partner.id?.startsWith('partner_') || partner.isAi) {
-      setCallStarting({ partnerId: partner.id, type });
-      try {
-        const stream = await getLocalMediaStream(type).catch(() => null);
-        if (stream) {
-          localStreamRef.current = stream;
-          setLocalStream(stream);
-        }
-        const partnerCall = {
-          id: 'call_partner_' + partner.id + '_' + Date.now(),
-          peer: { ...partner, isAi: false },
-          type,
-          direction: 'outgoing',
-          status: 'Connected',
-          connectedAt: new Date().toISOString(),
-        };
-        callRef.current = partnerCall;
-        updateCall(partnerCall);
-        setSelected(partner);
-        setScreen('call');
-        setSpeakerEnabled(true);
-        startAudioRoute(type, true);
-        ringtoneManager.stopRinging();
-      } catch (err) {
-        console.warn('[BYTALK partner call]', err);
-      } finally {
-        setCallStarting(null);
-      }
+      Alert.alert('Co-learner Offline', 'This user is currently offline. Please call an active online co-learner.');
       return;
     }
 
     if (!socketRef.current?.connected) {
-      console.log('[BYTALK call] Realtime socket disconnected, falling back to random active partner');
-      const fallback = pickRandomPracticePartner({}, recentPartnerHistoryRef.current || [], lastCalledPartnerIdRef.current);
-      if (fallback) {
-        lastCalledPartnerIdRef.current = fallback.id;
-        recentPartnerHistoryRef.current = [
-          fallback.id,
-          ...(recentPartnerHistoryRef.current || []).filter((id) => id !== fallback.id),
-        ].slice(0, 10);
-      }
-      startCall(fallback, type);
+      console.log('[BYTALK call] Realtime socket disconnected');
+      Alert.alert(
+        'Connection Reconnecting',
+        'Realtime calling service is currently reconnecting. Please check your internet connection and try again in a moment.'
+      );
       return;
     }
 
@@ -1943,21 +1928,12 @@ function App() {
       if (error.code === 'video_plan_required' || error.code === 'subscription_required') {
         setSubscriptionError(error.message);
         setScreen('premium');
-      } else if (type === 'audio') {
-        // Fall back seamlessly to next random active partner so the user is never stuck
-        console.log('[BYTALK call] Human partner unavailable, connecting to next random active partner');
-        const fallback = pickRandomPracticePartner({}, recentPartnerHistoryRef.current || [], lastCalledPartnerIdRef.current);
-        if (fallback) {
-          lastCalledPartnerIdRef.current = fallback.id;
-          recentPartnerHistoryRef.current = [
-            fallback.id,
-            ...(recentPartnerHistoryRef.current || []).filter((id) => id !== fallback.id),
-          ].slice(0, 10);
-        }
-        startCall(fallback, 'audio');
       } else {
         setScreen(activeBottomTab === 'pro' ? 'call-tab' : (activeBottomTab || 'call-tab'));
-        Alert.alert('Could not start call', error.message || 'Check your connection and permissions.');
+        Alert.alert(
+          'Call Unavailable',
+          error.message || 'The co-learner could not be reached right now. Please try calling another online user.'
+        );
       }
     } finally {
       setCallStarting(null);
@@ -2344,7 +2320,7 @@ function App() {
       const recents = [];
       for (const item of callHistory) {
         const peer = item.peer;
-        if (peer && peer.id && peer.id !== userId && !seen.has(peer.id)) {
+        if (peer && peer.id && peer.id !== userId && !seen.has(peer.id) && !String(peer.id).startsWith('partner_') && !peer.isAi) {
           seen.add(peer.id);
           recents.push(peer);
         }
@@ -2354,12 +2330,10 @@ function App() {
   }, [callHistory, userId]);
 
   useEffect(() => {
-    if (!sessionChecking && screen === 'practice') {
-      setPartners([]);
-      setPartnerTotalEligible(0);
-      loadDiscoverUsers(false, practiceTopic.id);
+    if (!sessionChecking && (screen === 'practice' || screen === 'call-tab')) {
+      loadDiscoverUsers(false, 'All Topics');
     }
-  }, [screen, sessionChecking, sessionVersion, userId, practiceTopic.id]);
+  }, [screen, sessionChecking, sessionVersion, userId]);
 
   useEffect(() => {
     if (sessionChecking || screen !== 'dashboard' || !activeAuthToken) return undefined;
@@ -5296,71 +5270,6 @@ function App() {
                 </View>
               </ScrollView>
 
-              {/* ================= CURVED CALL BOTTOM BAR (IMAGE 3) ================= */}
-              <View style={styles.curvedCallBottomBar}>
-                {/* Mute Button */}
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'}
-                  onPress={() => {
-                    const nextMuted = !muted;
-                    localStreamRef.current?.getAudioTracks().forEach((track) => {
-                      track.enabled = !nextMuted;
-                    });
-                    setMuted(nextMuted);
-                  }}
-                  style={styles.floatingControlBtn}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.floatingControlIconCircle, muted && styles.floatingControlMutedCircle]}>
-                    <Ionicons name={muted ? 'mic-off' : 'mic'} size={24} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.floatingControlLabel}>{muted ? 'Unmute' : 'Mute'}</Text>
-                </TouchableOpacity>
-
-                {/* Speaker Button */}
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Toggle speaker"
-                  onPress={() => {
-                    try {
-                      const nextSpeaker = !speakerEnabled;
-                      setAudioRoute(nextSpeaker);
-                      setSpeakerEnabled(nextSpeaker);
-                    } catch (error) {
-                      setCallNotice(error.message || 'Speaker control unavailable.');
-                    }
-                  }}
-                  style={styles.floatingControlBtn}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.floatingControlIconCircle, styles.floatingControlSpeakerCircle]}>
-                    <Ionicons name="volume-high" size={24} color={speakerEnabled ? '#4F46E5' : '#94A3B8'} />
-                  </View>
-                  <Text style={styles.floatingControlLabel}>Speaker</Text>
-                </TouchableOpacity>
-
-                {/* Disconnect Call Button */}
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Disconnect call"
-                  onPress={() => {
-                    if (call.status !== 'Connected') {
-                      endCall();
-                    } else {
-                      setShowEarlyDisconnectModal(true);
-                    }
-                  }}
-                  style={styles.floatingControlBtn}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.floatingControlIconCircle, styles.floatingControlEndCircle]}>
-                    <Ionicons name="call" size={24} color="#FFFFFF" style={{ transform: [{ rotate: '135deg' }] }} />
-                  </View>
-                  <Text style={styles.floatingControlLabel}>Disconnect</Text>
-                </TouchableOpacity>
-              </View>
-
               {/* ================= EARLY DISCONNECT MODAL (EXACT MATCH TO IMAGE 1) ================= */}
               <Modal
                 visible={showEarlyDisconnectModal}
@@ -7115,7 +7024,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   activitiesScrollContainer: {
-    paddingBottom: 12,
+    paddingBottom: 28,
   },
   activitiesHeadingArea: {
     alignItems: 'center',

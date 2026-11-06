@@ -1985,6 +1985,57 @@ app.get('/api/practice/partners', requireAuth, (req, res) => {
   return listDiscoverUsers(req, res);
 });
 
+// Random Live Online User matching (Real online users only, NO demo data)
+app.get('/api/practice/random-online', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    const { gender } = req.query;
+
+    const onlineUserIds = [];
+    for (const [uId, sockets] of userSockets.entries()) {
+      if (String(uId) !== currentUserId && sockets && sockets.size > 0) {
+        onlineUserIds.push(uId);
+      }
+    }
+
+    if (onlineUserIds.length === 0) {
+      return res.json({ ok: false, message: 'No other registered co-learners are currently online.' });
+    }
+
+    const query = { _id: { $in: onlineUserIds } };
+    if (gender && gender !== 'all') {
+      query.gender = new RegExp(`^${gender}$`, 'i');
+    }
+
+    const onlineUsers = await User.find(query).lean();
+    if (onlineUsers.length === 0) {
+      return res.json({ ok: false, message: 'No online co-learners match your filter.' });
+    }
+
+    const picked = onlineUsers[Math.floor(Math.random() * onlineUsers.length)];
+    return res.json({
+      ok: true,
+      user: {
+        id: String(picked._id),
+        name: picked.displayName || picked.name,
+        displayName: picked.displayName || picked.name,
+        avatarUrl: picked.profilePhotoUrl || null,
+        profilePhotoUrl: picked.profilePhotoUrl || null,
+        country: picked.country || 'Global',
+        level: picked.level || 'Beginner',
+        gender: picked.gender || '',
+        online: true,
+        learningLanguage: picked.learningLanguage || 'English',
+        nativeLanguage: picked.nativeLanguage || '',
+        isAi: false,
+      },
+    });
+  } catch (error) {
+    console.warn('[random-online error]', error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // ==================== FRIENDS SYSTEM ====================
 const friendRequestsStore = new Map();
 const userFriendsStore = new Map();
