@@ -1000,6 +1000,7 @@ function App() {
   const [friendRequestSentInCall, setFriendRequestSentInCall] = useState(false);
   const [friendsList, setFriendsList] = useState([]);
   const [pendingFriendRequests, setPendingFriendRequests] = useState([]);
+  const [sentFriendRequests, setSentFriendRequests] = useState([]);
   const [recentCoLearnersList, setRecentCoLearnersList] = useState([]);
   const [aryaSettings, setAryaSettings] = useState({
     voice: 'FEMALE',
@@ -1382,10 +1383,10 @@ function App() {
     if (!targetUser) return;
     const targetId = typeof targetUser === 'string'
       ? targetUser
-      : (targetUser.id || targetUser._id || targetUser.userId || targetUser.callerId || targetUser.peer?.id || targetUser.peer?._id);
-    const targetName = (typeof targetUser === 'object' ? (targetUser.displayName || targetUser.name || targetUser.peer?.name) : '') || 'Co-learner';
+      : (targetUser.id || targetUser._id || targetUser.userId || targetUser.callerId || targetUser.peer?.id || targetUser.peer?._id || targetUser.displayName || targetUser.name || targetUser.peer?.name);
+    const targetName = (typeof targetUser === 'object' ? (targetUser.displayName || targetUser.name || targetUser.peer?.name) : '') || (typeof targetId === 'string' ? targetId : '') || 'Co-learner';
 
-    if (!targetId) {
+    if (!targetId && !targetName) {
       Alert.alert('Notice', 'Could not locate co-learner details.');
       return;
     }
@@ -1393,7 +1394,7 @@ function App() {
     try {
       const res = await request('friends/request', {
         method: 'POST',
-        body: { targetUserId: String(targetId), targetName: String(targetName) },
+        body: { targetUserId: String(targetId || targetName), targetName: String(targetName) },
       });
       setFriendRequestSentInCall(true);
       loadFriends();
@@ -1434,6 +1435,20 @@ function App() {
     }
   };
 
+  const handleCancelFriendRequest = async (req) => {
+    try {
+      const reqId = req.id || req._id;
+      const targetUserId = req.to?.id || req.to?._id;
+      await request('friends/cancel', {
+        method: 'POST',
+        body: { requestId: reqId, targetUserId },
+      });
+      loadFriends();
+    } catch (err) {
+      console.warn('[cancelFriendRequest error]', err.message);
+    }
+  };
+
   const handleStartDirectCall = (friend) => {
     if (!hasAudioEntitlement()) {
       setSubscriptionError('Your daily 10 minutes free trial has ended. Please upgrade to PRO to continue calling.');
@@ -1463,6 +1478,10 @@ function App() {
       if (res?.pendingRequests && Array.isArray(res.pendingRequests)) {
         const uniqueReqs = Array.from(new Map(res.pendingRequests.map((r) => [String(r.id), r])).values());
         setPendingFriendRequests(uniqueReqs);
+      }
+      if (res?.sentRequests && Array.isArray(res.sentRequests)) {
+        const uniqueSent = Array.from(new Map(res.sentRequests.map((r) => [String(r.id), r])).values());
+        setSentFriendRequests(uniqueSent);
       }
     } catch (err) {
       console.warn('[BYTALK loadFriends]', err.message);
@@ -1933,6 +1952,7 @@ function App() {
     releaseCallMedia();
     updateCall(null);
     callRef.current = null;
+    setFriendRequestSentInCall(false);
     setCallCompletion({ ...currentCall, status, endedAt, durationSeconds });
     setFeedbackRating(5);
     setFeedbackTags([]);
@@ -1949,6 +1969,7 @@ function App() {
 
   function leaveCallCompletion() {
     ringtoneManager.stopRinging();
+    setFriendRequestSentInCall(false);
     setCallCompletion(null);
     updateCall(null);
     callRef.current = null;
@@ -2002,6 +2023,7 @@ function App() {
 
   async function startCall(partner, type) {
     console.log('[BYTALK call] button pressed', { partnerId: partner?.id, type });
+    setFriendRequestSentInCall(false);
     ringtoneManager.unlockAudio();
     if (!activeAuthToken) {
       Alert.alert('Sign in required', 'Sign in before starting a private call.');
@@ -2346,6 +2368,7 @@ function App() {
       });
       socket.on('call:incoming', (incoming) => {
         console.log('[BYTALK call] incoming call received', { callId: incoming.callId, type: incoming.type });
+        setFriendRequestSentInCall(false);
         ringtoneManager.stopRinging();
         if (callRef.current?.id === incoming.callId && callRef.current?.status === 'Connected') return;
         const peer = partnersRef.current.find((partner) => String(partner.id) === String(incoming.caller?.id)) || incoming.caller;
@@ -2532,7 +2555,7 @@ function App() {
       const seen = new Set();
       const recents = [];
       for (const item of callHistory) {
-        const peer = item.peer;
+        const peer = item.peer || item.participant;
         if (peer && peer.id && peer.id !== userId && !seen.has(peer.id) && !String(peer.id).startsWith('partner_') && !peer.isAi) {
           seen.add(peer.id);
           recents.push(peer);
@@ -3671,6 +3694,8 @@ function App() {
               onPressStreak={() => setShowHistoryModal(true)}
               friends={friendsList}
               pendingRequests={pendingFriendRequests}
+              sentRequests={sentFriendRequests}
+              allPartners={partners}
               recentCoLearners={recentCoLearnersList}
               onDirectCall={handleStartDirectCall}
               onDirectVideoCall={handleStartDirectVideoCall}
@@ -3678,6 +3703,7 @@ function App() {
               onSendFriendRequest={handleSendFriendRequest}
               onAcceptFriendRequest={handleAcceptFriendRequest}
               onDeclineFriendRequest={handleDeclineFriendRequest}
+              onCancelFriendRequest={handleCancelFriendRequest}
               onCancelMatch={() => setIsMatchingCall(false)}
             />
           )}

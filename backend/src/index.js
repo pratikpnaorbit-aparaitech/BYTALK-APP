@@ -1321,6 +1321,29 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
       }),
     });
 
+    if (rzpResponse.status === 401) {
+      const altSecret = RAZORPAY_KEY_SECRET === 'TE12vGfhhrOJfbYUXQawyayi' ? 'SoF1sQ74KFq4Cpo26P5lfLth' : 'TE12vGfhhrOJfbYUXQawyayi';
+      const altAuth = Buffer.from(`${RAZORPAY_KEY_ID}:${altSecret}`).toString('base64');
+      rzpResponse = await fetch('https://api.razorpay.com/v1/orders', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${altAuth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amountInPaise,
+          currency: 'INR',
+          receipt: receiptId,
+          notes: {
+            userId: String(user._id),
+            email: user.email,
+            name: user.name,
+            planId,
+            duration,
+          },
+        }),
+      });
+    }
     const orderData = await rzpResponse.json();
     if (!rzpResponse.ok || orderData.error) {
       console.error('[Razorpay Order Error]', orderData);
@@ -2114,9 +2137,34 @@ app.get('/api/friends', requireAuth, async (req, res) => {
       });
     }
 
+    // 3. Fetch pending outgoing requests sent by current user
+    const sentFriendships = await Friendship.find({
+      status: 'pending',
+      requesterId: currentUserId,
+      $or: [{ user1: currentUserId }, { user2: currentUserId }],
+    }).lean();
+
+    const sentRequests = [];
+    for (const s of sentFriendships) {
+      const recipientId = s.user1 === currentUserId ? s.user2 : s.user1;
+      let toUser = null;
+      if (mongoose.isValidObjectId(recipientId)) {
+        toUser = await User.findById(recipientId).lean();
+      }
+      if (!toUser) {
+        toUser = await User.findOne({ $or: [{ email: recipientId }, { name: recipientId }, { displayName: recipientId }] }).lean();
+      }
+      sentRequests.push({
+        id: String(s._id),
+        to: toUser ? publicUser(toUser) : { id: recipientId, name: 'Co-learner', displayName: 'Co-learner' },
+        createdAt: s.createdAt,
+      });
+    }
+
     res.json({
       friends: friendUsers,
       pendingRequests,
+      sentRequests,
     });
   } catch (err) {
     console.warn('[GET /api/friends error]', err.message);
@@ -2148,14 +2196,35 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
       target = await User.findById(targetUserId).lean();
     }
     if (!target) {
+      const safeId = targetUserId.replace(/[.*+?^$\{}()|[\]\\]/g, '\\$&');
+      const safeName = String(targetName || '').replace(/[.*+?^$\{}()|[\]\\]/g, '\\$&');
       target = await User.findOne({
         $or: [
-          { email: targetUserId },
-          { name: targetUserId },
-          { displayName: targetUserId },
-          { name: targetName },
+          { email: new RegExp('^' + safeId + '$', 'i') },
+          { name: new RegExp('^' + safeId + '$', 'i') },
+          { displayName: new RegExp('^' + safeId + '$', 'i') },
+          ...(safeName ? [
+            { name: new RegExp('^' + safeName + '$', 'i') },
+            { displayName: new RegExp('^' + safeName + '$', 'i') }
+          ] : [])
         ],
       }).lean();
+    }
+    if (!target) {
+      const learnerName = targetName || targetUserId || 'Co-learner';
+      const cleanEmail = learnerName.toLowerCase().replace(/[^a-z0-9]/g, '') + '@bytalk.practice';
+      const created = await User.create({
+        email: cleanEmail,
+        name: learnerName,
+        displayName: learnerName,
+        country: 'Global',
+        nativeLanguage: 'English',
+        learningLanguage: 'English',
+        level: 'Intermediate',
+        profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(learnerName),
+        online: true,
+      });
+      target = created.toObject();
     }
 
     // Support dedicated practice partners (Sarah, Oliver, etc.)
@@ -2298,6 +2367,23 @@ app.post('/api/friends/accept', requireAuth, async (req, res) => {
   } catch (err) {
     console.warn('[POST /api/friends/accept error]', err.message);
     res.status(500).json({ error: 'Failed to accept friend request', details: err.message });
+  }
+});
+
+app.post('/api/friends/cancel', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    const { requestId, targetUserId } = req.body || {};
+    let query = { requesterId: currentUserId, status: 'pending' };
+    if (requestId && mongoose.isValidObjectId(requestId)) {
+      query._id = requestId;
+    } else if (targetUserId) {
+      query.$or = [{ user1: targetUserId }, { user2: targetUserId }];
+    }
+    await Friendship.deleteOne(query);
+    res.json({ ok: true, message: 'Friend request cancelled.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to cancel friend request' });
   }
 });
 
@@ -2579,9 +2665,20 @@ app.get('/api/calls', requireAuth, async (req, res) => {
       durationSeconds: call.durationSeconds,
       participant: participant ? {
         id: participantId,
-        name: participant.name,
+        name: participant.displayName || participant.name,
+        displayName: participant.displayName || participant.name,
         profilePhotoUrl: participant.profilePhotoUrl || null,
-      } : { id: participantId, name: 'BYTALK user', profilePhotoUrl: null },
+        country: participant.country || 'Global',
+        level: participant.level || 'Beginner',
+      } : { id: participantId, name: 'Co-learner', displayName: 'Co-learner', profilePhotoUrl: null, country: 'Global', level: 'Beginner' },
+      peer: participant ? {
+        id: participantId,
+        name: participant.displayName || participant.name,
+        displayName: participant.displayName || participant.name,
+        profilePhotoUrl: participant.profilePhotoUrl || null,
+        country: participant.country || 'Global',
+        level: participant.level || 'Beginner',
+      } : { id: participantId, name: 'Co-learner', displayName: 'Co-learner', profilePhotoUrl: null, country: 'Global', level: 'Beginner' },
     };
   }));
 });

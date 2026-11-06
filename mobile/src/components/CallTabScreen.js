@@ -27,19 +27,22 @@ export default function CallTabScreen({
   onPressStreak,
   friends = [],
   pendingRequests = [],
+  sentRequests = [],
+  allPartners = [],
   onDirectCall,
   onDirectVideoCall,
   onDirectChat,
   onSendFriendRequest,
   onAcceptFriendRequest,
   onDeclineFriendRequest,
+  onCancelFriendRequest,
   recentCoLearners = [],
   onCancelMatch,
 }) {
   const [activeTopTab, setActiveTopTab] = useState('practice'); // 'practice' | 'friends' | 'progress'
   const [selectedGender, setSelectedGender] = useState(isSubscribed ? 'female' : 'any');
   const [searchFriendText, setSearchFriendText] = useState('');
-  const [sentRequests, setSentRequests] = useState({});
+  const [sentMap, setSentMap] = useState({});
 
   // Animated pulse for radar matching (Image 4)
   const pulseAnim1 = useRef(new Animated.Value(1)).current;
@@ -101,7 +104,8 @@ export default function CallTabScreen({
   };
 
   const handleSendRequestLocal = (targetUser) => {
-    setSentRequests((prev) => ({ ...prev, [targetUser.id || targetUser.name]: true }));
+    const uid = targetUser.id || targetUser._id || targetUser.name || targetUser.displayName;
+    setSentMap((prev) => ({ ...prev, [uid]: true }));
     if (onSendFriendRequest) {
       onSendFriendRequest(targetUser);
     } else {
@@ -127,14 +131,24 @@ export default function CallTabScreen({
   const uniquePendingRequests = Array.from(
     new Map((pendingRequests || []).map((r) => [String(r.id), r])).values()
   );
+  const uniqueSentRequests = Array.from(
+    new Map((sentRequests || []).map((r) => [String(r.id), r])).values()
+  );
   const uniqueRecentCoLearners = Array.from(
     new Map((recentCoLearners || []).map((r) => [String(r.id || r.name), r])).values()
   );
 
-  // Filtered friends
+  // Filtered friends & searched co-learners
+  const searchLower = searchFriendText.trim().toLowerCase();
   const filteredFriends = uniqueFriends.filter((f) =>
-    (f.name || '').toLowerCase().includes(searchFriendText.toLowerCase())
+    (f.name || f.displayName || '').toLowerCase().includes(searchLower)
   );
+  const searchedCoLearners = (allPartners || []).filter((p) => {
+    if (!searchLower) return false;
+    const nameMatch = (p.name || p.displayName || '').toLowerCase().includes(searchLower);
+    const isAlreadyFriend = uniqueFriends.some((f) => String(f.id) === String(p.id) || f.name === p.name);
+    return nameMatch && !isAlreadyFriend;
+  });
 
   return (
     <View style={styles.screenContainer}>
@@ -224,9 +238,9 @@ export default function CallTabScreen({
             <Text style={[styles.topTabLabel, activeTopTab === 'friends' && styles.topTabLabelActive]}>
               Friends
             </Text>
-            {uniquePendingRequests.length > 0 && (
+            {(uniquePendingRequests.length + uniqueSentRequests.length) > 0 && (
               <View style={styles.friendReqDot}>
-                <Text style={styles.friendReqDotText}>{pendingRequests.length}</Text>
+                <Text style={styles.friendReqDotText}>{uniquePendingRequests.length || uniqueSentRequests.length}</Text>
               </View>
             )}
           </View>
@@ -472,6 +486,83 @@ export default function CallTabScreen({
             </View>
           )}
 
+          {/* Searched Co-learners (when user types in search bar) */}
+          {searchLower.length > 0 && searchedCoLearners.length > 0 && (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionHeading}>Search Results 🔍</Text>
+              <Text style={styles.sectionSub}>Registered co-learners matching "{searchFriendText}":</Text>
+              {searchedCoLearners.map((learner) => {
+                const uid = learner.id || learner._id || learner.name || learner.displayName;
+                const isSent = Boolean(
+                  sentMap[uid] ||
+                  uniqueSentRequests.some((s) => String(s.to?.id) === String(learner.id) || s.to?.name?.toLowerCase() === learner.name?.toLowerCase())
+                );
+                return (
+                  <View key={uid} style={styles.recentLearnerRow}>
+                    <Image
+                      source={{
+                        uri: learner.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(learner.displayName || learner.name),
+                      }}
+                      style={styles.friendAvatar}
+                    />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.friendName}>{learner.displayName || learner.name}</Text>
+                      <Text style={styles.friendSub}>{learner.country || 'Global'} • {learner.level || 'Co-learner'}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleSendRequestLocal(learner)}
+                      disabled={isSent}
+                      style={[styles.addFriendBtn, isSent && styles.addFriendBtnSent]}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name={isSent ? 'checkmark' : 'person-add'}
+                        size={14}
+                        color={isSent ? '#166534' : '#6366F1'}
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text style={[styles.addFriendBtnText, isSent && { color: '#166534' }]}>
+                        {isSent ? 'Sent' : 'Add Friend'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Outgoing Friend Requests Sent (Pending co-learner acceptance) */}
+          {uniqueSentRequests.length > 0 && (
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeading}>Friend Requests Sent 📤</Text>
+                <Text style={styles.friendCountBadge}>{uniqueSentRequests.length} pending</Text>
+              </View>
+              <Text style={styles.sectionSub}>Waiting for your co-learner to accept:</Text>
+              {uniqueSentRequests.map((req) => (
+                <View key={req.id} style={styles.friendReqRow}>
+                  <Image
+                    source={{
+                      uri: req.to?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(req.to?.name || 'Co-learner'),
+                    }}
+                    style={styles.friendAvatar}
+                  />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.friendName}>{req.to?.displayName || req.to?.name || 'Co-learner'}</Text>
+                    <Text style={styles.friendSub}>Request Sent • Waiting for acceptance ⏳</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => onCancelFriendRequest && onCancelFriendRequest(req)}
+                    style={styles.declineBtn}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700' }}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+
           {/* Connected Practice Friends List */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
@@ -555,23 +646,28 @@ export default function CallTabScreen({
               <Text style={styles.sectionHeading}>Recent Co-learners</Text>
               <Text style={styles.sectionSub}>Add people you recently practiced with:</Text>
               {uniqueRecentCoLearners.map((learner) => {
-                const isSent = sentRequests[learner.id || learner.name];
+                const uid = learner.id || learner._id || learner.name || learner.displayName;
+                const isSent = Boolean(
+                  sentMap[uid] ||
+                  uniqueSentRequests.some((s) => String(s.to?.id) === String(learner.id) || s.to?.name?.toLowerCase() === learner.name?.toLowerCase())
+                );
                 return (
-                  <View key={learner.id || learner.name} style={styles.recentLearnerRow}>
+                  <View key={uid} style={styles.recentLearnerRow}>
                     <Image
                       source={{
-                        uri: learner.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + learner.name,
+                        uri: learner.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(learner.displayName || learner.name),
                       }}
                       style={styles.friendAvatar}
                     />
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={styles.friendName}>{learner.name}</Text>
+                      <Text style={styles.friendName}>{learner.displayName || learner.name}</Text>
                       <Text style={styles.friendSub}>{learner.country || 'Global'} • Co-learner</Text>
                     </View>
                     <TouchableOpacity
                       onPress={() => handleSendRequestLocal(learner)}
                       disabled={isSent}
                       style={[styles.addFriendBtn, isSent && styles.addFriendBtnSent]}
+                      activeOpacity={0.8}
                     >
                       <Ionicons
                         name={isSent ? 'checkmark' : 'person-add'}
@@ -580,7 +676,52 @@ export default function CallTabScreen({
                         style={{ marginRight: 4 }}
                       />
                       <Text style={[styles.addFriendBtnText, isSent && { color: '#166534' }]}>
-                        {isSent ? 'Sent' : 'Add'}
+                        {isSent ? 'Sent' : 'Add Friend'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Suggested Co-learners when 0 friends */}
+          {uniqueFriends.length === 0 && (allPartners || []).length > 0 && (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionHeading}>Suggested Co-learners 🌍</Text>
+              <Text style={styles.sectionSub}>Send a friend request to start practicing together:</Text>
+              {(allPartners || []).slice(0, 5).map((learner) => {
+                const uid = learner.id || learner._id || learner.name || learner.displayName;
+                const isSent = Boolean(
+                  sentMap[uid] ||
+                  uniqueSentRequests.some((s) => String(s.to?.id) === String(learner.id) || s.to?.name?.toLowerCase() === learner.name?.toLowerCase())
+                );
+                return (
+                  <View key={uid} style={styles.recentLearnerRow}>
+                    <Image
+                      source={{
+                        uri: learner.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(learner.displayName || learner.name),
+                      }}
+                      style={styles.friendAvatar}
+                    />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.friendName}>{learner.displayName || learner.name}</Text>
+                      <Text style={styles.friendSub}>{learner.country || 'Global'} • {learner.level || 'Intermediate'}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleSendRequestLocal(learner)}
+                      disabled={isSent}
+                      style={[styles.addFriendBtn, isSent && styles.addFriendBtnSent]}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name={isSent ? 'checkmark' : 'person-add'}
+                        size={14}
+                        color={isSent ? '#166534' : '#6366F1'}
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text style={[styles.addFriendBtnText, isSent && { color: '#166534' }]}>
+                        {isSent ? 'Sent' : 'Add Friend'}
                       </Text>
                     </TouchableOpacity>
                   </View>
