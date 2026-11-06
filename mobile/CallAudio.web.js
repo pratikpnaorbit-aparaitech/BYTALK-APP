@@ -23,8 +23,14 @@ export default function CallAudio({ stream }) {
   }, [stream]);
 
   return (
-    <View style={{ width: 0, height: 0, overflow: 'hidden' }}>
-      <audio ref={audioRef} autoPlay playsInline data-bytalk-remote-stream="true" />
+    <View style={{ position: 'absolute', opacity: 0.001, width: 2, height: 2, pointerEvents: 'none', bottom: 0, right: 0 }}>
+      <audio
+        ref={audioRef}
+        autoPlay
+        playsInline
+        data-bytalk-remote-stream="true"
+        style={{ width: '2px', height: '2px' }}
+      />
     </View>
   );
 }

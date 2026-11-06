@@ -75,7 +75,11 @@ export async function supportsSpeakerToggle() {
 
 export async function setSpeakerEnabled(enabled, type) {
   try {
-    InCallManager.setForceSpeakerphoneOn(Boolean(enabled));
+    const flag = Boolean(enabled);
+    InCallManager.setForceSpeakerphoneOn(flag);
+    if (typeof InCallManager.setSpeakerphoneOn === 'function') {
+      InCallManager.setSpeakerphoneOn(flag);
+    }
   } catch (e) {}
   return true;
 }
@@ -89,6 +93,10 @@ export function setMicrophoneMuted(muted) {
 export function startAudioRoute(type) {
   try {
     InCallManager.start({ media: type === 'video' ? 'video' : 'audio', auto: true });
+    InCallManager.setForceSpeakerphoneOn(true);
+    if (typeof InCallManager.setSpeakerphoneOn === 'function') {
+      InCallManager.setSpeakerphoneOn(true);
+    }
     InCallManager.setMicrophoneMute(false);
   } catch (e) {}
 }

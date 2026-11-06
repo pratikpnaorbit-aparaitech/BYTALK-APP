@@ -84,10 +84,14 @@ export function switchCamera(stream) {
   track._switchCamera();
 }
 
-export function startAudioRoute(type, speakerEnabled) {
+export function startAudioRoute(type, speakerEnabled = true) {
   try {
     InCallManager.start({ media: type === 'video' ? 'video' : 'audio', auto: true });
-    InCallManager.setForceSpeakerphoneOn(Boolean(speakerEnabled));
+    const enableSpeaker = speakerEnabled !== false;
+    InCallManager.setForceSpeakerphoneOn(enableSpeaker);
+    if (typeof InCallManager.setSpeakerphoneOn === 'function') {
+      InCallManager.setSpeakerphoneOn(enableSpeaker);
+    }
     InCallManager.setMicrophoneMute(false);
   } catch (e) {
     console.warn('[BYTALK InCallManager] start error:', e?.message || e);
@@ -96,7 +100,11 @@ export function startAudioRoute(type, speakerEnabled) {
 
 export function setAudioRoute(speakerEnabled) {
   try {
-    InCallManager.setForceSpeakerphoneOn(Boolean(speakerEnabled));
+    const enableSpeaker = Boolean(speakerEnabled);
+    InCallManager.setForceSpeakerphoneOn(enableSpeaker);
+    if (typeof InCallManager.setSpeakerphoneOn === 'function') {
+      InCallManager.setSpeakerphoneOn(enableSpeaker);
+    }
   } catch (e) {
     console.warn('[BYTALK InCallManager] setAudioRoute error:', e?.message || e);
   }

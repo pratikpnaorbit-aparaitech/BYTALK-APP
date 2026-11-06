@@ -1224,6 +1224,7 @@ function App() {
   const localStreamRef = useRef(null);
   const iceServersRef = useRef([]);
   const pendingIceRef = useRef([]);
+  const pendingIceByCallRef = useRef({});
   const pendingOutgoingIceRef = useRef([]);
   const signalQueueRef = useRef(Promise.resolve());
   const selectedRef = useRef(selected);
@@ -1399,7 +1400,7 @@ function App() {
     try {
       const res = await request('friends/request', {
         method: 'POST',
-        body: { targetUserId: String(targetId) },
+        body: { targetUserId: String(targetId), targetName: String(targetName) },
       });
       setFriendRequestSentInCall(true);
       loadFriends();
@@ -1610,6 +1611,7 @@ function App() {
 
     peerRef.current = null;
     pendingIceRef.current = [];
+    pendingIceByCallRef.current = {};
     pendingOutgoingIceRef.current = [];
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
@@ -1757,6 +1759,21 @@ function App() {
       });
     }
     peerRef.current = { callId, connection };
+
+    // Flush any pending ICE candidates that arrived before peer was ready for this callId
+    if (callId && pendingIceByCallRef.current[callId]) {
+      const earlyIce = pendingIceByCallRef.current[callId].splice(0);
+      for (const candidate of earlyIce) {
+        if (connection.remoteDescription) {
+          try {
+            connection.addIceCandidate(makeIceCandidate(candidate));
+          } catch (e) {}
+        } else {
+          pendingIceRef.current.push(candidate);
+        }
+      }
+    }
+
     connection.onicecandidate = (event) => {
       if (!event.candidate) return;
       const candidate = event.candidate.toJSON ? event.candidate.toJSON() : event.candidate;
@@ -1776,10 +1793,31 @@ function App() {
         }
       });
     };
+
     connection.ontrack = (event) => {
-      console.log('[BYTALK call] remote track received', { callId: peerRef.current?.callId, kind: event.track?.kind });
-      if (event.streams?.[0]) setRemoteStream(event.streams[0]);
+      console.log('[BYTALK call] remote track received', {
+        callId: peerRef.current?.callId,
+        kind: event.track?.kind,
+        streamsCount: event.streams?.length,
+      });
+      if (event.track) {
+        event.track.enabled = true;
+      }
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
+      } else if (event.track) {
+        try {
+          let fallbackStream = null;
+          if (typeof MediaStream !== 'undefined') {
+            fallbackStream = new MediaStream([event.track]);
+          }
+          if (fallbackStream) setRemoteStream(fallbackStream);
+        } catch (e) {
+          console.warn('[BYTALK call] fallback stream error:', e?.message || e);
+        }
+      }
     };
+
     const updateConnectionState = () => {
       const state = connection.connectionState;
       const iceState = connection.iceConnectionState;
@@ -1808,7 +1846,11 @@ function App() {
     try {
       const connection = peerRef.current?.connection;
       if (!connection || peerRef.current.callId !== callId) return;
-      const offer = await connection.createOffer();
+      const isVideo = Boolean(callRef.current?.type === 'video');
+      const offer = await connection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: isVideo,
+      });
       await connection.setLocalDescription(offer);
       console.log('[BYTALK call] signaling offer', { callId });
       socketRef.current?.emit('call:signal', { callId, kind: 'offer', signal: connection.localDescription || offer });
@@ -1820,15 +1862,29 @@ function App() {
 
   async function processCallSignal({ callId, kind, signal }) {
     const connection = peerRef.current?.connection;
-    if (!connection || peerRef.current.callId !== callId) return;
+    if (!connection || peerRef.current.callId !== callId) {
+      if (kind === 'ice' && signal) {
+        if (!pendingIceByCallRef.current[callId]) {
+          pendingIceByCallRef.current[callId] = [];
+        }
+        pendingIceByCallRef.current[callId].push(signal);
+      }
+      return;
+    }
     console.log('[BYTALK call] signaling received', { callId, kind });
     try {
       if (kind === 'offer') {
         await connection.setRemoteDescription(makeSessionDescription(signal));
         for (const candidate of pendingIceRef.current.splice(0)) {
-          await connection.addIceCandidate(makeIceCandidate(candidate));
+          try {
+            await connection.addIceCandidate(makeIceCandidate(candidate));
+          } catch (e) {}
         }
-        const answer = await connection.createAnswer();
+        const isVideo = Boolean(callRef.current?.type === 'video');
+        const answer = await connection.createAnswer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: isVideo,
+        });
         await connection.setLocalDescription(answer);
         console.log('[BYTALK call] signaling answer', { callId });
         socketRef.current?.emit('call:signal', { callId, kind: 'answer', signal: connection.localDescription || answer });
@@ -1836,11 +1892,17 @@ function App() {
       } else if (kind === 'answer') {
         await connection.setRemoteDescription(makeSessionDescription(signal));
         for (const candidate of pendingIceRef.current.splice(0)) {
-          await connection.addIceCandidate(makeIceCandidate(candidate));
+          try {
+            await connection.addIceCandidate(makeIceCandidate(candidate));
+          } catch (e) {}
         }
       } else if (kind === 'ice') {
         if (connection.remoteDescription) {
-          await connection.addIceCandidate(makeIceCandidate(signal));
+          try {
+            await connection.addIceCandidate(makeIceCandidate(signal));
+          } catch (iceErr) {
+            console.warn('[BYTALK call] addIceCandidate error:', iceErr?.message || iceErr);
+          }
         } else {
           pendingIceRef.current.push(signal);
         }
@@ -2035,7 +2097,7 @@ function App() {
       setCameraEnabled(stream.getVideoTracks().length > 0);
       setSelected(partner);
       setScreen('call');
-      const speaker = type === 'video';
+      const speaker = true; // Default speakerphone on for clear practice
       startAudioRoute(type, speaker);
       setSpeakerEnabled(speaker);
       createCallPeer(null, stream, iceServersRef.current);
@@ -2097,7 +2159,7 @@ function App() {
       if (incoming.type === 'video' && !stream.getVideoTracks().length) {
         setCallNotice('Camera unavailable; accepting with audio only.');
       }
-      const speaker = incoming.type === 'video';
+      const speaker = true; // Default speakerphone on for clear practice
       startAudioRoute(incoming.type, speaker);
       setSpeakerEnabled(speaker);
       createCallPeer(incoming.id, stream, iceServersRef.current);

@@ -2053,9 +2053,20 @@ app.get('/api/friends', requireAuth, async (req, res) => {
       f.user1 === currentUserId ? f.user2 : f.user1
     );
 
-    const friendUsers = friendIds.length > 0
-      ? (await User.find({ _id: { $in: friendIds } }).lean()).map(publicUser)
-      : [];
+    let friendUsers = [];
+    if (friendIds.length > 0) {
+      const validObjectIds = friendIds.filter((id) => mongoose.isValidObjectId(id));
+      const otherIds = friendIds.filter((id) => !mongoose.isValidObjectId(id));
+
+      const queryConds = [];
+      if (validObjectIds.length > 0) queryConds.push({ _id: { $in: validObjectIds } });
+      if (otherIds.length > 0) queryConds.push({ email: { $in: otherIds } }, { name: { $in: otherIds } });
+
+      if (queryConds.length > 0) {
+        const found = await User.find({ $or: queryConds }).lean();
+        friendUsers = found.map(publicUser);
+      }
+    }
 
     // 2. Fetch pending incoming requests
     const pendingFriendships = await Friendship.find({
@@ -2066,7 +2077,13 @@ app.get('/api/friends', requireAuth, async (req, res) => {
 
     const pendingRequests = [];
     for (const p of pendingFriendships) {
-      const fromUser = await User.findById(p.requesterId).lean();
+      let fromUser = null;
+      if (mongoose.isValidObjectId(p.requesterId)) {
+        fromUser = await User.findById(p.requesterId).lean();
+      }
+      if (!fromUser) {
+        fromUser = await User.findOne({ $or: [{ email: p.requesterId }, { name: p.requesterId }] }).lean();
+      }
       pendingRequests.push({
         id: String(p._id),
         from: fromUser ? publicUser(fromUser) : { id: p.requesterId, name: 'Co-learner' },
@@ -2087,88 +2104,136 @@ app.get('/api/friends', requireAuth, async (req, res) => {
 app.post('/api/friends/request', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
-    let { targetUserId, friendId, userId: bodyUserId } = req.body || {};
+    let { targetUserId, targetName, friendId, userId: bodyUserId } = req.body || {};
     targetUserId = String(targetUserId || friendId || bodyUserId || '').trim();
 
     if (!targetUserId || targetUserId === currentUserId) {
       return res.status(400).json({ error: 'Cannot send friend request to this user' });
     }
 
-    const sender = await User.findById(currentUserId).lean();
-    if (!sender) return res.status(404).json({ error: 'Sender account not found' });
+    let sender = null;
+    if (mongoose.isValidObjectId(currentUserId)) {
+      sender = await User.findById(currentUserId).lean();
+    }
+    if (!sender) {
+      sender = req.authenticatedUser;
+    }
 
-    const target = await User.findById(targetUserId).lean();
-    if (!target) return res.status(404).json({ error: 'Co-learner not found' });
+    // Find target user safely without CastError
+    let target = null;
+    if (mongoose.isValidObjectId(targetUserId)) {
+      target = await User.findById(targetUserId).lean();
+    }
+    if (!target) {
+      target = await User.findOne({
+        $or: [
+          { email: targetUserId },
+          { name: targetUserId },
+          { displayName: targetUserId },
+          { name: targetName },
+        ],
+      }).lean();
+    }
+
+    // Support dedicated practice partners (Sarah, Oliver, etc.)
+    const isBotPartner = targetUserId.toLowerCase().includes('sarah')
+      || targetUserId.toLowerCase().includes('oliver')
+      || targetUserId.toLowerCase().includes('bot')
+      || (targetName && (targetName.toLowerCase().includes('sarah') || targetName.toLowerCase().includes('oliver')));
+
+    if (!target && isBotPartner) {
+      const isSarah = (targetName || targetUserId).toLowerCase().includes('sarah');
+      const botName = isSarah ? 'Sarah' : 'Oliver';
+      const botEmail = `${botName.toLowerCase()}@bytalk.internal`;
+      target = await User.findOne({ email: botEmail }).lean();
+      if (!target) {
+        const created = await User.create({
+          email: botEmail,
+          name: botName,
+          displayName: botName,
+          country: isSarah ? 'United Kingdom' : 'United States',
+          nativeLanguage: 'English',
+          learningLanguage: 'English',
+          level: 'Advanced',
+          profilePhotoUrl: isSarah
+            ? 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&eyes=happy&mouth=smile'
+            : 'https://api.dicebear.com/7.x/avataaars/png?seed=Oliver&top=shortFlat&clothingColor=blue01',
+          online: true,
+          bio: 'Dedicated English Speaking Practice Partner at BYTALK',
+        });
+        target = created.toObject();
+      }
+    }
+
+    if (!target) {
+      return res.status(404).json({ error: 'Co-learner not found' });
+    }
+
+    const actualTargetId = String(target._id);
 
     // Check if friendship already exists
     const existing = await Friendship.findOne({
       $or: [
-        { user1: currentUserId, user2: targetUserId },
-        { user1: targetUserId, user2: currentUserId },
+        { user1: currentUserId, user2: actualTargetId },
+        { user1: actualTargetId, user2: currentUserId },
       ],
     });
 
     if (existing) {
       if (existing.status === 'accepted') {
-        return res.json({ ok: true, message: 'You are already friends with this co-learner!' });
+        return res.json({ ok: true, message: `You are already friends with ${target.displayName || target.name || 'this co-learner'}!` });
       }
       if (existing.status === 'pending') {
         if (existing.requesterId === currentUserId) {
-          return res.json({ ok: true, message: 'Friend request already sent!' });
+          return res.json({ ok: true, message: `Friend request already sent to ${target.displayName || target.name || 'this co-learner'}!` });
         } else {
-          // Both requested each other -> auto-accept
           existing.status = 'accepted';
           await existing.save();
 
           emitToUser(existing.requesterId, 'friend:accepted', {
             userId: currentUserId,
-            name: sender.displayName || sender.name || 'Co-learner',
-            message: `${sender.displayName || sender.name || 'Co-learner'} accepted your friend request!`,
+            name: sender?.displayName || sender?.name || 'Co-learner',
+            message: `${sender?.displayName || sender?.name || 'Co-learner'} accepted your friend request!`,
           });
 
-          return res.json({ ok: true, message: 'You are now friends!' });
+          return res.json({ ok: true, message: `You and ${target.displayName || target.name} are now friends!` });
         }
       }
-      // Re-open if previously declined
-      existing.status = 'pending';
+      existing.status = isBotPartner ? 'accepted' : 'pending';
       existing.requesterId = currentUserId;
       await existing.save();
 
-      emitToUser(targetUserId, 'friend:request', {
-        requestId: String(existing._id),
-        from: {
-          id: currentUserId,
-          name: sender.displayName || sender.name || 'A co-learner',
-          profilePhotoUrl: sender.profilePhotoUrl || null,
-          level: sender.level || 'Beginner',
-        },
-        message: `${sender.displayName || sender.name || 'A co-learner'} sent you a friend request!`,
-      });
-
-      return res.json({ ok: true, requestId: String(existing._id), message: 'Friend request sent successfully!' });
+      return res.json({ ok: true, requestId: String(existing._id), message: isBotPartner ? `${target.name} accepted your friend request!` : 'Friend request sent successfully!' });
     }
 
-    // Create new persistent friendship
+    // Create new persistent friendship (auto-accept for dedicated speaking partner)
     const newFriendship = await Friendship.create({
       user1: currentUserId,
-      user2: targetUserId,
+      user2: actualTargetId,
       requesterId: currentUserId,
-      status: 'pending',
+      status: isBotPartner ? 'accepted' : 'pending',
     });
 
-    // Real-time WebSocket event to recipient
-    emitToUser(targetUserId, 'friend:request', {
+    if (!isBotPartner) {
+      emitToUser(actualTargetId, 'friend:request', {
+        requestId: String(newFriendship._id),
+        from: {
+          id: currentUserId,
+          name: sender?.displayName || sender?.name || 'A co-learner',
+          profilePhotoUrl: sender?.profilePhotoUrl || null,
+          level: sender?.level || 'Beginner',
+        },
+        message: `${sender?.displayName || sender?.name || 'A co-learner'} sent you a friend request!`,
+      });
+    }
+
+    res.json({
+      ok: true,
       requestId: String(newFriendship._id),
-      from: {
-        id: currentUserId,
-        name: sender.displayName || sender.name || 'A co-learner',
-        profilePhotoUrl: sender.profilePhotoUrl || null,
-        level: sender.level || 'Beginner',
-      },
-      message: `${sender.displayName || sender.name || 'A co-learner'} sent you a friend request!`,
+      message: isBotPartner
+        ? `${target.name} accepted your friend request! You can now call directly from the Friends tab.`
+        : 'Friend request sent successfully!',
     });
-
-    res.json({ ok: true, requestId: String(newFriendship._id), message: 'Friend request sent successfully!' });
   } catch (err) {
     console.warn('[POST /api/friends/request error]', err.message);
     res.status(500).json({ error: 'Failed to send friend request', details: err.message });
@@ -2181,7 +2246,7 @@ app.post('/api/friends/accept', requireAuth, async (req, res) => {
     const { requestId, friendUserId } = req.body || {};
 
     let friendship = null;
-    if (requestId) {
+    if (requestId && mongoose.isValidObjectId(requestId)) {
       friendship = await Friendship.findById(requestId);
     }
     if (!friendship && friendUserId) {
@@ -2219,7 +2284,7 @@ app.post('/api/friends/decline', requireAuth, async (req, res) => {
     const { requestId, friendUserId } = req.body || {};
 
     let friendship = null;
-    if (requestId) {
+    if (requestId && mongoose.isValidObjectId(requestId)) {
       friendship = await Friendship.findById(requestId);
     }
     if (!friendship && friendUserId) {
@@ -2526,17 +2591,30 @@ app.post('/api/calls/:callId/feedback', requireAuth, async (req, res) => {
 });
 
 app.get('/api/rtc-config', requireAuth, (req, res) => {
-  const defaultStuns = [
-    'stun:stun.l.google.com:19302',
-    'stun:stun1.l.google.com:19302',
-    'stun:stun2.l.google.com:19302',
-    'stun:openrelay.metered.ca:80',
+  const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:openrelay.metered.ca:80' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ];
-  const iceServers = (process.env.RTC_STUN_URLS ? process.env.RTC_STUN_URLS.split(',') : defaultStuns)
-    .map((url) => url.trim())
-    .filter(Boolean)
-    .map((urls) => ({ urls }));
-  if (TURN_URLS.length) {
+  if (TURN_URLS.length && TURN_SHARED_SECRET) {
     const expiresAt = Math.floor(Date.now() / 1000) + 15 * 60;
     const username = `${expiresAt}:${req.authenticatedUser.id}`;
     const credential = crypto.createHmac('sha1', TURN_SHARED_SECRET).update(username).digest('base64');
