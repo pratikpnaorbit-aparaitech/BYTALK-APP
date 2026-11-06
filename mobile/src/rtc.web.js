@@ -14,14 +14,36 @@ export function createIceCandidate(candidate) {
   return new RTCIceCandidate(candidate);
 }
 
-export function getUserMedia(video) {
-  if (!navigator.mediaDevices?.getUserMedia) {
+export async function getUserMedia(video) {
+  if (!navigator?.mediaDevices?.getUserMedia) {
     throw new Error('This browser does not support microphone and camera access.');
   }
-  return navigator.mediaDevices.getUserMedia({
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: video ? { facingMode: 'user' } : false,
+    });
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    return stream;
+  } catch (tier1Error) {
+    console.warn('[BYTALK src/rtc.web] Advanced constraints failed, trying basic audio:', tier1Error?.message || tier1Error);
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({
     audio: true,
     video: video ? { facingMode: 'user' } : false,
   });
+  stream.getAudioTracks().forEach((track) => {
+    track.enabled = true;
+  });
+  return stream;
 }
 
 export async function switchCamera(stream, peerConnection, facingMode) {
@@ -62,7 +84,8 @@ export async function setSpeakerEnabled(enabled) {
   return true;
 }
 
+export function setMicrophoneMuted() {}
+
 export function startAudioRoute() {}
 
 export function stopAudioRoute() {}
-

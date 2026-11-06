@@ -26,7 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createPeerConnection, getLocalMediaStream, makeIceCandidate, makeSessionDescription, setAudioRoute, startAudioRoute, stopAudioRoute, switchCamera } from './rtc';
+import { createPeerConnection, getLocalMediaStream, makeIceCandidate, makeSessionDescription, setAudioRoute, setMicrophoneMuted, startAudioRoute, stopAudioRoute, switchCamera } from './rtc';
 import CallAudio from './CallAudio';
 import CallVideo from './CallVideo';
 import { configureSubscription, purchasePlan, restorePurchases } from './src/subscription';
@@ -1234,6 +1234,7 @@ function App() {
   const partnersRef = useRef(partners);
   const discoverRequestRef = useRef(0);
   const seenMessageIdsRef = useRef(new Set());
+  const speechRecognitionRef = useRef(null);
   selectedRef.current = selected;
   userIdRef.current = userId;
   screenRef.current = screen;
@@ -1620,6 +1621,32 @@ function App() {
     setSpeakerEnabled(false);
   }
 
+  const toggleMicrophone = () => {
+    const nextMuted = !muted;
+    const stream = localStreamRef.current || localStream;
+    if (stream && typeof stream.getAudioTracks === 'function') {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = !nextMuted;
+      });
+    }
+    try {
+      setMicrophoneMuted(nextMuted);
+    } catch {}
+    setMuted(nextMuted);
+
+    if (callRef.current?.id) {
+      socketRef.current?.emit('call:partner-mute', {
+        callId: callRef.current.id,
+        isMuted: nextMuted,
+      });
+    }
+
+    setCallNotice(nextMuted ? 'Microphone Muted 🔇' : 'Microphone Active 🎙️');
+    setTimeout(() => {
+      setCallNotice((prev) => (prev.includes('Microphone') ? '' : prev));
+    }, 2500);
+  };
+
   async function notifyIncomingMessage(message) {
     if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.Notification === 'undefined') return;
     try {
@@ -1713,13 +1740,22 @@ function App() {
 
   function createCallPeer(callId, stream, iceServers) {
     const connection = createPeerConnection(iceServers);
+    const audioCount = stream?.getAudioTracks ? stream.getAudioTracks().length : 0;
+    const videoCount = stream?.getVideoTracks ? stream.getVideoTracks().length : 0;
     console.log('[BYTALK call] peer created', {
       callId,
       iceServerCount: iceServers.length,
-      audioTracks: stream.getAudioTracks().length,
-      videoTracks: stream.getVideoTracks().length,
+      audioTracks: audioCount,
+      videoTracks: videoCount,
     });
-    stream.getTracks().forEach((track) => connection.addTrack(track, stream));
+    if (stream && typeof stream.getTracks === 'function') {
+      stream.getTracks().forEach((track) => {
+        if (track.kind === 'audio') {
+          track.enabled = !muted;
+        }
+        connection.addTrack(track, stream);
+      });
+    }
     peerRef.current = { callId, connection };
     connection.onicecandidate = (event) => {
       if (!event.candidate) return;
@@ -2315,6 +2351,13 @@ function App() {
         }
       });
       socket.on('call:signal', (signal) => handleCallSignal(signal));
+      socket.on('call:partner-mute', ({ isMuted } = {}) => {
+        const partnerName = callRef.current?.peer?.name || 'Speaking partner';
+        setCallNotice(isMuted ? `${partnerName} muted mic 🔇` : `${partnerName} mic active 🎙️`);
+        setTimeout(() => {
+          setCallNotice((prev) => (prev.includes('mic') ? '' : prev));
+        }, 2500);
+      });
       socket.on('call:state', ({ callId, status, connectedAt }) => {
         if (callRef.current?.id !== callId) return;
         const connection = peerRef.current?.connection;
@@ -3087,7 +3130,15 @@ function App() {
     }
   }
 
-  function startSpeechRecognition() {
+  async function startSpeechRecognition() {
+    if (listeningForSpeech) {
+      try {
+        speechRecognitionRef.current?.stop();
+      } catch {}
+      setListeningForSpeech(false);
+      return;
+    }
+
     if (typeof window === 'undefined') {
       Alert.alert('Voice input unavailable', 'Speech recognition is not available on this device.');
       return;
@@ -3098,11 +3149,23 @@ function App() {
       return;
     }
 
+    // Pre-prompt microphone permission on web if supported
+    if (navigator?.mediaDevices?.getUserMedia) {
+      try {
+        const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        testStream.getTracks().forEach((t) => t.stop());
+      } catch (permErr) {
+        setAiError('Microphone permission required for voice input. Please allow microphone access in your browser or device settings.');
+        return;
+      }
+    }
+
     try {
       const recognition = new Recognition();
+      speechRecognitionRef.current = recognition;
       const locale = (LANGUAGE_LOCALES && LANGUAGE_LOCALES[learningLanguage]) || 'en-US';
       recognition.lang = locale;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
       recognition.continuous = false;
 
       recognition.onstart = () => {
@@ -3110,7 +3173,10 @@ function App() {
         setAiError('');
       };
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
         if (transcript) setAiDraft(transcript);
       };
       recognition.onerror = (e) => {
@@ -5070,13 +5136,7 @@ function App() {
                     <TouchableOpacity
                       accessibilityRole="button"
                       accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'}
-                      onPress={() => {
-                        const nextMuted = !muted;
-                        localStreamRef.current?.getAudioTracks().forEach((track) => {
-                          track.enabled = !nextMuted;
-                        });
-                        setMuted(nextMuted);
-                      }}
+                      onPress={toggleMicrophone}
                       style={styles.videoControlBtn}
                       activeOpacity={0.8}
                     >
@@ -5215,13 +5275,7 @@ function App() {
                     <TouchableOpacity
                       accessibilityRole="button"
                       accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'}
-                      onPress={() => {
-                        const nextMuted = !muted;
-                        localStreamRef.current?.getAudioTracks().forEach((track) => {
-                          track.enabled = !nextMuted;
-                        });
-                        setMuted(nextMuted);
-                      }}
+                      onPress={toggleMicrophone}
                       style={[styles.refBtnCircle, muted ? styles.refMuteBtnActive : styles.refBtnMute]}
                       activeOpacity={0.75}
                     >

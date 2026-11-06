@@ -3314,6 +3314,19 @@ io.on('connection', (socket) => {
     acknowledge({ ok: true });
   });
 
+  socket.on('call:partner-mute', ({ callId, toUserId, sessionId, isMuted } = {}, acknowledge = () => {}) => {
+    let recipientId = toUserId;
+    if (!recipientId && callId) {
+      const call = activeCalls.get(callId);
+      recipientId = call && participantForCall(call, userId);
+    }
+    if (recipientId) {
+      console.log(`Forwarding mute state (${Boolean(isMuted)}) to ${recipientId}`);
+      emitToUser(recipientId, 'call:partner-mute', { callId: callId || sessionId, isMuted: Boolean(isMuted) });
+      acknowledge({ ok: true });
+    }
+  });
+
   socket.on('call:connected', ({ callId } = {}) => {
     const call = activeCalls.get(callId);
     if (!call || !participantForCall(call, userId) || call.status === 'ringing') return;

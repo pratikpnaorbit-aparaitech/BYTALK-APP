@@ -6,6 +6,7 @@ import {
   mediaDevices,
 } from 'react-native-webrtc';
 import InCallManager from 'react-native-incall-manager';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 export function createPeerConnection(configuration) {
   return new RTCPeerConnection(configuration);
@@ -23,11 +24,40 @@ export function createIceCandidate(candidate) {
   return new RTCIceCandidate(candidate);
 }
 
-export function getUserMedia(video) {
-  return mediaDevices.getUserMedia({
-    audio: true,
-    video: video ? { facingMode: 'user' } : false,
-  });
+export async function getUserMedia(video) {
+  if (Platform.OS === 'android') {
+    try {
+      const perms = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+      if (video) perms.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+      await PermissionsAndroid.requestMultiple(perms);
+    } catch (e) {
+      console.warn('[BYTALK src/rtc.native] Android permission request error:', e?.message || e);
+    }
+  }
+
+  try {
+    const stream = await mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: video ? { facingMode: 'user' } : false,
+    });
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    return stream;
+  } catch (error) {
+    const fallbackStream = await mediaDevices.getUserMedia({
+      audio: true,
+      video: video ? { facingMode: 'user' } : false,
+    });
+    fallbackStream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    return fallbackStream;
+  }
 }
 
 export async function switchCamera(stream) {
@@ -44,15 +74,28 @@ export async function supportsSpeakerToggle() {
 }
 
 export async function setSpeakerEnabled(enabled, type) {
-  InCallManager.setForceSpeakerphoneOn(enabled);
+  try {
+    InCallManager.setForceSpeakerphoneOn(Boolean(enabled));
+  } catch (e) {}
   return true;
 }
 
+export function setMicrophoneMuted(muted) {
+  try {
+    InCallManager.setMicrophoneMute(Boolean(muted));
+  } catch (e) {}
+}
+
 export function startAudioRoute(type) {
-  InCallManager.start({ media: type === 'video' ? 'video' : 'audio' });
+  try {
+    InCallManager.start({ media: type === 'video' ? 'video' : 'audio', auto: true });
+    InCallManager.setMicrophoneMute(false);
+  } catch (e) {}
 }
 
 export function stopAudioRoute() {
-  InCallManager.stop();
+  try {
+    InCallManager.setMicrophoneMute(false);
+    InCallManager.stop();
+  } catch (e) {}
 }
-

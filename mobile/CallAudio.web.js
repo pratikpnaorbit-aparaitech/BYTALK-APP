@@ -9,9 +9,12 @@ export default function CallAudio({ stream }) {
     if (!audio) return undefined;
     audio.srcObject = stream || null;
     if (stream) {
-      audio.play().catch((error) => {
-        console.warn('[BYTALK call] remote audio playback blocked', error?.message || 'autoplay denied');
-      });
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((error) => {
+          console.warn('[BYTALK call] remote audio playback waiting user gesture:', error?.message || 'autoplay denied');
+        });
+      }
     }
     return () => {
       audio.pause();
@@ -21,7 +24,7 @@ export default function CallAudio({ stream }) {
 
   return (
     <View style={{ width: 0, height: 0, overflow: 'hidden' }}>
-      <audio ref={audioRef} autoPlay playsInline />
+      <audio ref={audioRef} autoPlay playsInline data-bytalk-remote-stream="true" />
     </View>
   );
 }

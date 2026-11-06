@@ -1,15 +1,46 @@
 export async function getLocalMediaStream(type) {
-  if (!navigator.mediaDevices?.getUserMedia) {
+  if (!navigator?.mediaDevices?.getUserMedia) {
     throw new Error('Camera and microphone access requires HTTPS or localhost in a supported browser.');
   }
+
+  // Tier 1: Audio with voice processing
   try {
-    return await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: type === 'video' ? { facingMode: 'user' } : false,
+    });
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    return stream;
+  } catch (tier1Error) {
+    console.warn('[BYTALK rtc.web] Advanced audio constraints failed, trying basic audio:', tier1Error?.message || tier1Error);
+  }
+
+  // Tier 2: Basic audio constraint
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: type === 'video' ? { facingMode: 'user' } : false,
     });
-  } catch (error) {
-    if (type !== 'video') throw error;
-    return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    return stream;
+  } catch (tier2Error) {
+    if (type === 'video') {
+      console.warn('[BYTALK rtc.web] Video failed, attempting audio only');
+      const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      audioOnly.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+      });
+      return audioOnly;
+    }
+    throw tier2Error;
   }
 }
 
@@ -47,4 +78,5 @@ export async function switchCamera(stream, peerConnection) {
 
 export function startAudioRoute() {}
 export function setAudioRoute() {}
+export function setMicrophoneMuted() {}
 export function stopAudioRoute() {}
