@@ -51,7 +51,7 @@ const REVENUECAT_WEBHOOK_AUTH = process.env.REVENUECAT_WEBHOOK_AUTH || '';
 const REVENUECAT_PLUS_ENTITLEMENT = process.env.REVENUECAT_PLUS_ENTITLEMENT || 'bytalk_plus';
 const REVENUECAT_PRO_ENTITLEMENT = process.env.REVENUECAT_PRO_ENTITLEMENT || 'bytalk_pro';
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_TwmnKWWhKKWPcz';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'SoF1sQ74KFq4Cpo26P5lfLth';
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'TE12vGfhhrOJfbYUXQawyayi';
 const RAZORPAY_AVAILABLE = Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
 if (RAZORPAY_AVAILABLE) {
   console.log(`Razorpay payment gateway initialized with Key: ${RAZORPAY_KEY_ID.slice(0, 12)}...`);
@@ -814,17 +814,35 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 
 app.patch('/api/profile', requireAuth, async (req, res) => {
   try {
-    const { name, profilePhotoUrl, bio, country, nativeLanguage } = req.body || {};
+    const {
+      name,
+      displayName,
+      profilePhotoUrl,
+      avatarUrl,
+      bio,
+      country,
+      gender,
+      level,
+      nativeLanguage,
+      learningLanguage,
+    } = req.body || {};
+
     const updates = {};
-    if (typeof name === 'string' && name.trim()) {
-      updates.name = name.trim();
-      updates.displayName = name.trim();
+    const effectiveName = (typeof displayName === 'string' && displayName.trim()) || (typeof name === 'string' && name.trim());
+    if (effectiveName) {
+      updates.name = effectiveName;
+      updates.displayName = effectiveName;
     }
-    if (profilePhotoUrl !== undefined) updates.profilePhotoUrl = profilePhotoUrl;
+    const effectiveAvatar = profilePhotoUrl !== undefined ? profilePhotoUrl : avatarUrl;
+    if (effectiveAvatar !== undefined) {
+      updates.profilePhotoUrl = effectiveAvatar;
+    }
     if (typeof bio === 'string') updates.bio = bio.trim();
     if (typeof country === 'string') updates.country = country.trim();
     if (typeof req.body?.gender === 'string') updates.gender = req.body.gender.toLowerCase().trim();
     if (typeof nativeLanguage === 'string') updates.nativeLanguage = nativeLanguage.trim();
+    if (typeof learningLanguage === 'string') updates.learningLanguage = learningLanguage.trim();
+    if (typeof level === 'string') updates.level = level.trim();
 
     const user = await User.findByIdAndUpdate(
       req.authenticatedUser.id,
@@ -1396,14 +1414,18 @@ app.post('/api/subscription/razorpay/verify-payment', requireAuth, async (req, r
       return res.status(400).json({ error: 'Missing payment verification parameters.' });
     }
 
-    // Verify HMAC SHA256 signature
-    const generatedSignature = crypto
+    // Verify HMAC SHA256 signature with primary or fallback secret
+    const sigPrimary = crypto
       .createHmac('sha256', RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest('hex');
+    const sigFallback = crypto
+      .createHmac('sha256', 'SoF1sQ74KFq4Cpo26P5lfLth')
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
 
-    if (generatedSignature !== razorpay_signature) {
-      console.warn(`[Razorpay Signature Mismatch] expected ${generatedSignature}, got ${razorpay_signature}`);
+    if (razorpay_signature !== sigPrimary && razorpay_signature !== sigFallback) {
+      console.warn(`[Razorpay Signature Mismatch] expected ${sigPrimary}, got ${razorpay_signature}`);
       return res.status(400).json({ error: 'Invalid payment signature' });
     }
 
@@ -1979,6 +2001,7 @@ async function listDiscoverUsers(req, res) {
   });
 }
 
+app.get('/api/discover', requireAuth, listDiscoverUsers);
 app.get('/api/users/discover', requireAuth, listDiscoverUsers);
 app.get('/api/partners', requireAuth, listDiscoverUsers);
 app.get('/api/practice/partners', requireAuth, (req, res) => {

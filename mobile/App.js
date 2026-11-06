@@ -1088,21 +1088,14 @@ function App() {
         }
       }
 
-      // 3. If no other registered user is online right now, connect with dedicated Co-learner partner (Sarah / Oliver)
+      // 3. Connect strictly to real online registered co-learners (NO bot or demo fallback)
       if (!chosenPartner) {
-        const isFemale = filters.gender === 'female';
-        chosenPartner = {
-          id: isFemale ? 'partner_sarah' : 'partner_oliver',
-          name: isFemale ? 'Sarah' : 'Oliver',
-          displayName: isFemale ? 'Sarah' : 'Oliver',
-          profilePhotoUrl: isFemale
-            ? 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&mouth=smile&eyes=happy&hair=long01&hairColor=auburn'
-            : 'https://api.dicebear.com/7.x/avataaars/png?seed=Oliver&mouth=smile&eyes=happy&hair=short01&facialHair=beardLight',
-          country: 'UK',
-          level: 'Level : 1',
-          online: true,
-          isAi: true,
-        };
+        setIsMatchingCall(false);
+        Alert.alert(
+          'No Co-learners Online',
+          'There are no other co-learners online at this moment. You can browse registered learners in the Discover tab or invite friends to practice!'
+        );
+        return;
       }
 
       lastCalledPartnerIdRef.current = chosenPartner.id;
@@ -1680,13 +1673,17 @@ function App() {
   }
 
   function openConversation(partner) {
-    if (!hasMessageEntitlement()) {
+    const isFriend = (friendsList || []).some(
+      (f) => String(f.id) === String(partner?.id) || String(f._id) === String(partner?.id)
+    );
+    if (!isFriend && !hasMessageEntitlement()) {
       Alert.alert(
         'Subscription Required',
-        'Direct 1-on-1 messaging is a BYTALK Premium feature. Upgrade your plan to chat, send photos and files with language partners!',
+        'Direct 1-on-1 messaging is a BYTALK Premium feature. Upgrade your plan to chat with any user, or add them as a friend to chat for free!',
         [
+          { text: 'Upgrade to PRO', onPress: () => openSubscription() },
+          { text: 'Add as Friend', onPress: () => handleSendFriendRequest(partner) },
           { text: 'Cancel', style: 'cancel' },
-          { text: 'View Plans', onPress: openSubscription },
         ]
       );
       return;
@@ -2021,48 +2018,9 @@ function App() {
       return;
     }
 
-    // Dedicated Speaking Partner Call (e.g. Sarah / Oliver)
+    // Real registered co-learners only
     if (partner.id?.startsWith('partner_') || partner.isAi) {
-      setCallStarting({ partnerId: partner.id, type });
-      try {
-        const stream = await getLocalMediaStream(type).catch(() => null);
-        if (stream) {
-          localStreamRef.current = stream;
-          setLocalStream(stream);
-        }
-        const initialCall = {
-          id: `call_${Date.now()}`,
-          peer: partner,
-          type,
-          direction: 'outgoing',
-          status: 'Calling',
-        };
-        callRef.current = initialCall;
-        updateCall(initialCall);
-        setSelected(partner);
-        setScreen('call');
-        ringtoneManager.startRinging({ direction: 'outgoing' });
-
-        // Auto-connect after 1.8s ringing tone
-        setTimeout(() => {
-          ringtoneManager.stopRinging();
-          const connectedCall = {
-            id: initialCall.id,
-            peer: partner,
-            type,
-            direction: 'outgoing',
-            status: 'Connected',
-            connectedAt: new Date().toISOString(),
-          };
-          callRef.current = connectedCall;
-          updateCall(connectedCall);
-          speakEnglish(`Hello ${name || 'friend'}! Nice to connect with you. Let's practice speaking English together! What would you like to talk about today?`);
-        }, 1800);
-      } catch (err) {
-        console.warn('[Speaking Partner Call error]', err.message);
-      } finally {
-        setCallStarting(null);
-      }
+      Alert.alert('Notice', 'Voice and video calling are only available with real registered co-learners.');
       return;
     }
 
@@ -2146,9 +2104,12 @@ function App() {
   }
 
   async function acceptCall() {
+    stopSpeech();
     ringtoneManager.stopRinging();
     const incoming = callRef.current;
     if (!incoming?.id || incoming.direction !== 'incoming') return;
+    setCallCompletion(null);
+    setScreen('call');
     try {
       const rtcConfig = await request('rtc-config');
       iceServersRef.current = rtcConfig.iceServers || [];
@@ -2248,9 +2209,10 @@ function App() {
 
         if (meRes && meRes.ok && meRes.user) {
           if (meRes.user.id) setUserId(meRes.user.id);
-          if (meRes.user.name) setName(meRes.user.name);
+          const resolvedName = meRes.user.displayName || meRes.user.name;
+          if (resolvedName) setName(resolvedName);
           if (meRes.user.email) setEmail(meRes.user.email);
-          if (meRes.user.profilePhotoUrl) setAvatarUrl(meRes.user.profilePhotoUrl);
+          if (meRes.user.profilePhotoUrl !== undefined) setAvatarUrl(meRes.user.profilePhotoUrl);
           if (meRes.user.country) setCountry(meRes.user.country);
           if (meRes.user.nativeLanguage) setNativeLanguage(meRes.user.nativeLanguage);
           if (meRes.user.learningLanguage) setLearningLanguage(meRes.user.learningLanguage);
@@ -3737,21 +3699,42 @@ function App() {
                 setActiveBottomTab('pro');
                 setScreen('premium');
               }}
-              onUpdateProfile={async ({ name: newName, profilePhotoUrl: newAvatar }) => {
+              onUpdateProfile={async (updates = {}) => {
+                const newName = updates.name || updates.displayName;
+                const newAvatar = updates.profilePhotoUrl !== undefined ? updates.profilePhotoUrl : updates.avatarUrl;
                 if (newName) setName(newName);
                 if (newAvatar !== undefined) setAvatarUrl(newAvatar);
+                if (updates.country) setCountry(updates.country);
+                if (updates.nativeLanguage) setNativeLanguage(updates.nativeLanguage);
+                if (updates.learningLanguage) setLearningLanguage(updates.learningLanguage);
+                if (updates.level) setLevel(updates.level);
+
                 try {
+                  const payload = {};
+                  if (newName) {
+                    payload.name = newName;
+                    payload.displayName = newName;
+                  }
+                  if (newAvatar !== undefined) payload.profilePhotoUrl = newAvatar;
+                  if (updates.country) payload.country = updates.country;
+                  if (updates.nativeLanguage) payload.nativeLanguage = updates.nativeLanguage;
+                  if (updates.learningLanguage) payload.learningLanguage = updates.learningLanguage;
+                  if (updates.level) payload.level = updates.level;
+
                   const res = await request('profile', {
                     method: 'PATCH',
-                    body: JSON.stringify({
-                      name: newName || name,
-                      profilePhotoUrl: newAvatar !== undefined ? newAvatar : avatarUrl,
-                    }),
+                    body: payload,
                   });
                   if (res?.user) {
-                    if (res.user.name) setName(res.user.name);
-                    if (res.user.profilePhotoUrl) setAvatarUrl(res.user.profilePhotoUrl);
-                    await authStorage.setItem(SESSION_USER_KEY, JSON.stringify(res.user));
+                    const u = res.user;
+                    const resolved = u.displayName || u.name;
+                    if (resolved) setName(resolved);
+                    if (u.profilePhotoUrl !== undefined) setAvatarUrl(u.profilePhotoUrl);
+                    if (u.country) setCountry(u.country);
+                    if (u.nativeLanguage) setNativeLanguage(u.nativeLanguage);
+                    if (u.learningLanguage) setLearningLanguage(u.learningLanguage);
+                    if (u.level) setLevel(u.level);
+                    await authStorage.setItem(SESSION_USER_KEY, JSON.stringify(u));
                   }
                 } catch (e) {
                   console.warn('[Profile update error]', e.message);
@@ -4439,7 +4422,10 @@ function App() {
                     <Txt size={14} color={muted} style={{ textAlign: 'center', marginTop: 10 }}>No users match “{search}”. Try a different search.</Txt>
                   </View>
                 ) : null}
-                {isSearching && filteredPartners.map((p) => (
+                {!isSearching && partners.length > 0 && (
+                  <Txt bold size={16} color={navy} style={{ marginTop: 18, marginBottom: 10 }}>All Registered Co-learners</Txt>
+                )}
+                {(isSearching ? filteredPartners : partners).map((p) => (
                     <View key={p.id} style={styles.partnerCard}>
                       <View style={styles.partnerInfoRow}>
                         <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3', overflow: 'hidden' }]}>
@@ -4475,6 +4461,28 @@ function App() {
                         </View>
                       </View>
                       <View style={styles.partnerActions}>
+                        {(() => {
+                          const isFriend = (friendsList || []).some(
+                            (f) => String(f.id) === String(p.id) || String(f._id) === String(p.id)
+                          );
+                          return isFriend ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, marginRight: 6 }}>
+                              <Ionicons name="checkmark-circle" size={14} color="#166534" />
+                              <Txt color="#166534" size={11} bold style={{ marginLeft: 3 }}>Friends</Txt>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel={`Add ${p.displayName || p.name} as friend`}
+                              onPress={() => handleSendFriendRequest(p)}
+                              style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF', borderColor: '#C7D2FE', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, marginRight: 6 }}
+                              activeOpacity={0.8}
+                            >
+                              <Ionicons name="person-add-outline" size={14} color="#4F46E5" />
+                              <Txt color="#4F46E5" size={11} bold style={{ marginLeft: 3 }}>Add Friend</Txt>
+                            </TouchableOpacity>
+                          );
+                        })()}
                         <TouchableOpacity
                           accessibilityRole="button"
                           accessibilityLabel={`Chat with ${p.name}`}

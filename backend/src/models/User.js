@@ -89,9 +89,12 @@ export function publicUser(user) {
     videoCallsUsed,
     ...safe
   } = value;
+  const resolvedName = value.displayName || value.name || '';
   return {
     ...safe,
     id: String(value._id || value.id),
+    name: resolvedName,
+    displayName: resolvedName,
     profilePhotoUrl: value.profilePhotoUrl || null,
   };
 }

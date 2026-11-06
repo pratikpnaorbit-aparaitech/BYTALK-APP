@@ -181,6 +181,7 @@ export default function ProfileScreen({
 
   const handleApplyEmojiAvatar = () => {
     const emojiStr = `emoji:${selectedEmoji}:${selectedEmojiBg}`;
+    setSelectedAvatarUrl(emojiStr);
     if (onUpdateProfile) {
       onUpdateProfile({ profilePhotoUrl: emojiStr });
     }
@@ -193,7 +194,12 @@ export default function ProfileScreen({
       return;
     }
     if (onUpdateProfile) {
-      onUpdateProfile({ name: editName.trim(), email: editEmail.trim() });
+      onUpdateProfile({
+        name: editName.trim(),
+        displayName: editName.trim(),
+        email: editEmail.trim(),
+        profilePhotoUrl: selectedAvatarUrl,
+      });
     }
     setShowEditModal(false);
   };
