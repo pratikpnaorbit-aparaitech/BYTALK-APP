@@ -2384,7 +2384,8 @@ function App() {
       });
       socket.on('call:incoming', (incoming) => {
         console.log('[BYTALK call] incoming call received', { callId: incoming.callId, type: incoming.type });
-        if (callRef.current?.id === incoming.callId) return;
+        ringtoneManager.stopRinging();
+        if (callRef.current?.id === incoming.callId && callRef.current?.status === 'Connected') return;
         const peer = partnersRef.current.find((partner) => String(partner.id) === String(incoming.caller?.id)) || incoming.caller;
         setSelected(peer);
         updateCall({
@@ -2421,6 +2422,9 @@ function App() {
         }, 2500);
       });
       socket.on('call:state', ({ callId, status, connectedAt }) => {
+        if (status === 'connected') {
+          ringtoneManager.stopRinging();
+        }
         if (callRef.current?.id !== callId) return;
         const connection = peerRef.current?.connection;
         const locallyConnected = connection?.connectionState === 'connected'
@@ -2432,14 +2436,17 @@ function App() {
         updateCall((previous) => previous ? { ...previous, status: title, connectedAt: connectedAt || previous.connectedAt } : previous);
       });
       socket.on('call:missed', ({ callId, endedAt, durationSeconds }) => {
+        ringtoneManager.stopRinging();
         if (callRef.current?.id === callId) finishCallLocally('Missed', 'This call was not answered.', { endedAt, durationSeconds });
       });
       socket.on('call:rejected', ({ callId, endedAt, durationSeconds }) => {
+        ringtoneManager.stopRinging();
         if (callRef.current?.id === callId) finishCallLocally('Rejected', 'The call was declined.', { endedAt, durationSeconds });
       });
       socket.on('call:ended', ({ callId, status, reason, endedAt, durationSeconds }) => {
         console.log('[BYTALK call] call ended', { callId, status, reason });
-        if (callRef.current?.id !== callId) return;
+        ringtoneManager.stopRinging();
+        if (callRef.current?.id && callRef.current.id !== callId) return;
         const message = reason === 'disconnected'
           ? 'The other user disconnected.'
           : reason === 'connection-timeout'
@@ -2532,6 +2539,21 @@ function App() {
     return () => {
       sub.remove();
     };
+  }, []);
+
+  // Unlock web audio playback on first user touch/click
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handleUserGesture = () => {
+        ringtoneManager.unlockAudio();
+      };
+      window.addEventListener('click', handleUserGesture, { passive: true });
+      window.addEventListener('touchstart', handleUserGesture, { passive: true });
+      return () => {
+        window.removeEventListener('click', handleUserGesture);
+        window.removeEventListener('touchstart', handleUserGesture);
+      };
+    }
   }, []);
 
   useEffect(() => {

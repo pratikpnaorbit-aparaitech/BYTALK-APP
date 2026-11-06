@@ -92,6 +92,8 @@ export function setMicrophoneMuted(muted) {
 
 export function startAudioRoute(type) {
   try {
+    InCallManager.stopRingtone();
+    InCallManager.stopRingback();
     InCallManager.start({ media: type === 'video' ? 'video' : 'audio', auto: true });
     InCallManager.setForceSpeakerphoneOn(true);
     if (typeof InCallManager.setSpeakerphoneOn === 'function') {
@@ -103,6 +105,8 @@ export function startAudioRoute(type) {
 
 export function stopAudioRoute() {
   try {
+    InCallManager.stopRingtone();
+    InCallManager.stopRingback();
     InCallManager.setMicrophoneMute(false);
     InCallManager.stop();
   } catch (e) {}

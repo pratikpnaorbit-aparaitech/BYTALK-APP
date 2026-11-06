@@ -8,38 +8,49 @@ class RingtoneManager {
     this.intervalId = null;
     this.isPlaying = false;
     this.oscillators = [];
+    this.unlocked = false;
   }
 
   // Initialize or resume Web AudioContext
   getAudioContext() {
-    if (typeof window === 'undefined') return null;
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return null;
-    if (!this.audioContext || this.audioContext.state === 'closed') {
-      this.audioContext = new AudioCtx();
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+      return this.audioContext;
+    } catch {
+      return null;
     }
-    if (this.audioContext.state === 'suspended') {
-      this.audioContext.resume().catch(() => {});
-    }
-    return this.audioContext;
   }
 
   // Synchronously unlock and resume AudioContext from a user click/touch event
   unlockAudio() {
+    if (Platform.OS !== 'web') return;
     try {
       const ctx = this.getAudioContext();
       if (ctx && ctx.state === 'suspended') {
         ctx.resume().catch(() => {});
       }
+      this.unlocked = true;
     } catch {}
   }
 
   // Generate a telephone ring burst using dual tones (440Hz + 480Hz)
   playToneBurst(durationSec = 1.6) {
+    if (Platform.OS !== 'web') return;
     const ctx = this.getAudioContext();
     if (!ctx) return;
 
     try {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       const now = ctx.currentTime;
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
@@ -71,45 +82,48 @@ class RingtoneManager {
         this.oscillators = this.oscillators.filter((o) => o !== osc1 && o !== osc2);
       }, durationSec * 1000 + 100);
     } catch (err) {
-      console.warn('[Ringtone] error playing burst:', err?.message);
+      console.warn('[Ringtone] error playing burst:', err?.message || err);
     }
   }
 
   // Start continuous ringing bell
   startRinging({ direction = 'incoming' } = {}) {
-    if (this.isPlaying) return;
+    // If already ringing, stop previous ringtone first to ensure a fresh cycle
+    if (this.isPlaying) {
+      this.stopRinging();
+    }
     this.isPlaying = true;
 
-    // 1. Web implementation with Web Audio API
-    if (Platform.OS === 'web' || typeof window !== 'undefined') {
-      const burstDuration = direction === 'incoming' ? 1.6 : 1.2;
-      const cycleInterval = direction === 'incoming' ? 3500 : 4000;
-
-      // Play first burst immediately
-      this.playToneBurst(burstDuration);
-
-      // Repeat burst according to standard telephone ring cadence
-      this.intervalId = setInterval(() => {
-        if (!this.isPlaying) return;
-        this.playToneBurst(burstDuration);
-      }, cycleInterval);
-    }
-
-    // 2. React Native native in-call manager fallback
+    // 1. React Native native in-call manager (Android / iOS)
     if (Platform.OS !== 'web') {
       try {
-        const InCallManager = require('react-native-incall-manager').default;
+        const incallMod = require('react-native-incall-manager');
+        const InCallManager = incallMod.default || incallMod;
         if (InCallManager) {
           if (direction === 'incoming') {
             InCallManager.startRingtone('_DEFAULT_');
           } else {
-            InCallManager.startRingback('_DEFAULT_');
+            InCallManager.startRingback('_DTMF_');
           }
         }
       } catch (err) {
-        console.log('[Ringtone] InCallManager native ring skipped:', err?.message);
+        console.warn('[Ringtone] InCallManager native ring error:', err?.message || err);
       }
+      return;
     }
+
+    // 2. Web implementation with Web Audio API
+    const burstDuration = direction === 'incoming' ? 1.6 : 1.2;
+    const cycleInterval = direction === 'incoming' ? 3500 : 4000;
+
+    // Play first burst immediately
+    this.playToneBurst(burstDuration);
+
+    // Repeat burst according to standard telephone ring cadence
+    this.intervalId = setInterval(() => {
+      if (!this.isPlaying) return;
+      this.playToneBurst(burstDuration);
+    }, cycleInterval);
   }
 
   // Stop ringing immediately
@@ -123,7 +137,7 @@ class RingtoneManager {
     // Stop active oscillators
     for (const osc of this.oscillators) {
       try {
-        osc.stop();
+        osc.stop(0);
         osc.disconnect();
       } catch {}
     }
@@ -132,7 +146,8 @@ class RingtoneManager {
     // Stop native InCallManager
     if (Platform.OS !== 'web') {
       try {
-        const InCallManager = require('react-native-incall-manager').default;
+        const incallMod = require('react-native-incall-manager');
+        const InCallManager = incallMod.default || incallMod;
         if (InCallManager) {
           InCallManager.stopRingtone();
           InCallManager.stopRingback();

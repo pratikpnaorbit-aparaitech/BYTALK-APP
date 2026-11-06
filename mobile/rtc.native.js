@@ -86,6 +86,8 @@ export function switchCamera(stream) {
 
 export function startAudioRoute(type, speakerEnabled = true) {
   try {
+    InCallManager.stopRingtone();
+    InCallManager.stopRingback();
     InCallManager.start({ media: type === 'video' ? 'video' : 'audio', auto: true });
     const enableSpeaker = speakerEnabled !== false;
     InCallManager.setForceSpeakerphoneOn(enableSpeaker);
@@ -120,6 +122,8 @@ export function setMicrophoneMuted(muted) {
 
 export function stopAudioRoute() {
   try {
+    InCallManager.stopRingtone();
+    InCallManager.stopRingback();
     InCallManager.setMicrophoneMute(false);
     InCallManager.stop();
   } catch (e) {
