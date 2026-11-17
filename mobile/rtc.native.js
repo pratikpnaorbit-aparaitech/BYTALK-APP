@@ -1,6 +1,13 @@
 import { mediaDevices, RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } from 'react-native-webrtc';
-import InCallManager from 'react-native-incall-manager';
 import { PermissionsAndroid, Platform } from 'react-native';
+
+let InCallManager = null;
+try {
+  const incall = require('react-native-incall-manager');
+  InCallManager = incall?.default || incall;
+} catch (e) {
+  console.warn('[BYTALK rtc.native] InCallManager native module not available:', e?.message || e);
+}
 
 export async function requestAndroidPermissions(type = 'audio') {
   if (Platform.OS === 'android') {
@@ -8,6 +15,9 @@ export async function requestAndroidPermissions(type = 'audio') {
       const perms = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
       if (type === 'video') {
         perms.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+      }
+      if (Platform.Version >= 31 && PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT) {
+        perms.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
       }
       const granted = await PermissionsAndroid.requestMultiple(perms);
       const audioGranted = granted[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
@@ -86,15 +96,23 @@ export function switchCamera(stream) {
 
 export function startAudioRoute(type, speakerEnabled = true) {
   try {
-    InCallManager.stopRingtone();
-    InCallManager.stopRingback();
-    InCallManager.start({ media: type === 'video' ? 'video' : 'audio', auto: true });
-    const enableSpeaker = speakerEnabled !== false;
-    InCallManager.setForceSpeakerphoneOn(enableSpeaker);
-    if (typeof InCallManager.setSpeakerphoneOn === 'function') {
-      InCallManager.setSpeakerphoneOn(enableSpeaker);
+    if (InCallManager) {
+      if (typeof InCallManager.stopRingtone === 'function') InCallManager.stopRingtone();
+      if (typeof InCallManager.stopRingback === 'function') InCallManager.stopRingback();
+      if (typeof InCallManager.start === 'function') {
+        InCallManager.start({ media: type === 'video' ? 'video' : 'audio', auto: true });
+      }
+      const enableSpeaker = speakerEnabled !== false;
+      if (typeof InCallManager.setForceSpeakerphoneOn === 'function') {
+        InCallManager.setForceSpeakerphoneOn(enableSpeaker);
+      }
+      if (typeof InCallManager.setSpeakerphoneOn === 'function') {
+        InCallManager.setSpeakerphoneOn(enableSpeaker);
+      }
+      if (typeof InCallManager.setMicrophoneMute === 'function') {
+        InCallManager.setMicrophoneMute(false);
+      }
     }
-    InCallManager.setMicrophoneMute(false);
   } catch (e) {
     console.warn('[BYTALK InCallManager] start error:', e?.message || e);
   }
@@ -102,10 +120,14 @@ export function startAudioRoute(type, speakerEnabled = true) {
 
 export function setAudioRoute(speakerEnabled) {
   try {
-    const enableSpeaker = Boolean(speakerEnabled);
-    InCallManager.setForceSpeakerphoneOn(enableSpeaker);
-    if (typeof InCallManager.setSpeakerphoneOn === 'function') {
-      InCallManager.setSpeakerphoneOn(enableSpeaker);
+    if (InCallManager) {
+      const enableSpeaker = Boolean(speakerEnabled);
+      if (typeof InCallManager.setForceSpeakerphoneOn === 'function') {
+        InCallManager.setForceSpeakerphoneOn(enableSpeaker);
+      }
+      if (typeof InCallManager.setSpeakerphoneOn === 'function') {
+        InCallManager.setSpeakerphoneOn(enableSpeaker);
+      }
     }
   } catch (e) {
     console.warn('[BYTALK InCallManager] setAudioRoute error:', e?.message || e);
@@ -114,7 +136,9 @@ export function setAudioRoute(speakerEnabled) {
 
 export function setMicrophoneMuted(muted) {
   try {
-    InCallManager.setMicrophoneMute(Boolean(muted));
+    if (InCallManager && typeof InCallManager.setMicrophoneMute === 'function') {
+      InCallManager.setMicrophoneMute(Boolean(muted));
+    }
   } catch (e) {
     console.warn('[BYTALK InCallManager] setMicrophoneMute error:', e?.message || e);
   }
@@ -122,10 +146,12 @@ export function setMicrophoneMuted(muted) {
 
 export function stopAudioRoute() {
   try {
-    InCallManager.stopRingtone();
-    InCallManager.stopRingback();
-    InCallManager.setMicrophoneMute(false);
-    InCallManager.stop();
+    if (InCallManager) {
+      if (typeof InCallManager.stopRingtone === 'function') InCallManager.stopRingtone();
+      if (typeof InCallManager.stopRingback === 'function') InCallManager.stopRingback();
+      if (typeof InCallManager.setMicrophoneMute === 'function') InCallManager.setMicrophoneMute(false);
+      if (typeof InCallManager.stop === 'function') InCallManager.stop();
+    }
   } catch (e) {
     console.warn('[BYTALK InCallManager] stop error:', e?.message || e);
   }

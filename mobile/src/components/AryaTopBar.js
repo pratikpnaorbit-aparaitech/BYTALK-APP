@@ -14,6 +14,7 @@ export default function AryaTopBar({
   onPressLeaderboard,
   onPressNotifications,
   isPro = false,
+  notificationCount = 0,
 }) {
   const avatarUrl = user?.profilePhotoUrl || DEFAULT_AVATAR;
   const streak = userStats?.streak ?? user?.streak ?? 0;
@@ -79,7 +80,13 @@ export default function AryaTopBar({
         >
           <View style={{ position: 'relative' }}>
             <Ionicons name="notifications-outline" size={16} color="#5843E8" />
-            <View style={styles.bellBadgeDot} />
+            {notificationCount > 0 ? (
+              <View style={styles.bellBadgeCount}>
+                <Text style={styles.bellBadgeCountText}>
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </TouchableOpacity>
 
@@ -219,6 +226,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+  },
+  bellBadgeCount: {
+    position: 'absolute',
+    top: -5,
+    right: -8,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  bellBadgeCountText: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
+    fontWeight: '900',
   },
   bellBadgeDot: {
     position: 'absolute',

@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
+  RefreshControl,
   StyleSheet,
   ActivityIndicator,
   Animated,
@@ -38,7 +39,19 @@ export default function CallTabScreen({
   onCancelFriendRequest,
   recentCoLearners = [],
   onCancelMatch,
+  onRefreshFriends,
 }) {
+  const [friendsRefreshing, setFriendsRefreshing] = useState(false);
+
+  const handleRefreshFriends = async () => {
+    if (onRefreshFriends) {
+      setFriendsRefreshing(true);
+      try {
+        await onRefreshFriends();
+      } catch {}
+      setFriendsRefreshing(false);
+    }
+  };
   const [activeTopTab, setActiveTopTab] = useState('practice'); // 'practice' | 'friends' | 'progress'
   const [selectedGender, setSelectedGender] = useState(isSubscribed ? 'female' : 'any');
   const [searchFriendText, setSearchFriendText] = useState('');
@@ -129,14 +142,120 @@ export default function CallTabScreen({
     new Map((friends || []).map((f) => [String(f.id || f.name), f])).values()
   );
   const uniquePendingRequests = Array.from(
-    new Map((pendingRequests || []).map((r) => [String(r.id), r])).values()
+    new Map((pendingRequests || []).map((r) => [String(r.id || r._id || r.requestId || r.from?.id || r.from?.name || Math.random()), r])).values()
   );
   const uniqueSentRequests = Array.from(
-    new Map((sentRequests || []).map((r) => [String(r.id), r])).values()
-  );
+    new Map((sentRequests || []).map((r) => [String(r.id || r._id || r.requestId || r.to?.id || r.to?.name || Math.random()), r])).values()
+  ).filter((r) => {
+    const toName = (r.to?.name || r.to?.displayName || '').trim().toLowerCase();
+    const myName = (currentUser?.name || currentUser?.displayName || '').trim().toLowerCase();
+    const toId = String(r.to?.id || r.to?._id || '');
+    const myId = String(currentUser?.id || currentUser?._id || '');
+    if (myName && toName && toName === myName) return false;
+    if (myId && toId && toId === myId) return false;
+    return true;
+  });
   const uniqueRecentCoLearners = Array.from(
     new Map((recentCoLearners || []).map((r) => [String(r.id || r.name), r])).values()
   );
+
+  const checkIsFriendLocal = (learner) => {
+    if (!learner) return false;
+    const lId = String(learner.id || learner._id || learner.userId || '');
+    const lName = String(learner.displayName || learner.name || '').trim().toLowerCase();
+    return uniqueFriends.some((f) => {
+      const fId = String(f.id || f._id || f.userId || '');
+      const fName = String(f.displayName || f.name || '').trim().toLowerCase();
+      if (lId && fId && lId === fId) return true;
+      if (lName && fName && lName === fName) return true;
+      return false;
+    });
+  };
+
+  const findIncomingReqLocal = (learner) => {
+    if (!learner) return null;
+    const lId = String(learner.id || learner._id || learner.userId || '');
+    const lName = String(learner.displayName || learner.name || '').trim().toLowerCase();
+    return uniquePendingRequests.find((r) => {
+      const fromId = String(r.from?.id || r.from?._id || r.from?.userId || '');
+      const fromName = String(r.from?.displayName || r.from?.name || '').trim().toLowerCase();
+      if (lId && fromId && lId === fromId) return true;
+      if (lName && fromName && lName === fromName) return true;
+      return false;
+    });
+  };
+
+  const findIsSentLocal = (learner) => {
+    if (!learner) return false;
+    const uid = learner.id || learner._id || learner.name || learner.displayName;
+    if (sentMap[uid]) return true;
+    const lId = String(learner.id || learner._id || learner.userId || '');
+    const lName = String(learner.displayName || learner.name || '').trim().toLowerCase();
+    return uniqueSentRequests.some((s) => {
+      const toId = String(s.to?.id || s.to?._id || s.to?.userId || '');
+      const toName = String(s.to?.displayName || s.to?.name || '').trim().toLowerCase();
+      if (lId && toId && lId === toId) return true;
+      if (lName && toName && lName === toName) return true;
+      return false;
+    });
+  };
+
+  const renderActionForLearner = (learner) => {
+    const isFriend = checkIsFriendLocal(learner);
+    const incomingReq = findIncomingReqLocal(learner);
+    const isSent = findIsSentLocal(learner);
+
+    if (isFriend) {
+      return (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={[styles.addFriendBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+            <Ionicons name="checkmark-circle" size={14} color="#166534" style={{ marginRight: 4 }} />
+            <Text style={[styles.addFriendBtnText, { color: '#166534' }]}>Friends</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => onDirectChat && onDirectChat(learner)}
+            style={[styles.addFriendBtn, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={13} color="#4F46E5" style={{ marginRight: 3 }} />
+            <Text style={[styles.addFriendBtnText, { color: '#4F46E5' }]}>Chat</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (incomingReq) {
+      return (
+        <TouchableOpacity
+          onPress={() => onAcceptFriendRequest && onAcceptFriendRequest(incomingReq)}
+          style={[styles.addFriendBtn, { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }]}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="checkmark-sharp" size={14} color="#15803D" style={{ marginRight: 4 }} />
+          <Text style={[styles.addFriendBtnText, { color: '#15803D' }]}>Accept</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        onPress={() => handleSendRequestLocal(learner)}
+        disabled={isSent}
+        style={[styles.addFriendBtn, isSent && styles.addFriendBtnSent]}
+        activeOpacity={0.8}
+      >
+        <Ionicons
+          name={isSent ? 'checkmark' : 'person-add'}
+          size={14}
+          color={isSent ? '#166534' : '#6366F1'}
+          style={{ marginRight: 4 }}
+        />
+        <Text style={[styles.addFriendBtnText, isSent && { color: '#166534' }]}>
+          {isSent ? 'Sent' : 'Add Friend'}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   // Filtered friends & searched co-learners
   const searchLower = searchFriendText.trim().toLowerCase();
@@ -230,7 +349,10 @@ export default function CallTabScreen({
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => setActiveTopTab('friends')}
+          onPress={() => {
+            setActiveTopTab('friends');
+            if (onRefreshFriends) onRefreshFriends();
+          }}
           style={[styles.topTabItem, activeTopTab === 'friends' && styles.topTabItemActive]}
           activeOpacity={0.7}
         >
@@ -238,9 +360,9 @@ export default function CallTabScreen({
             <Text style={[styles.topTabLabel, activeTopTab === 'friends' && styles.topTabLabelActive]}>
               Friends
             </Text>
-            {(uniquePendingRequests.length + uniqueSentRequests.length) > 0 && (
+            {uniquePendingRequests.length > 0 && (
               <View style={styles.friendReqDot}>
-                <Text style={styles.friendReqDotText}>{uniquePendingRequests.length || uniqueSentRequests.length}</Text>
+                <Text style={styles.friendReqDotText}>{uniquePendingRequests.length}</Text>
               </View>
             )}
           </View>
@@ -433,6 +555,14 @@ export default function CallTabScreen({
         <ScrollView
           contentContainerStyle={styles.friendsContentScroll}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={friendsRefreshing}
+              onRefresh={handleRefreshFriends}
+              tintColor="#6366F1"
+              colors={['#6366F1']}
+            />
+          }
         >
           {/* Search bar */}
           <View style={styles.searchFriendsBar}>
@@ -452,20 +582,28 @@ export default function CallTabScreen({
           </View>
 
           {/* Pending Friend Requests */}
-          {pendingRequests.length > 0 && (
+          {uniquePendingRequests.length > 0 && (
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionHeading}>Pending Friend Requests 📬</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text style={styles.sectionHeading}>Pending Friend Requests 📬</Text>
+                <View style={{ backgroundColor: '#EF4444', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>{uniquePendingRequests.length} new</Text>
+                </View>
+              </View>
+              <Text style={{ fontSize: 12, color: '#64748B', marginBottom: 10 }}>
+                These co-learners want to connect with you. Accept to start practicing and chatting!
+              </Text>
               {uniquePendingRequests.map((req) => (
-                <View key={req.id} style={styles.friendReqRow}>
+                <View key={req.id || req._id || req.requestId || (req.from?.name || Math.random())} style={styles.friendReqRow}>
                   <Image
                     source={{
-                      uri: req.from?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (req.from?.name || 'Friend'),
+                      uri: req.from?.avatarUrl || req.from?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(req.from?.displayName || req.from?.name || 'Friend'),
                     }}
                     style={styles.friendAvatar}
                   />
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.friendName}>{req.from?.name || 'Co-learner'}</Text>
-                    <Text style={styles.friendSub}>Wants to practice English with you</Text>
+                    <Text style={styles.friendName}>{req.from?.displayName || req.from?.name || 'Co-learner'}</Text>
+                    <Text style={styles.friendSub}>{req.from?.country ? `${req.from.country} · ` : ''}Wants to practice English with you</Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <TouchableOpacity
@@ -509,22 +647,7 @@ export default function CallTabScreen({
                       <Text style={styles.friendName}>{learner.displayName || learner.name}</Text>
                       <Text style={styles.friendSub}>{learner.country || 'Global'} • {learner.level || 'Co-learner'}</Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => handleSendRequestLocal(learner)}
-                      disabled={isSent}
-                      style={[styles.addFriendBtn, isSent && styles.addFriendBtnSent]}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons
-                        name={isSent ? 'checkmark' : 'person-add'}
-                        size={14}
-                        color={isSent ? '#166534' : '#6366F1'}
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text style={[styles.addFriendBtnText, isSent && { color: '#166534' }]}>
-                        {isSent ? 'Sent' : 'Add Friend'}
-                      </Text>
-                    </TouchableOpacity>
+                    {renderActionForLearner(learner)}
                   </View>
                 );
               })}
@@ -540,7 +663,7 @@ export default function CallTabScreen({
               </View>
               <Text style={styles.sectionSub}>Waiting for your co-learner to accept:</Text>
               {uniqueSentRequests.map((req) => (
-                <View key={req.id} style={styles.friendReqRow}>
+                <View key={req.id || req._id || req.requestId || (req.to?.name || Math.random())} style={styles.friendReqRow}>
                   <Image
                     source={{
                       uri: req.to?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(req.to?.name || 'Co-learner'),
@@ -569,6 +692,22 @@ export default function CallTabScreen({
               <Text style={styles.sectionHeading}>My Practice Friends</Text>
               <Text style={styles.friendCountBadge}>{filteredFriends.length} friends</Text>
             </View>
+
+            {!isSubscribed && filteredFriends.length > 0 && (
+              <View style={styles.proFriendsBanner}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.proFriendsBannerTitle}>👑 Direct Calls & Chat with Friends</Text>
+                  <Text style={styles.proFriendsBannerSub}>Upgrade to BYTALK PRO to call & chat with your friends directly anytime.</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={onPressUpgrade}
+                  style={styles.proFriendsUpgradeBtn}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.proFriendsUpgradeBtnText}>Upgrade</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {filteredFriends.length === 0 ? (
               <View style={styles.emptyFriendsBox}>
@@ -663,22 +802,7 @@ export default function CallTabScreen({
                       <Text style={styles.friendName}>{learner.displayName || learner.name}</Text>
                       <Text style={styles.friendSub}>{learner.country || 'Global'} • Co-learner</Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => handleSendRequestLocal(learner)}
-                      disabled={isSent}
-                      style={[styles.addFriendBtn, isSent && styles.addFriendBtnSent]}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons
-                        name={isSent ? 'checkmark' : 'person-add'}
-                        size={14}
-                        color={isSent ? '#166534' : '#6366F1'}
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text style={[styles.addFriendBtnText, isSent && { color: '#166534' }]}>
-                        {isSent ? 'Sent' : 'Add Friend'}
-                      </Text>
-                    </TouchableOpacity>
+                    {renderActionForLearner(learner)}
                   </View>
                 );
               })}
@@ -708,22 +832,7 @@ export default function CallTabScreen({
                       <Text style={styles.friendName}>{learner.displayName || learner.name}</Text>
                       <Text style={styles.friendSub}>{learner.country || 'Global'} • {learner.level || 'Intermediate'}</Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => handleSendRequestLocal(learner)}
-                      disabled={isSent}
-                      style={[styles.addFriendBtn, isSent && styles.addFriendBtnSent]}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons
-                        name={isSent ? 'checkmark' : 'person-add'}
-                        size={14}
-                        color={isSent ? '#166534' : '#6366F1'}
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text style={[styles.addFriendBtnText, isSent && { color: '#166534' }]}>
-                        {isSent ? 'Sent' : 'Add Friend'}
-                      </Text>
-                    </TouchableOpacity>
+                    {renderActionForLearner(learner)}
                   </View>
                 );
               })}
@@ -1249,6 +1358,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748B',
     marginBottom: 10,
+  },
+  proFriendsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFF7F2',
+    borderColor: '#FFD6C4',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  proFriendsBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FF693D',
+    marginBottom: 2,
+  },
+  proFriendsBannerSub: {
+    fontSize: 11,
+    color: '#64748B',
+    lineHeight: 15,
+  },
+  proFriendsUpgradeBtn: {
+    backgroundColor: '#FF693D',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  proFriendsUpgradeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   friendCountBadge: {
     fontSize: 12,

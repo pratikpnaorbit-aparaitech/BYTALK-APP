@@ -50,8 +50,8 @@ if (!LIVEKIT_AVAILABLE) {
 const REVENUECAT_WEBHOOK_AUTH = process.env.REVENUECAT_WEBHOOK_AUTH || '';
 const REVENUECAT_PLUS_ENTITLEMENT = process.env.REVENUECAT_PLUS_ENTITLEMENT || 'bytalk_plus';
 const REVENUECAT_PRO_ENTITLEMENT = process.env.REVENUECAT_PRO_ENTITLEMENT || 'bytalk_pro';
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_TwmnKWWhKKWPcz';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'TE12vGfhhrOJfbYUXQawyayi';
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_TzYofi2xRP46cu';
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 's2Uz1AXF7qFwCf0M7cC3pPSl';
 const RAZORPAY_AVAILABLE = Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
 if (RAZORPAY_AVAILABLE) {
   console.log(`Razorpay payment gateway initialized with Key: ${RAZORPAY_KEY_ID.slice(0, 12)}...`);
@@ -388,7 +388,7 @@ const save = () => fs.writeFileSync(dbFile, JSON.stringify(store, null, 2));
 
 const auditLogs = [
   { id: 'aud-1', timestamp: new Date(Date.now() - 3600000).toISOString(), actor: 'System', eventType: 'SYSTEM_BOOT', target: 'BYTALK Server Online' },
-  { id: 'aud-2', timestamp: new Date(Date.now() - 1800000).toISOString(), actor: 'Razorpay Gateway', eventType: 'PAYMENT_GATEWAY_INITIALIZED', target: 'rzp_live_TwmnKWWhKKWPcz' },
+  { id: 'aud-2', timestamp: new Date(Date.now() - 1800000).toISOString(), actor: 'Razorpay Gateway', eventType: 'PAYMENT_GATEWAY_INITIALIZED', target: 'rzp_live_TzYofi2xRP46cu' },
 ];
 
 const mongoUri = process.env.MONGODB_URI;
@@ -581,9 +581,11 @@ async function requireAuth(req, res, next) {
   next();
 }
 
-function participantForCall(call, userId) {
-  if (call.callerId === userId) return call.calleeId;
-  if (call.calleeId === userId) return call.callerId;
+function participantForCall(call, userId, altUserId = null) {
+  if (!call) return null;
+  const ids = [userId, altUserId].filter(Boolean).map(String);
+  if (ids.includes(String(call.callerId))) return call.calleeId;
+  if (ids.includes(String(call.calleeId))) return call.callerId;
   return null;
 }
 
@@ -650,6 +652,11 @@ function finishCall(call, status, endedBy) {
   }
   saveCall(call);
   activeCalls.delete(call.id);
+  for (const [k, v] of userCalls.entries()) {
+    if (v === call.id) {
+      userCalls.delete(k);
+    }
+  }
   userCalls.delete(call.callerId);
   userCalls.delete(call.calleeId);
   return persistCallHistory(call).catch((error) => {
@@ -2088,15 +2095,25 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
 app.get('/api/friends', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
+    const currentAltId = req.authenticatedUser._id ? String(req.authenticatedUser._id) : currentUserId;
+    const myIds = Array.from(new Set([
+      currentUserId,
+      currentAltId,
+      req.authenticatedUser.name,
+      req.authenticatedUser.displayName,
+      req.authenticatedUser.email,
+    ].filter(Boolean).map((x) => String(x))));
+
+    const isMe = (id) => myIds.some((m) => String(m).toLowerCase() === String(id || '').toLowerCase());
 
     // 1. Fetch all accepted friendships
     const acceptedFriendships = await Friendship.find({
       status: 'accepted',
-      $or: [{ user1: currentUserId }, { user2: currentUserId }],
+      $or: [{ user1: { $in: myIds } }, { user2: { $in: myIds } }],
     }).lean();
 
     const friendIds = acceptedFriendships.map((f) =>
-      f.user1 === currentUserId ? f.user2 : f.user1
+      isMe(f.user1) ? f.user2 : f.user1
     );
 
     let friendUsers = [];
@@ -2108,18 +2125,39 @@ app.get('/api/friends', requireAuth, async (req, res) => {
       if (validObjectIds.length > 0) queryConds.push({ _id: { $in: validObjectIds } });
       if (otherIds.length > 0) queryConds.push({ email: { $in: otherIds } }, { name: { $in: otherIds } });
 
+      let found = [];
       if (queryConds.length > 0) {
-        const found = await User.find({ $or: queryConds }).lean();
-        friendUsers = found.map(publicUser);
+        found = await User.find({ $or: queryConds }).lean();
       }
+
+      friendUsers = friendIds.map((fId) => {
+        const u = found.find((item) => String(item._id) === fId || item.name === fId || item.email === fId)
+          || store.users.find((item) => String(item.id) === fId || String(item._id) === fId || item.name === fId);
+        if (u) {
+          const pub = publicUser(u);
+          return {
+            ...pub,
+            avatarUrl: pub.profilePhotoUrl || u.avatarUrl || null,
+            online: Boolean((userSockets.get(String(u._id || u.id))?.size || 0) > 0),
+          };
+        }
+        return {
+          id: fId,
+          name: 'Co-learner',
+          displayName: 'Co-learner',
+          avatarUrl: null,
+          profilePhotoUrl: null,
+          online: false,
+        };
+      });
     }
 
     // 2. Fetch pending incoming requests
     const pendingFriendships = await Friendship.find({
       status: 'pending',
-      requesterId: { $ne: currentUserId },
-      $or: [{ user1: currentUserId }, { user2: currentUserId }],
-    }).lean();
+      requesterId: { $nin: myIds },
+      $or: [{ user1: { $in: myIds } }, { user2: { $in: myIds } }],
+    }).sort({ createdAt: -1 }).lean();
 
     const pendingRequests = [];
     for (const p of pendingFriendships) {
@@ -2130,9 +2168,21 @@ app.get('/api/friends', requireAuth, async (req, res) => {
       if (!fromUser) {
         fromUser = await User.findOne({ $or: [{ email: p.requesterId }, { name: p.requesterId }] }).lean();
       }
+      if (!fromUser) {
+        fromUser = store.users.find((u) => String(u.id) === p.requesterId || String(u._id) === p.requesterId || u.name === p.requesterId);
+      }
+      const pub = fromUser ? publicUser(fromUser) : null;
       pendingRequests.push({
         id: String(p._id),
-        from: fromUser ? publicUser(fromUser) : { id: p.requesterId, name: 'Co-learner' },
+        from: pub
+          ? {
+              ...pub,
+              avatarUrl: pub.profilePhotoUrl || fromUser?.avatarUrl || null,
+              country: fromUser?.country || '',
+              level: fromUser?.level || 'Beginner',
+              online: Boolean((userSockets.get(String(fromUser._id || fromUser.id))?.size || 0) > 0),
+            }
+          : { id: p.requesterId, name: 'Co-learner', displayName: 'Co-learner', avatarUrl: null, country: '', level: 'Beginner', online: false },
         createdAt: p.createdAt,
       });
     }
@@ -2140,13 +2190,13 @@ app.get('/api/friends', requireAuth, async (req, res) => {
     // 3. Fetch pending outgoing requests sent by current user
     const sentFriendships = await Friendship.find({
       status: 'pending',
-      requesterId: currentUserId,
-      $or: [{ user1: currentUserId }, { user2: currentUserId }],
-    }).lean();
+      requesterId: { $in: myIds },
+      $or: [{ user1: { $in: myIds } }, { user2: { $in: myIds } }],
+    }).sort({ createdAt: -1 }).lean();
 
     const sentRequests = [];
     for (const s of sentFriendships) {
-      const recipientId = s.user1 === currentUserId ? s.user2 : s.user1;
+      const recipientId = isMe(s.user1) ? s.user2 : s.user1;
       let toUser = null;
       if (mongoose.isValidObjectId(recipientId)) {
         toUser = await User.findById(recipientId).lean();
@@ -2154,9 +2204,21 @@ app.get('/api/friends', requireAuth, async (req, res) => {
       if (!toUser) {
         toUser = await User.findOne({ $or: [{ email: recipientId }, { name: recipientId }, { displayName: recipientId }] }).lean();
       }
+      if (!toUser) {
+        toUser = store.users.find((u) => String(u.id) === recipientId || String(u._id) === recipientId || u.name === recipientId);
+      }
+      const pub = toUser ? publicUser(toUser) : null;
       sentRequests.push({
         id: String(s._id),
-        to: toUser ? publicUser(toUser) : { id: recipientId, name: 'Co-learner', displayName: 'Co-learner' },
+        to: pub
+          ? {
+              ...pub,
+              avatarUrl: pub.profilePhotoUrl || toUser?.avatarUrl || null,
+              country: toUser?.country || '',
+              level: toUser?.level || 'Beginner',
+              online: Boolean((userSockets.get(String(toUser._id || toUser.id))?.size || 0) > 0),
+            }
+          : { id: recipientId, name: 'Co-learner', displayName: 'Co-learner', avatarUrl: null, country: '', level: 'Beginner', online: false },
         createdAt: s.createdAt,
       });
     }
@@ -2179,7 +2241,7 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
     targetUserId = String(targetUserId || friendId || bodyUserId || '').trim();
 
     if (!targetUserId || targetUserId === currentUserId) {
-      return res.status(400).json({ error: 'Cannot send friend request to this user' });
+      return res.status(400).json({ error: 'Cannot send friend request to yourself' });
     }
 
     let sender = null;
@@ -2196,8 +2258,8 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
       target = await User.findById(targetUserId).lean();
     }
     if (!target) {
-      const safeId = targetUserId.replace(/[.*+?^$\{}()|[\]\\]/g, '\\$&');
-      const safeName = String(targetName || '').replace(/[.*+?^$\{}()|[\]\\]/g, '\\$&');
+      const safeId = targetUserId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safeName = String(targetName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       target = await User.findOne({
         $or: [
           { email: new RegExp('^' + safeId + '$', 'i') },
@@ -2210,74 +2272,128 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
         ],
       }).lean();
     }
+
     if (!target) {
-      const learnerName = targetName || targetUserId || 'Co-learner';
-      const cleanEmail = learnerName.toLowerCase().replace(/[^a-z0-9]/g, '') + '@bytalk.practice';
-      const created = await User.create({
-        email: cleanEmail,
-        name: learnerName,
-        displayName: learnerName,
-        country: 'Global',
-        nativeLanguage: 'English',
-        learningLanguage: 'English',
-        level: 'Intermediate',
-        profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(learnerName),
-        online: true,
-      });
-      target = created.toObject();
+      const allDbUsers = await User.find({}).lean();
+      const norm = (s) => String(s || '').trim().toLowerCase();
+      target = allDbUsers.find((u) =>
+        norm(u.name) === norm(targetUserId) ||
+        norm(u.displayName) === norm(targetUserId) ||
+        norm(u.email) === norm(targetUserId) ||
+        String(u._id) === String(targetUserId) ||
+        (targetName && (norm(u.name) === norm(targetName) || norm(u.displayName) === norm(targetName)))
+      );
     }
 
-    // Support dedicated practice partners (Sarah, Oliver, etc.)
-    const isBotPartner = targetUserId.toLowerCase().includes('sarah')
-      || targetUserId.toLowerCase().includes('oliver')
-      || targetUserId.toLowerCase().includes('bot')
-      || (targetName && (targetName.toLowerCase().includes('sarah') || targetName.toLowerCase().includes('oliver')));
-
-    if (!target && isBotPartner) {
-      const isSarah = (targetName || targetUserId).toLowerCase().includes('sarah');
-      const botName = isSarah ? 'Sarah' : 'Oliver';
-      const botEmail = `${botName.toLowerCase()}@bytalk.internal`;
-      target = await User.findOne({ email: botEmail }).lean();
-      if (!target) {
-        const created = await User.create({
-          email: botEmail,
-          name: botName,
-          displayName: botName,
-          country: isSarah ? 'United Kingdom' : 'United States',
-          nativeLanguage: 'English',
-          learningLanguage: 'English',
-          level: 'Advanced',
-          profilePhotoUrl: isSarah
-            ? 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&eyes=happy&mouth=smile'
-            : 'https://api.dicebear.com/7.x/avataaars/png?seed=Oliver&top=shortFlat&clothingColor=blue01',
-          online: true,
-          bio: 'Dedicated English Speaking Practice Partner at BYTALK',
-        });
-        target = created.toObject();
+    // Check store.users
+    if (!target) {
+      const inStore = store.users.find(
+        (u) =>
+          String(u.id) === targetUserId ||
+          String(u._id) === targetUserId ||
+          (u.name && u.name.toLowerCase() === targetUserId.toLowerCase()) ||
+          (u.displayName && u.displayName.toLowerCase() === targetUserId.toLowerCase()) ||
+          (targetName && (u.name?.toLowerCase() === targetName.toLowerCase() || u.displayName?.toLowerCase() === targetName.toLowerCase()))
+      );
+      if (inStore) {
+        if (mongoose.isValidObjectId(inStore._id || inStore.id)) {
+          target = await User.findById(inStore._id || inStore.id).lean();
+        }
+        if (!target) {
+          const cleanEmail = (inStore.email || ((inStore.name || 'co-learner').toLowerCase().replace(/[^a-z0-9]/g, '') + '@bytalk.practice')).toLowerCase();
+          const created = await User.create({
+            email: cleanEmail,
+            passwordHash: inStore.passwordHash || hashPassword('PracticePass123!'),
+            name: inStore.name || targetName || 'Co-learner',
+            displayName: inStore.displayName || inStore.name || targetName || 'Co-learner',
+            country: inStore.country || 'Global',
+            nativeLanguage: inStore.nativeLanguage || 'English',
+            learningLanguage: inStore.learningLanguage || 'English',
+            level: inStore.level || 'Intermediate',
+            profilePhotoUrl: inStore.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(inStore.name || 'Co-learner'),
+          });
+          target = created.toObject();
+        }
       }
     }
 
+    // Create target if not found
     if (!target) {
-      return res.status(404).json({ error: 'Co-learner not found' });
+      const learnerName = targetName || targetUserId || 'Co-learner';
+      const cleanEmail = learnerName.toLowerCase().replace(/[^a-z0-9]/g, '') + '@bytalk.practice';
+      target = await User.findOne({ email: cleanEmail }).lean();
+      if (!target) {
+        try {
+          const created = await User.create({
+            email: cleanEmail,
+            passwordHash: hashPassword('PracticePass123!'),
+            name: learnerName,
+            displayName: learnerName,
+            country: 'Global',
+            nativeLanguage: 'English',
+            learningLanguage: 'English',
+            level: 'Intermediate',
+            profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(learnerName),
+          });
+          target = created.toObject();
+        } catch (cErr) {
+          const fallbackEmail = `${learnerName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@bytalk.practice`;
+          const created = await User.create({
+            email: fallbackEmail,
+            passwordHash: hashPassword('PracticePass123!'),
+            name: learnerName,
+            displayName: learnerName,
+            country: 'Global',
+            nativeLanguage: 'English',
+            learningLanguage: 'English',
+            level: 'Intermediate',
+            profilePhotoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=' + encodeURIComponent(learnerName),
+          });
+          target = created.toObject();
+        }
+      }
     }
 
-    const actualTargetId = String(target._id);
+    const actualTargetId = String(target._id || target.id);
+    if (actualTargetId === currentUserId) {
+      return res.status(400).json({ error: 'Cannot send friend request to yourself' });
+    }
+
+    const senderIds = Array.from(new Set([currentUserId, String(sender?._id || ''), String(sender?.id || '')].filter(Boolean)));
+    const targetIds = Array.from(new Set([actualTargetId, String(target?._id || ''), String(target?.id || '')].filter(Boolean)));
 
     // Check if friendship already exists
     const existing = await Friendship.findOne({
       $or: [
-        { user1: currentUserId, user2: actualTargetId },
-        { user1: actualTargetId, user2: currentUserId },
+        { user1: { $in: senderIds }, user2: { $in: targetIds } },
+        { user1: { $in: targetIds }, user2: { $in: senderIds } },
       ],
     });
 
     if (existing) {
       if (existing.status === 'accepted') {
-        return res.json({ ok: true, message: `You are already friends with ${target.displayName || target.name || 'this co-learner'}!` });
+        return res.json({ ok: true, isFriend: true, message: 'You are already friends with ' + (target.displayName || target.name || 'this co-learner') + '!' });
       }
       if (existing.status === 'pending') {
-        if (existing.requesterId === currentUserId) {
-          return res.json({ ok: true, message: `Friend request already sent to ${target.displayName || target.name || 'this co-learner'}!` });
+        const isCurrentRequester = senderIds.some((sId) => String(existing.requesterId).toLowerCase() === String(sId).toLowerCase());
+        if (isCurrentRequester) {
+          const requestPayload = {
+            requestId: String(existing._id),
+            from: {
+              id: currentUserId,
+              name: sender?.displayName || sender?.name || 'A co-learner',
+              displayName: sender?.displayName || sender?.name || 'A co-learner',
+              profilePhotoUrl: sender?.profilePhotoUrl || null,
+              avatarUrl: sender?.profilePhotoUrl || null,
+              country: sender?.country || 'Global',
+              level: sender?.level || 'Beginner',
+            },
+            message: (sender?.displayName || sender?.name || 'A co-learner') + ' sent you a friend request!',
+          };
+          targetIds.forEach((tId) => emitToUser(tId, 'friend:request', requestPayload));
+          if (target.name) emitToUser(String(target.name).toLowerCase(), 'friend:request', requestPayload);
+
+          return res.json({ ok: true, isPending: true, requestId: String(existing._id), message: 'Friend request already sent to ' + (target.displayName || target.name || 'this co-learner') + '!' });
         } else {
           existing.status = 'accepted';
           await existing.save();
@@ -2285,46 +2401,73 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
           emitToUser(existing.requesterId, 'friend:accepted', {
             userId: currentUserId,
             name: sender?.displayName || sender?.name || 'Co-learner',
-            message: `${sender?.displayName || sender?.name || 'Co-learner'} accepted your friend request!`,
+            displayName: sender?.displayName || sender?.name || 'Co-learner',
+            avatarUrl: sender?.profilePhotoUrl || null,
+            message: (sender?.displayName || sender?.name || 'Co-learner') + ' accepted your friend request!',
           });
 
-          return res.json({ ok: true, message: `You and ${target.displayName || target.name} are now friends!` });
+          emitToUser(currentUserId, 'friend:accepted', {
+            userId: actualTargetId,
+            name: target.displayName || target.name || 'Co-learner',
+            displayName: target.displayName || target.name || 'Co-learner',
+            avatarUrl: target.profilePhotoUrl || null,
+            message: 'You and ' + (target.displayName || target.name) + ' are now friends!',
+          });
+
+          return res.json({ ok: true, isFriend: true, message: 'You and ' + (target.displayName || target.name) + ' are now friends!' });
         }
       }
-      existing.status = isBotPartner ? 'accepted' : 'pending';
+      existing.status = 'pending';
       existing.requesterId = currentUserId;
       await existing.save();
 
-      return res.json({ ok: true, requestId: String(existing._id), message: isBotPartner ? `${target.name} accepted your friend request!` : 'Friend request sent successfully!' });
+      const existingRequestPayload = {
+        requestId: String(existing._id),
+        from: {
+          id: currentUserId,
+          name: sender?.displayName || sender?.name || 'A co-learner',
+          displayName: sender?.displayName || sender?.name || 'A co-learner',
+          profilePhotoUrl: sender?.profilePhotoUrl || null,
+          avatarUrl: sender?.profilePhotoUrl || null,
+          country: sender?.country || 'Global',
+          level: sender?.level || 'Beginner',
+        },
+        message: (sender?.displayName || sender?.name || 'A co-learner') + ' sent you a friend request!',
+      };
+      targetIds.forEach((tId) => emitToUser(tId, 'friend:request', existingRequestPayload));
+      if (target.name) emitToUser(String(target.name).toLowerCase(), 'friend:request', existingRequestPayload);
+
+      return res.json({ ok: true, requestId: String(existing._id), message: 'Friend request sent successfully!' });
     }
 
-    // Create new persistent friendship (auto-accept for dedicated speaking partner)
+    // Create new persistent friendship
     const newFriendship = await Friendship.create({
       user1: currentUserId,
       user2: actualTargetId,
       requesterId: currentUserId,
-      status: isBotPartner ? 'accepted' : 'pending',
+      status: 'pending',
     });
 
-    if (!isBotPartner) {
-      emitToUser(actualTargetId, 'friend:request', {
-        requestId: String(newFriendship._id),
-        from: {
-          id: currentUserId,
-          name: sender?.displayName || sender?.name || 'A co-learner',
-          profilePhotoUrl: sender?.profilePhotoUrl || null,
-          level: sender?.level || 'Beginner',
-        },
-        message: `${sender?.displayName || sender?.name || 'A co-learner'} sent you a friend request!`,
-      });
-    }
+    const newRequestPayload = {
+      requestId: String(newFriendship._id),
+      from: {
+        id: currentUserId,
+        name: sender?.displayName || sender?.name || 'A co-learner',
+        displayName: sender?.displayName || sender?.name || 'A co-learner',
+        profilePhotoUrl: sender?.profilePhotoUrl || null,
+        avatarUrl: sender?.profilePhotoUrl || null,
+        country: sender?.country || 'Global',
+        level: sender?.level || 'Beginner',
+      },
+      message: (sender?.displayName || sender?.name || 'A co-learner') + ' sent you a friend request!',
+    };
+    targetIds.forEach((tId) => emitToUser(tId, 'friend:request', newRequestPayload));
+    if (target.name) emitToUser(String(target.name).toLowerCase(), 'friend:request', newRequestPayload);
 
     res.json({
       ok: true,
       requestId: String(newFriendship._id),
-      message: isBotPartner
-        ? `${target.name} accepted your friend request! You can now call directly from the Friends tab.`
-        : 'Friend request sent successfully!',
+      message: 'Friend request sent successfully!',
     });
   } catch (err) {
     console.warn('[POST /api/friends/request error]', err.message);
@@ -2335,32 +2478,97 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
 app.post('/api/friends/accept', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
-    const { requestId, friendUserId } = req.body || {};
+    const currentAltId = req.authenticatedUser._id ? String(req.authenticatedUser._id) : currentUserId;
+    const myIds = Array.from(new Set([
+      currentUserId,
+      currentAltId,
+      req.authenticatedUser.name,
+      req.authenticatedUser.displayName,
+      req.authenticatedUser.email,
+    ].filter(Boolean).map((x) => String(x))));
+
+    const { requestId, friendUserId, friendId, targetUserId } = req.body || {};
+    const effectiveFriendId = String(friendUserId || friendId || targetUserId || '').trim();
 
     let friendship = null;
     if (requestId && mongoose.isValidObjectId(requestId)) {
       friendship = await Friendship.findById(requestId);
     }
-    if (!friendship && friendUserId) {
+    if (!friendship && effectiveFriendId) {
+      let friendUser = null;
+      if (mongoose.isValidObjectId(effectiveFriendId)) {
+        friendUser = await User.findById(effectiveFriendId).lean();
+      }
+      if (!friendUser) {
+        friendUser = store.users.find((u) => String(u.id) === effectiveFriendId || String(u._id) === effectiveFriendId || u.name === effectiveFriendId);
+      }
+      const targetIds = Array.from(new Set([
+        effectiveFriendId,
+        friendUser ? String(friendUser._id) : null,
+        friendUser ? String(friendUser.id) : null,
+        friendUser?.name,
+      ].filter(Boolean).map((x) => String(x))));
+
       friendship = await Friendship.findOne({
-        status: 'pending',
         $or: [
-          { user1: currentUserId, user2: String(friendUserId) },
-          { user1: String(friendUserId), user2: currentUserId },
+          { user1: { $in: myIds }, user2: { $in: targetIds } },
+          { user1: { $in: targetIds }, user2: { $in: myIds } },
         ],
       });
+    }
+
+    if (!friendship && effectiveFriendId && effectiveFriendId !== currentUserId) {
+      // Direct friend connect via link or button
+      let targetUser = null;
+      if (mongoose.isValidObjectId(effectiveFriendId)) {
+        targetUser = await User.findById(effectiveFriendId).lean();
+      }
+      if (!targetUser) {
+        targetUser = store.users.find((u) => String(u.id) === effectiveFriendId || String(u._id) === effectiveFriendId || u.name === effectiveFriendId);
+      }
+      if (targetUser) {
+        const actualTargetId = String(targetUser._id || targetUser.id);
+        friendship = await Friendship.create({
+          user1: currentUserId,
+          user2: actualTargetId,
+          requesterId: actualTargetId,
+          status: 'accepted',
+        });
+      }
     }
 
     if (friendship) {
       friendship.status = 'accepted';
       await friendship.save();
 
-      const otherId = friendship.user1 === currentUserId ? friendship.user2 : friendship.user1;
-      emitToUser(otherId, 'friend:accepted', {
+      const isMe = (id) => myIds.some((m) => String(m).toLowerCase() === String(id || '').toLowerCase());
+      const otherId = isMe(friendship.user1) ? friendship.user2 : friendship.user1;
+      let otherUser = null;
+      if (mongoose.isValidObjectId(otherId)) {
+        otherUser = await User.findById(otherId).lean();
+      }
+      if (!otherUser) {
+        otherUser = store.users.find((u) => String(u.id) === otherId || String(u._id) === otherId || u.name === otherId);
+      }
+
+      const otherIds = Array.from(new Set([otherId, String(otherUser?._id || ''), String(otherUser?.id || ''), otherUser?.name].filter(Boolean)));
+      const acceptedPayloadForSender = {
         userId: currentUserId,
         name: req.authenticatedUser?.displayName || req.authenticatedUser?.name || 'Your friend',
-        message: `${req.authenticatedUser?.displayName || 'Your friend'} accepted your friend request!`,
-      });
+        displayName: req.authenticatedUser?.displayName || req.authenticatedUser?.name || 'Your friend',
+        avatarUrl: req.authenticatedUser?.profilePhotoUrl || null,
+        message: (req.authenticatedUser?.displayName || req.authenticatedUser?.name || 'Your friend') + ' accepted your friend request!',
+      };
+      otherIds.forEach((oId) => emitToUser(oId, 'friend:accepted', acceptedPayloadForSender));
+
+      const acceptedPayloadForCurrent = {
+        userId: otherId,
+        name: otherUser?.displayName || otherUser?.name || 'Your friend',
+        displayName: otherUser?.displayName || otherUser?.name || 'Your friend',
+        avatarUrl: otherUser?.profilePhotoUrl || null,
+        message: 'You and ' + (otherUser?.displayName || otherUser?.name || 'your friend') + ' are now friends!',
+      };
+      myIds.forEach((mId) => emitToUser(mId, 'friend:accepted', acceptedPayloadForCurrent));
     }
 
     res.json({ ok: true, message: 'Friend request accepted!' });
@@ -2380,10 +2588,87 @@ app.post('/api/friends/cancel', requireAuth, async (req, res) => {
     } else if (targetUserId) {
       query.$or = [{ user1: targetUserId }, { user2: targetUserId }];
     }
-    await Friendship.deleteOne(query);
+    const doc = await Friendship.findOne(query);
+    if (doc) {
+      const otherId = doc.user1 === currentUserId ? doc.user2 : doc.user1;
+      await Friendship.deleteOne({ _id: doc._id });
+      emitToUser(otherId, 'friend:cancelled', { requestId: String(doc._id), userId: currentUserId });
+      emitToUser(currentUserId, 'friend:cancelled', { requestId: String(doc._id), userId: otherId });
+    }
     res.json({ ok: true, message: 'Friend request cancelled.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to cancel friend request' });
+  }
+});
+
+
+app.get('/api/friends/link', requireAuth, (req, res) => {
+  const currentUserId = String(req.authenticatedUser.id);
+  const name = req.authenticatedUser.displayName || req.authenticatedUser.name || 'Co-learner';
+  const link = `https://bytalk.practice/friend?friendId=${encodeURIComponent(currentUserId)}&name=${encodeURIComponent(name)}`;
+  res.json({ ok: true, link, friendId: currentUserId, name });
+});
+
+app.post('/api/friends/link/accept', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    let { friendId, friendUserId, targetUserId } = req.body || {};
+    const targetId = String(friendId || friendUserId || targetUserId || '').trim();
+
+    if (!targetId || targetId === currentUserId) {
+      return res.status(400).json({ error: 'Invalid friend link' });
+    }
+
+    let target = null;
+    if (mongoose.isValidObjectId(targetId)) {
+      target = await User.findById(targetId).lean();
+    }
+    if (!target) {
+      target = store.users.find((u) => String(u.id) === targetId || String(u._id) === targetId || u.name === targetId);
+    }
+    if (!target) {
+      return res.status(404).json({ error: 'Co-learner not found' });
+    }
+
+    const actualTargetId = String(target._id || target.id);
+    let friendship = await Friendship.findOne({
+      $or: [
+        { user1: currentUserId, user2: actualTargetId },
+        { user1: actualTargetId, user2: currentUserId },
+      ],
+    });
+
+    if (friendship) {
+      friendship.status = 'accepted';
+      await friendship.save();
+    } else {
+      friendship = await Friendship.create({
+        user1: currentUserId,
+        user2: actualTargetId,
+        requesterId: actualTargetId,
+        status: 'accepted',
+      });
+    }
+
+    emitToUser(actualTargetId, 'friend:accepted', {
+      userId: currentUserId,
+      name: req.authenticatedUser?.displayName || req.authenticatedUser?.name || 'Your friend',
+      displayName: req.authenticatedUser?.displayName || req.authenticatedUser?.name || 'Your friend',
+      avatarUrl: req.authenticatedUser?.profilePhotoUrl || null,
+      message: `${req.authenticatedUser?.displayName || req.authenticatedUser?.name || 'Your friend'} accepted your friend link!`,
+    });
+
+    emitToUser(currentUserId, 'friend:accepted', {
+      userId: actualTargetId,
+      name: target.displayName || target.name || 'Your friend',
+      displayName: target.displayName || target.name || 'Your friend',
+      avatarUrl: target.profilePhotoUrl || null,
+      message: `You and ${target.displayName || target.name || 'your friend'} are now friends!`,
+    });
+
+    res.json({ ok: true, message: `You and ${target.displayName || target.name} are now connected as friends!` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to accept friend link' });
   }
 });
 
@@ -2407,8 +2692,10 @@ app.post('/api/friends/decline', requireAuth, async (req, res) => {
     }
 
     if (friendship) {
-      friendship.status = 'declined';
-      await friendship.save();
+      const otherId = friendship.user1 === currentUserId ? friendship.user2 : friendship.user1;
+      await Friendship.deleteOne({ _id: friendship._id });
+      emitToUser(otherId, 'friend:declined', { requestId: String(friendship._id), userId: currentUserId });
+      emitToUser(currentUserId, 'friend:declined', { requestId: String(friendship._id), userId: otherId });
     }
 
     res.json({ ok: true, message: 'Friend request declined.' });
@@ -2518,25 +2805,55 @@ app.get('/api/rooms/:id/session', requireAuth, async (req, res) => {
 app.get('/api/messages/:a/:b', requireAuth, async (req, res) => {
   const { a, b } = req.params;
   const currentUserId = String(req.authenticatedUser.id);
-  if (![a, b].includes(String(currentUserId)) || a === b || !store.users.some((user) => user.id === (a === currentUserId ? b : a))) {
+  const currentAltId = req.authenticatedUser._id ? String(req.authenticatedUser._id) : currentUserId;
+  const myIds = Array.from(new Set([currentUserId, currentAltId, req.authenticatedUser.name, req.authenticatedUser.displayName].filter(Boolean).map(String)));
+  const isMeParamA = myIds.some((m) => m.toLowerCase() === String(a).toLowerCase());
+  const isMeParamB = myIds.some((m) => m.toLowerCase() === String(b).toLowerCase());
+
+  if (!isMeParamA && !isMeParamB) {
     return res.status(403).json({ error: 'You are not a participant in this conversation' });
   }
+
+  const partnerId = isMeParamA ? b : a;
+  let partnerDoc = null;
+  if (mongoose.isValidObjectId(partnerId)) {
+    partnerDoc = await User.findById(partnerId).lean();
+  }
+  if (!partnerDoc) {
+    partnerDoc = await User.findOne({ $or: [{ name: partnerId }, { email: partnerId }, { displayName: partnerId }] }).lean();
+  }
+  if (!partnerDoc) {
+    partnerDoc = store.users.find((u) => String(u.id) === String(partnerId) || String(u._id) === String(partnerId) || u.name === partnerId);
+  }
+
+  const partnerIds = Array.from(new Set([
+    String(partnerId),
+    partnerDoc ? String(partnerDoc._id) : null,
+    partnerDoc ? String(partnerDoc.id) : null,
+    partnerDoc?.name,
+    partnerDoc?.displayName,
+  ].filter(Boolean).map(String)));
+
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 100));
   const before = req.query.before ? Date.parse(String(req.query.before)) : Infinity;
   if (!Number.isFinite(before) && before !== Infinity) {
     return res.status(400).json({ error: 'Invalid message cursor' });
   }
+
   const query = {
-    $or: [{ from: a, to: b }, { from: b, to: a }],
+    $or: [
+      { from: { $in: myIds }, to: { $in: partnerIds } },
+      { from: { $in: partnerIds }, to: { $in: myIds } },
+    ],
     $and: [{ $or: [{ createdAt: { $gte: messageCutoff() } }, { createdAt: { $exists: false }, at: { $gte: messageCutoff() } }] }],
     ...(before !== Infinity ? { at: { $lt: new Date(before) } } : {}),
   };
   const messages = await Message.find(query).sort({ at: -1 }).limit(limit).lean();
-  const unread = messages.filter((message) => message.to === currentUserId && !message.readAt);
+  const unread = messages.filter((message) => myIds.includes(String(message.to)) && !message.readAt);
   if (unread.length) {
     const readAt = new Date();
     await Message.updateMany(
-      { id: { $in: unread.map((message) => message.id) }, to: currentUserId, readAt: null },
+      { id: { $in: unread.map((message) => message.id) }, to: { $in: myIds }, readAt: null },
       { $set: { readAt } }
     );
     unread.forEach((message) => {
@@ -2553,29 +2870,62 @@ app.get('/api/messages/:a/:b', requireAuth, async (req, res) => {
 
 app.post('/api/messages', requireAuth, async (req, res) => {
   const { to, text = '', attachmentType, attachmentUrl, attachmentName, attachmentSize } = req.body || {};
-  const senderId = req.authenticatedUser.id;
+  const senderId = String(req.authenticatedUser.id);
 
-  // Enforce subscription: Only customer who purchased a subscription can send messages
-  if (!isPaidSubscriber(req.authenticatedUser)) {
+  const senderAltId = req.authenticatedUser._id ? String(req.authenticatedUser._id) : senderId;
+  const possibleSenderIds = Array.from(new Set([senderId, senderAltId, req.authenticatedUser.name].filter(Boolean)));
+
+  let recipientUser = null;
+  if (mongoose.isValidObjectId(to)) {
+    recipientUser = await User.findById(to).lean();
+  }
+  if (!recipientUser) {
+    recipientUser = await User.findOne({
+      $or: [{ email: to }, { name: to }, { displayName: to }]
+    }).lean();
+  }
+  if (!recipientUser) {
+    recipientUser = store.users.find((u) => String(u.id) === String(to) || String(u._id) === String(to) || u.name === to);
+  }
+
+  const possibleRecipientIds = Array.from(new Set([
+    String(to),
+    recipientUser ? String(recipientUser._id || recipientUser.id) : null,
+    recipientUser?.id ? String(recipientUser.id) : null,
+    recipientUser?.name,
+  ].filter(Boolean)));
+
+  // Check if sender is a paid subscriber OR accepted friends with recipient
+  const areFriends = await Friendship.exists({
+    status: 'accepted',
+    $or: [
+      { user1: { $in: possibleSenderIds }, user2: { $in: possibleRecipientIds } },
+      { user1: { $in: possibleRecipientIds }, user2: { $in: possibleSenderIds } },
+    ],
+  });
+
+  if (!areFriends && !isPaidSubscriber(req.authenticatedUser)) {
     return res.status(403).json({
-      error: 'Messaging is available for subscribers only. Upgrade to PRO to send messages.',
+      error: 'Messaging is available for friends and PRO subscribers. Add this co-learner as a friend to chat for free, or upgrade to PRO.',
       code: 'SUBSCRIPTION_REQUIRED',
     });
   }
 
   const hasContent = (typeof text === 'string' && text.trim().length > 0) || Boolean(attachmentUrl);
-  if (typeof to !== 'string' || to === senderId || !store.users.some((user) => user.id === to) || !hasContent || (text && text.length > 1500)) {
+  const isKnownUser = Boolean(recipientUser) || store.users.some((user) => String(user.id) === String(to));
+
+  if (typeof to !== 'string' || possibleSenderIds.includes(to) || (!isKnownUser && !recipientUser) || !hasContent || (text && text.length > 1500)) {
     return res.status(400).json({ error: 'Invalid message' });
   }
-  const recipient = await User.findById(to).select('blockedUsers').lean();
-  if (recipient?.blockedUsers?.includes(String(senderId)) || req.authenticatedUser.blockedUsers?.includes(to)) {
+
+  if (recipientUser?.blockedUsers?.includes(String(senderId)) || req.authenticatedUser.blockedUsers?.includes(to)) {
     return res.status(403).json({ error: 'Messaging is unavailable for this user.' });
   }
   const deliveredAt = (userSockets.get(String(to))?.size || 0) > 0 ? new Date() : null;
   const msg = await Message.create({
     id: crypto.randomUUID(),
     from: String(senderId),
-    to,
+    to: String(to),
     text: (text || '').trim(),
     attachmentType: attachmentType || null,
     attachmentUrl: attachmentUrl || null,
@@ -2586,47 +2936,168 @@ app.post('/api/messages', requireAuth, async (req, res) => {
     deliveredAt,
   });
   const result = publicMessage(msg);
-  console.log(`Message ${result.id} persisted; delivery target ${result.to} has ${userSockets.get(String(to))?.size || 0} active socket(s).`);
-  emitToUser(senderId, 'message:new', result);
-  emitToUser(to, 'message:new', result);
+  console.log(`Message ${result.id} persisted; delivery target ${result.to} has active sockets.`);
+
+  // Emit to sender rooms
+  possibleSenderIds.forEach((sId) => emitToUser(sId, 'message:new', result));
+
+  // Emit to all recipient alias rooms
+  possibleRecipientIds.forEach((rId) => {
+    emitToUser(rId, 'message:new', result);
+    emitToUser(String(rId).toLowerCase(), 'message:new', result);
+  });
+
   res.status(201).json(result);
 });
 
 app.get('/api/messages/conversations', requireAuth, async (req, res) => {
-  const currentUserId = String(req.authenticatedUser.id);
-  const messages = await Message.find({
-    $or: [{ from: currentUserId }, { to: currentUserId }],
-    $and: [{ $or: [{ createdAt: { $gte: messageCutoff() } }, { createdAt: { $exists: false }, at: { $gte: messageCutoff() } }] }],
-  }).sort({ at: -1 }).lean();
-  const conversations = new Map();
-  for (const message of messages) {
-    const partnerId = message.from === currentUserId ? message.to : message.from;
-    if (conversations.has(partnerId)) continue;
-    const partner = store.users.find((user) => user.id === partnerId);
-    conversations.set(partnerId, {
-      user: partner
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    const currentAltId = req.authenticatedUser._id ? String(req.authenticatedUser._id) : currentUserId;
+    const myIds = Array.from(new Set([
+      currentUserId,
+      currentAltId,
+      req.authenticatedUser.name,
+      req.authenticatedUser.displayName,
+      req.authenticatedUser.email,
+    ].filter(Boolean).map((x) => String(x))));
+
+    const isMe = (id) => myIds.some((m) => String(m).toLowerCase() === String(id || '').toLowerCase());
+
+    // 1. Fetch all accepted friendships for current user
+    const acceptedFriendships = await Friendship.find({
+      status: 'accepted',
+      $or: [{ user1: { $in: myIds } }, { user2: { $in: myIds } }],
+    }).sort({ updatedAt: -1, createdAt: -1 }).lean();
+
+    const friendPartners = new Map(); // friendId -> friendshipDoc
+    for (const f of acceptedFriendships) {
+      const pId = isMe(f.user1) ? f.user2 : f.user1;
+      if (pId && !isMe(pId)) {
+        friendPartners.set(String(pId), f);
+      }
+    }
+
+    // 2. Fetch messages involving current user
+    const messages = await Message.find({
+      $or: [
+        { from: { $in: myIds } },
+        { to: { $in: myIds } },
+      ],
+      $and: [
+        { $or: [{ createdAt: { $gte: messageCutoff() } }, { createdAt: { $exists: false }, at: { $gte: messageCutoff() } }] },
+      ],
+    }).sort({ at: -1 }).lean();
+
+    // 3. Unread counts
+    const unread = await Message.aggregate([
+      {
+        $match: {
+          to: { $in: myIds },
+          readAt: null,
+          $or: [{ createdAt: { $gte: messageCutoff() } }, { createdAt: { $exists: false }, at: { $gte: messageCutoff() } }],
+        },
+      },
+      { $group: { _id: '$from', count: { $sum: 1 } } },
+    ]);
+    const unreadByUser = new Map(unread.map((entry) => [String(entry._id), entry.count]));
+
+    // Helper to resolve user details from MongoDB User or store.users
+    const userCache = new Map();
+    const resolveUser = async (uid) => {
+      const key = String(uid);
+      if (userCache.has(key)) return userCache.get(key);
+      let userDoc = null;
+      if (mongoose.isValidObjectId(uid)) {
+        userDoc = await User.findById(uid).lean();
+      }
+      if (!userDoc) {
+        userDoc = await User.findOne({ $or: [{ email: uid }, { name: uid }, { displayName: uid }] }).lean();
+      }
+      if (!userDoc) {
+        userDoc = store.users.find((u) => String(u.id) === key || String(u._id) === key || u.name === uid);
+      }
+
+      const isOnline = Boolean(
+        (userDoc && userSockets.get(String(userDoc._id || userDoc.id))?.size) ||
+        (userDoc?.name && userSockets.get(String(userDoc.name).toLowerCase())?.size) ||
+        userSockets.get(key)?.size
+      );
+
+      const pub = userDoc ? publicUser(userDoc) : null;
+      const resolved = pub
         ? {
-            id: partner.id,
-            name: partner.name,
-            displayName: partner.displayName || partner.name,
-            avatarUrl: partner.profilePhotoUrl || null,
-            country: partner.country || '',
-            learningLanguage: partner.learningLanguage || '',
-            online: Boolean(userSockets.get(partner.id)?.size),
+            id: String(userDoc._id || userDoc.id || uid),
+            name: userDoc.name || userDoc.displayName || 'Co-learner',
+            displayName: userDoc.displayName || userDoc.name || 'Co-learner',
+            avatarUrl: pub.profilePhotoUrl || userDoc.avatarUrl || null,
+            profilePhotoUrl: pub.profilePhotoUrl || userDoc.avatarUrl || null,
+            country: userDoc.country || 'Global',
+            nativeLanguage: userDoc.nativeLanguage || 'English',
+            learningLanguage: userDoc.learningLanguage || 'English',
+            level: userDoc.level || 'Beginner',
+            online: isOnline,
           }
-        : { id: partnerId, name: 'BYTALK user', displayName: 'BYTALK user', avatarUrl: null, country: '', learningLanguage: '', online: false },
-      latestMessage: publicMessage(message),
-    });
+        : {
+            id: key,
+            name: key,
+            displayName: key,
+            avatarUrl: null,
+            profilePhotoUrl: null,
+            country: 'Global',
+            nativeLanguage: 'English',
+            learningLanguage: 'English',
+            level: 'Beginner',
+            online: isOnline,
+          };
+      userCache.set(key, resolved);
+      if (userDoc) {
+        userCache.set(String(userDoc._id || ''), resolved);
+        userCache.set(String(userDoc.id || ''), resolved);
+        if (userDoc.name) userCache.set(String(userDoc.name).toLowerCase(), resolved);
+      }
+      return resolved;
+    };
+
+    const conversations = new Map();
+
+    // Add conversations from messages
+    for (const message of messages) {
+      const partnerId = isMe(message.from) ? String(message.to) : String(message.from);
+      if (!partnerId || isMe(partnerId)) continue;
+      const partner = await resolveUser(partnerId);
+      const convKey = String(partner.id);
+      if (conversations.has(convKey)) continue;
+
+      const unreadCount = unreadByUser.get(partnerId) || unreadByUser.get(convKey) || 0;
+      conversations.set(convKey, {
+        user: partner,
+        latestMessage: publicMessage(message),
+        unreadCount,
+        timeDisplay: message.at ? new Date(message.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+      });
+    }
+
+    // Now, ensure EVERY accepted friend is in the conversations list even without prior messages!
+    for (const [friendId, friendship] of friendPartners.entries()) {
+      const friend = await resolveUser(friendId);
+      const convKey = String(friend.id);
+      if (!conversations.has(convKey)) {
+        conversations.set(convKey, {
+          user: friend,
+          latestMessage: null, // "You are now connected. Say hello!"
+          unreadCount: 0,
+          timeDisplay: '',
+          connectedAt: friendship.updatedAt || friendship.createdAt,
+        });
+      }
+    }
+
+    res.json([...conversations.values()]);
+  } catch (err) {
+    console.error('[GET /api/messages/conversations error]', err);
+    res.status(500).json({ error: 'Failed to fetch conversations', details: err.message });
   }
-  const unread = await Message.aggregate([
-    { $match: { to: currentUserId, readAt: null, $or: [{ createdAt: { $gte: messageCutoff() } }, { createdAt: { $exists: false }, at: { $gte: messageCutoff() } }] } },
-    { $group: { _id: '$from', count: { $sum: 1 } } },
-  ]);
-  const unreadByUser = new Map(unread.map((entry) => [entry._id, entry.count]));
-  res.json([...conversations.values()].map((conversation) => ({
-    ...conversation,
-    unreadCount: unreadByUser.get(conversation.user.id) || 0,
-  })));
 });
 
 app.get('/api/messages/unread', requireAuth, async (req, res) => {
@@ -3225,7 +3696,19 @@ io.use(async (socket, next) => {
       } catch {}
     }
     if (!user) throw new Error('Account not found');
-    socket.data.userId = user.id;
+    socket.data.userId = String(user.id);
+    if (user._id && String(user._id) !== String(user.id)) {
+      socket.data.altUserId = String(user._id);
+    }
+    if (user.name) {
+      socket.data.username = String(user.name);
+    }
+    if (user.displayName) {
+      socket.data.displayName = String(user.displayName);
+    }
+    if (user.email) {
+      socket.data.email = String(user.email);
+    }
     next();
   } catch {
     next(new Error('Authentication required'));
@@ -3236,11 +3719,27 @@ io.on('connection', (socket) => {
   const userId = socket.data.userId;
   socket.data.roomIds = new Set();
   console.log(`Socket connected for user ${userId}.`);
-  const sockets = userSockets.get(userId) || new Set();
-  const wasOnline = sockets.size > 0;
-  sockets.add(socket.id);
-  userSockets.set(userId, sockets);
-  socket.join(`user:${userId}`);
+
+  const wasOnline = Boolean(userSockets.get(userId)?.size);
+  const userKeys = Array.from(new Set([
+    userId,
+    String(userId).toLowerCase(),
+    socket.data.altUserId,
+    socket.data.altUserId ? String(socket.data.altUserId).toLowerCase() : null,
+    socket.data.username,
+    socket.data.username?.toLowerCase(),
+    socket.data.displayName,
+    socket.data.displayName?.toLowerCase(),
+    socket.data.email,
+    socket.data.email?.toLowerCase(),
+  ].filter(Boolean).map(String)));
+  userKeys.forEach((key) => {
+    const s = userSockets.get(key) || new Set();
+    s.add(socket.id);
+    userSockets.set(key, s);
+    socket.join(`user:${key}`);
+  });
+
   socket.emit('presence:state', [...userSockets.entries()]
     .filter(([, connectedSockets]) => connectedSockets.size > 0)
     .map(([connectedUserId]) => connectedUserId));
@@ -3323,63 +3822,80 @@ io.on('connection', (socket) => {
       acknowledge({ error: 'Invalid call request' });
       return;
     }
-    let targetUser = store.users.find((user) => String(user.id) === String(to));
-    if (!targetUser) {
-      try {
-        const dbUser = await User.findById(to).lean();
-        if (dbUser) {
-          targetUser = cacheUser(dbUser);
-          store.users.push(targetUser);
-        }
-      } catch {}
+
+    // Resolve caller and callee docs safely without CastError
+    let callerDoc = null;
+    if (mongoose.isValidObjectId(userId)) callerDoc = await User.findById(userId);
+    if (!callerDoc) callerDoc = await User.findOne({ $or: [{ name: userId }, { email: userId }] });
+
+    let calleeDoc = null;
+    if (mongoose.isValidObjectId(to)) calleeDoc = await User.findById(to);
+    if (!calleeDoc) calleeDoc = await User.findOne({ $or: [{ name: to }, { email: to }] });
+
+    let targetUser = store.users.find((user) => String(user.id) === String(to) || String(user._id) === String(to) || user.name === to);
+    if (!targetUser && calleeDoc) {
+      targetUser = cacheUser(calleeDoc.toObject ? calleeDoc.toObject() : calleeDoc);
+      store.users.push(targetUser);
     }
-    if (!targetUser) {
-      acknowledge({ error: 'User not found' });
-      return;
-    }
-    const [callerBlockState, recipientBlockState] = await Promise.all([
-      User.findById(userId).select('blockedUsers').lean(),
-      User.findById(to).select('blockedUsers').lean(),
-    ]);
-    if (callerBlockState?.blockedUsers?.includes(to) || recipientBlockState?.blockedUsers?.includes(userId)) {
-      acknowledge({ error: 'Calling is unavailable for this user.' });
-      return;
-    }
-    if (!(userSockets.get(String(to))?.size || 0)) {
-      console.log(`Call invite rejected: recipient ${to} is offline.`);
-      acknowledge({ error: 'This person is offline' });
-      return;
-    }
-    const [callerDoc, calleeDoc] = await Promise.all([User.findById(userId), User.findById(to)]);
-    if (!callerDoc || !calleeDoc) {
+    if (!targetUser && !calleeDoc) {
       acknowledge({ error: 'User not found' });
       return;
     }
 
-    // Normal audio calls require at least an active Basic subscription plan
+    const callerIds = Array.from(new Set([userId, socket.data.altUserId, callerDoc?._id ? String(callerDoc._id) : null, callerDoc?.name].filter(Boolean)));
+    const calleeIds = Array.from(new Set([to, calleeDoc?._id ? String(calleeDoc._id) : null, calleeDoc?.id ? String(calleeDoc.id) : null, calleeDoc?.name].filter(Boolean)));
+
+    // Check blocks
+    if (callerDoc?.blockedUsers?.some((b) => calleeIds.includes(String(b))) || calleeDoc?.blockedUsers?.some((b) => callerIds.includes(String(b)))) {
+      acknowledge({ error: 'Calling is unavailable for this user.' });
+      return;
+    }
+
+    // Check online status across all callee ID variants
+    const isOnline = calleeIds.some((id) => (userSockets.get(String(id).toLowerCase())?.size || userSockets.get(String(id))?.size || 0) > 0);
+    if (!isOnline) {
+      console.log(`Call invite rejected: recipient ${to} is offline.`);
+      acknowledge({ error: 'This person is offline' });
+      return;
+    }
+
+    // Check if they are accepted friends
+    const isFriendshipAccepted = await Friendship.exists({
+      status: 'accepted',
+      $or: [
+        { user1: { $in: callerIds }, user2: { $in: calleeIds } },
+        { user1: { $in: calleeIds }, user2: { $in: callerIds } },
+      ],
+    });
+
+    // Audio calls: friends have free access; otherwise check free trial / subscription
     if (type === 'audio') {
-      if (!canUseAudio(callerDoc)) {
+      if (!isFriendshipAccepted && callerDoc && !canUseAudio(callerDoc)) {
         acknowledge({
-          error: 'Your 5-minute free trial has ended. Please purchase a subscription to continue speaking practice.',
+          error: 'Your 10-minute free trial has ended. Please purchase a subscription to continue speaking practice.',
           code: 'subscription_required',
         });
         return;
       }
     }
 
-    // Video calls require Plus or Pro subscription
+    // Video calls: allowed if friends, or test mode, or active Pro subscription
     let restrictedForRecipient = false;
     if (type === 'video') {
-      if (!canUseVideo(callerDoc)) {
+      const canCallerVideo = isFriendshipAccepted || TEST_ENTITLEMENTS_ENABLED || (callerDoc && canUseVideo(callerDoc));
+      if (!canCallerVideo) {
         acknowledge({
           error: 'Video calling requires an active PRO subscription.',
           code: 'video_plan_required',
         });
         return;
       }
-      restrictedForRecipient = !canUseVideo(calleeDoc);
+      restrictedForRecipient = !isFriendshipAccepted && !TEST_ENTITLEMENTS_ENABLED && Boolean(calleeDoc && !canUseVideo(calleeDoc));
     }
-    if (userCalls.has(userId) || userCalls.has(to)) {
+
+    const callerInCall = callerIds.some((id) => userCalls.has(String(id)));
+    const calleeInCall = calleeIds.some((id) => userCalls.has(String(id)));
+    if (callerInCall || calleeInCall) {
       acknowledge({ error: 'One of you is already on another call' });
       return;
     }
@@ -3394,76 +3910,45 @@ io.on('connection', (socket) => {
       createdAt,
     };
     activeCalls.set(call.id, call);
-    userCalls.set(userId, call.id);
-    userCalls.set(to, call.id);
+    callerIds.forEach((id) => userCalls.set(String(id), call.id));
+    calleeIds.forEach((id) => userCalls.set(String(id), call.id));
     saveCall(call);
 
-    let caller = store.users.find((user) => String(user.id) === String(userId));
-    if (!caller) {
-      try {
-        const dbCaller = await User.findById(userId).lean();
-        if (dbCaller) {
-          caller = cacheUser(dbCaller);
-          store.users.push(caller);
-        }
-      } catch {}
+    let caller = store.users.find((user) => callerIds.includes(String(user.id)) || callerIds.includes(String(user._id)));
+    if (!caller && callerDoc) {
+      caller = cacheUser(callerDoc.toObject ? callerDoc.toObject() : callerDoc);
+      store.users.push(caller);
     }
-    emitToUser(to, 'call:incoming', {
-      callId: call.id,
-      type,
-      createdAt,
-      restricted: restrictedForRecipient,
-      restrictionReason: restrictedForRecipient ? 'A BYTALK Plus or Pro subscription is required to accept video calls.' : null,
-      caller: sanitizeUser(caller) || { id: userId, name: 'BYTALK User' },
+
+    // Emit to ALL callee rooms to ensure 100% receipt
+    calleeIds.forEach((cId) => {
+      emitToUser(cId, 'call:incoming', {
+        callId: call.id,
+        type,
+        createdAt,
+        restricted: restrictedForRecipient,
+        restrictionReason: restrictedForRecipient ? 'A BYTALK Plus or Pro subscription is required to accept video calls.' : null,
+        caller: sanitizeUser(caller) || { id: userId, name: caller?.name || 'BYTALK User' },
+      });
     });
+
     console.log(`Call ${call.id} is ringing for ${to}.`);
     acknowledge({ callId: call.id, status: 'ringing' });
     armCallTimeout(call, 'ringing', 35000, () => {
       finishCall(call, 'missed', null);
-      emitToUser(call.callerId, 'call:missed', { callId: call.id, status: 'missed' });
-      emitToUser(call.calleeId, 'call:ended', { callId: call.id, status: 'missed' });
+      callerIds.forEach((id) => emitToUser(id, 'call:missed', { callId: call.id, status: 'missed' }));
+      calleeIds.forEach((id) => emitToUser(id, 'call:ended', { callId: call.id, status: 'missed' }));
     });
   });
 
   socket.on('call:accept', async ({ callId } = {}, acknowledge = () => {}) => {
     console.log(`Call accept received from ${userId} for ${callId}.`);
     const call = activeCalls.get(callId);
-    if (!call || call.calleeId !== userId || call.status !== 'ringing') {
+    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
+    const isCallee = call && myIds.includes(String(call.calleeId));
+    if (!call || !isCallee || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
-    }
-    if (call.type === 'audio') {
-      const [caller, callee] = await Promise.all([
-        User.findById(call.callerId),
-        User.findById(call.calleeId),
-      ]);
-      if (!caller || !callee || (!canUseAudio(caller) && !canUseAudio(callee))) {
-        acknowledge({ error: 'Your 5-minute free trial has ended. Please purchase a subscription to continue speaking practice.', code: 'subscription_required' });
-        emitToUser(call.callerId, 'call:ended', { callId: call.id, status: 'restricted', reason: 'subscription_required' });
-        finishCall(call, 'restricted', userId);
-        return;
-      }
-    }
-    if (call.type === 'video') {
-      const [caller, callee] = await Promise.all([
-        User.findById(call.callerId),
-        User.findById(call.calleeId),
-      ]);
-      if (!caller || !callee || (!canUseVideo(caller) && !canUseVideo(callee))) {
-        acknowledge({ error: 'Video calling requires an active PRO subscription.', code: 'video_plan_required' });
-        emitToUser(call.callerId, 'call:ended', { callId: call.id, status: 'restricted', reason: 'video_plan_required' });
-        finishCall(call, 'restricted', userId);
-        return;
-      }
-      resetUsageIfNeeded(caller);
-      resetUsageIfNeeded(callee);
-      if (canUseVideo(caller)) caller.videoCallsUsed += 1;
-      if (canUseVideo(callee)) callee.videoCallsUsed += 1;
-      await Promise.all([
-        User.findByIdAndUpdate(call.callerId, { usageMonth: caller.usageMonth, videoCallsUsed: caller.videoCallsUsed }),
-        User.findByIdAndUpdate(call.calleeId, { usageMonth: callee.usageMonth, videoCallsUsed: callee.videoCallsUsed }),
-      ]);
-      store.users = (await User.find().lean()).map(cacheUser);
     }
     const timer = callTimers.get(call.id);
     if (timer) clearTimeout(timer);
@@ -3483,7 +3968,9 @@ io.on('connection', (socket) => {
   socket.on('call:reject', ({ callId } = {}, acknowledge = () => {}) => {
     console.log(`Call reject received from ${userId} for ${callId}.`);
     const call = activeCalls.get(callId);
-    if (!call || call.calleeId !== userId || call.status !== 'ringing') {
+    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
+    const isCallee = call && myIds.includes(String(call.calleeId));
+    if (!call || !isCallee || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
     }
@@ -3495,10 +3982,12 @@ io.on('connection', (socket) => {
 
   socket.on('call:signal', ({ callId, kind, signal } = {}, acknowledge = () => {}) => {
     const call = activeCalls.get(callId);
-    const recipientId = call && participantForCall(call, userId);
+    const recipientId = call && participantForCall(call, userId, socket.data.altUserId);
+    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
+    const isCaller = call && myIds.includes(String(call.callerId));
+    const isCallee = call && myIds.includes(String(call.calleeId));
     const validKind = ['offer', 'answer', 'ice'].includes(kind);
-    const validRole = (kind !== 'offer' || call?.callerId === userId)
-      && (kind !== 'answer' || call?.calleeId === userId);
+    const validRole = (kind !== 'offer' || isCaller) && (kind !== 'answer' || isCallee);
     let payloadSize = Infinity;
     try {
       payloadSize = JSON.stringify(signal).length;
@@ -3602,11 +4091,16 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`Socket disconnected for user ${userId}.`);
     for (const roomId of socket.data.roomIds) leaveRoom(socket, roomId);
-    const currentSockets = userSockets.get(userId);
-    currentSockets?.delete(socket.id);
-    if (currentSockets?.size) return;
-    userSockets.delete(userId);
-    io.emit('presence:update', { userId, online: false });
+    userKeys.forEach((key) => {
+      const currentSockets = userSockets.get(key);
+      currentSockets?.delete(socket.id);
+      if (currentSockets && currentSockets.size === 0) {
+        userSockets.delete(key);
+      }
+    });
+    if (!userSockets.get(userId)?.size) {
+      io.emit('presence:update', { userId, online: false });
+    }
 
     const callId = userCalls.get(userId);
     const call = activeCalls.get(callId);

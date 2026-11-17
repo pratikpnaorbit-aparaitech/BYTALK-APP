@@ -41,6 +41,7 @@ import LearnScreen from './src/components/LearnScreen';
 import CallTabScreen from './src/components/CallTabScreen';
 import LeaderboardModal from './src/components/LeaderboardModal';
 import HistoryModal from './src/components/HistoryModal';
+import NotificationsModal from './src/components/NotificationsModal';
 
 const welcomeImage = require('./assets/bytalk-welcome-art.png');
 
@@ -234,11 +235,17 @@ function getApiUrl() {
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.location?.hostname) {
       const host = window.location.hostname;
-      if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return 'http://localhost:4000';
+      }
+      if (/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) {
+        return `http://${host}:4000`;
+      }
+      if (window.location.port && window.location.port !== '80' && window.location.port !== '443') {
         return `http://${host}:4000`;
       }
     }
-    return process.env.EXPO_PUBLIC_API_URL || 'https://bytalk-app.onrender.com';
+    return 'http://localhost:4000';
   }
 
   // 3. Android Emulator / Device
@@ -253,7 +260,7 @@ function getApiUrl() {
     if (metroHost && metroHost !== 'localhost' && metroHost !== '127.0.0.1') {
       return `http://${metroHost}:4000`;
     }
-    return process.env.EXPO_PUBLIC_API_URL || 'https://bytalk-app.onrender.com';
+    return 'http://10.0.2.2:4000';
   }
 
   // 4. iOS Simulator / Device
@@ -268,10 +275,10 @@ function getApiUrl() {
     if (metroHost && metroHost !== 'localhost' && metroHost !== '127.0.0.1') {
       return `http://${metroHost}:4000`;
     }
-    return process.env.EXPO_PUBLIC_API_URL || 'https://bytalk-app.onrender.com';
+    return 'http://localhost:4000';
   }
 
-  return process.env.EXPO_PUBLIC_API_URL || 'https://bytalk-app.onrender.com';
+  return 'http://localhost:4000';
 }
 
 const API = getApiUrl();
@@ -991,6 +998,8 @@ function App() {
 
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false);
+  const [friendNotification, setFriendNotification] = useState(null);
   const [userStars, setUserStars] = useState(40);
   const [streak, setStreak] = useState(1);
   const [isMatchingCall, setIsMatchingCall] = useState(false);
@@ -1016,9 +1025,13 @@ function App() {
     } else if (tabId === 'discover') {
       setActiveBottomTab('discover');
       setScreen('discover');
+      loadFriends();
+      refreshConversations();
+      loadDiscoverUsers();
     } else if (tabId === 'call') {
       setActiveBottomTab('call');
       setScreen('call-tab');
+      loadFriends();
     } else if (tabId === 'learn' || tabId === 'practice') {
       setActiveBottomTab('learn');
       setScreen('learn');
@@ -1379,6 +1392,45 @@ function App() {
     authStorage.setItem(`bytalk_used_free_seconds_${uid}`, String(seconds)).catch(() => {});
   };
 
+  const checkIsFriend = (targetUser) => {
+    if (!targetUser) return false;
+    const tId = String(targetUser.id || targetUser._id || targetUser.userId || '');
+    const tName = String(targetUser.displayName || targetUser.name || '').trim().toLowerCase();
+    return (friendsList || []).some((f) => {
+      const fId = String(f.id || f._id || f.userId || '');
+      const fName = String(f.displayName || f.name || '').trim().toLowerCase();
+      if (tId && fId && tId === fId) return true;
+      if (tName && fName && tName === fName) return true;
+      return false;
+    });
+  };
+
+  const findIncomingFriendRequest = (targetUser) => {
+    if (!targetUser) return null;
+    const tId = String(targetUser.id || targetUser._id || targetUser.userId || '');
+    const tName = String(targetUser.displayName || targetUser.name || '').trim().toLowerCase();
+    return (pendingFriendRequests || []).find((r) => {
+      const fromId = String(r.from?.id || r.from?._id || r.from?.userId || '');
+      const fromName = String(r.from?.displayName || r.from?.name || '').trim().toLowerCase();
+      if (tId && fromId && tId === fromId) return true;
+      if (tName && fromName && tName === fromName) return true;
+      return false;
+    });
+  };
+
+  const findSentFriendRequest = (targetUser) => {
+    if (!targetUser) return null;
+    const tId = String(targetUser.id || targetUser._id || targetUser.userId || '');
+    const tName = String(targetUser.displayName || targetUser.name || '').trim().toLowerCase();
+    return (sentFriendRequests || []).find((s) => {
+      const toId = String(s.to?.id || s.to?._id || s.to?.userId || '');
+      const toName = String(s.to?.displayName || s.to?.name || '').trim().toLowerCase();
+      if (tId && toId && tId === toId) return true;
+      if (tName && toName && tName === toName) return true;
+      return false;
+    });
+  };
+
   const handleSendFriendRequest = async (targetUser) => {
     if (!targetUser) return;
     const targetId = typeof targetUser === 'string'
@@ -1391,19 +1443,77 @@ function App() {
       return;
     }
 
+    if (String(targetId) === String(userId)) {
+      Alert.alert('Notice', 'You cannot send a friend request to yourself.');
+      return;
+    }
+
+    // Check if this co-learner has already sent an incoming friend request -> accept immediately!
+    const incomingReq = findIncomingFriendRequest(targetUser);
+    if (incomingReq) {
+      handleAcceptFriendRequest(incomingReq);
+      return;
+    }
+
     try {
+      setFriendRequestSentInCall(true);
+      // Optimistically add to sent requests so UI immediately reflects pending sent state
+      setSentFriendRequests((prev) => {
+        const exists = prev.some((s) => {
+          const sToId = String(s.to?.id || s.to?._id || '');
+          const sToName = String(s.to?.displayName || s.to?.name || '').trim().toLowerCase();
+          return (targetId && sToId === String(targetId)) || (targetName && sToName === targetName.trim().toLowerCase());
+        });
+        if (exists) return prev;
+        return [
+          ...prev,
+          {
+            id: `temp-${Date.now()}`,
+            to: {
+              id: targetId,
+              name: targetName,
+              displayName: targetName,
+            },
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      });
+
       const res = await request('friends/request', {
         method: 'POST',
         body: { targetUserId: String(targetId || targetName), targetName: String(targetName) },
       });
-      setFriendRequestSentInCall(true);
-      loadFriends();
-      Alert.alert(
-        'Friend Request Sent! 🤝',
-        res?.message || `Your friend request has been sent to ${targetName}. When accepted, you can connect directly anytime!`
-      );
+      await loadFriends();
+
+      if (res?.isFriend) {
+        setFriendNotification(null);
+        Alert.alert(
+          'Friend Added! 🎉',
+          res?.message || `You and ${targetName} are now connected as friends! You can now chat anytime.`,
+          [
+            {
+              text: 'Start Chat Now',
+              onPress: () => {
+                const partner = partnersRef.current.find((p) => String(p.id) === String(targetId)) || {
+                  id: targetId,
+                  name: targetName,
+                  displayName: targetName,
+                };
+                if (screen === 'call-complete') leaveCallCompletion();
+                openConversation(partner);
+              },
+            },
+            { text: 'OK' },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Friend Request Sent! 🤝',
+          res?.message || `Your friend request has been sent to ${targetName}. When accepted, you can connect directly anytime!`
+        );
+      }
     } catch (err) {
-      Alert.alert('Notice', err.message || 'Could not send friend request.');
+      Alert.alert('Friend Request', err.message || 'Could not send friend request.');
     }
   };
 
@@ -1411,12 +1521,63 @@ function App() {
     try {
       const reqId = req.id || req._id;
       const friendUserId = req.from?.id || req.from?._id;
+      const friendName = req.from?.displayName || req.from?.name || 'Co-learner';
+
+      // Optimistically remove from pending and add to friendsList immediately
+      setPendingFriendRequests((prev) => prev.filter((r) => String(r.id) !== String(reqId) && String(r.from?.id) !== String(friendUserId)));
+      const friendObj = {
+        ...(req.from || {}),
+        id: friendUserId || `friend-${Date.now()}`,
+        name: friendName,
+        displayName: friendName,
+        avatarUrl: req.from?.avatarUrl || req.from?.profilePhotoUrl || null,
+        online: true,
+      };
+      setFriendsList((prev) => {
+        const exists = prev.some((f) => String(f.id) === String(friendUserId) || f.name?.toLowerCase() === friendName.toLowerCase());
+        if (exists) return prev;
+        return [...prev, friendObj];
+      });
+      setConversations((prev) => {
+        const exists = prev.some((c) => String(c.user?.id) === String(friendUserId) || c.user?.name?.toLowerCase() === friendName.toLowerCase());
+        if (exists) return prev;
+        return [
+          {
+            user: friendObj,
+            latestMessage: null,
+            unreadCount: 0,
+            timeDisplay: 'Just now',
+          },
+          ...prev,
+        ];
+      });
+
       await request('friends/accept', {
         method: 'POST',
         body: { requestId: reqId, friendUserId },
       });
-      loadFriends();
-      Alert.alert('Friend Added! 🎉', `You and ${req.from?.name || 'Co-learner'} are now friends! You can now chat, video call, or voice call anytime.`);
+      await loadFriends();
+      await refreshConversations();
+      setFriendNotification(null);
+      Alert.alert(
+        'Friend Added! 🎉',
+        `You and ${friendName} are now friends! You can now chat, video call, or voice call anytime.`,
+        [
+          {
+            text: 'Start Chat Now',
+            onPress: () => {
+              const partner = partnersRef.current.find((p) => String(p.id) === String(friendUserId)) || req.from || {
+                id: friendUserId,
+                name: friendName,
+                displayName: friendName,
+              };
+              if (screen === 'call-complete') leaveCallCompletion();
+              openConversation(partner);
+            },
+          },
+          { text: 'OK' },
+        ]
+      );
     } catch (err) {
       Alert.alert('Notice', err.message || 'Could not accept friend request.');
     }
@@ -1425,6 +1586,7 @@ function App() {
   const handleDeclineFriendRequest = async (req) => {
     try {
       const reqId = req.id || req._id;
+      setPendingFriendRequests((prev) => prev.filter((r) => String(r.id) !== String(reqId) && String(r._id) !== String(reqId)));
       await request('friends/decline', {
         method: 'POST',
         body: { requestId: reqId },
@@ -1439,6 +1601,7 @@ function App() {
     try {
       const reqId = req.id || req._id;
       const targetUserId = req.to?.id || req.to?._id;
+      setSentFriendRequests((prev) => prev.filter((r) => String(r.id) !== String(reqId) && String(r._id) !== String(reqId)));
       await request('friends/cancel', {
         method: 'POST',
         body: { requestId: reqId, targetUserId },
@@ -1450,18 +1613,30 @@ function App() {
   };
 
   const handleStartDirectCall = (friend) => {
-    if (!hasAudioEntitlement()) {
-      setSubscriptionError('Your daily 10 minutes free trial has ended. Please upgrade to PRO to continue calling.');
-      openSubscription();
+    if (!isPaidSubscriber() && !hasAudioEntitlement()) {
+      Alert.alert(
+        '👑 BYTALK PRO Required',
+        'Direct 1-on-1 calls with your practice friends require a BYTALK PRO subscription. Upgrade now to enjoy unlimited direct calls!',
+        [
+          { text: 'Upgrade to PRO', onPress: () => openSubscription() },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
       return;
     }
     startCall(friend, 'audio');
   };
 
   const handleStartDirectVideoCall = (friend) => {
-    if (!hasVideoEntitlement()) {
-      setSubscriptionError('BYTALK Plus or Pro is required for video calling.');
-      openSubscription();
+    if (!isPaidSubscriber() && !hasVideoEntitlement()) {
+      Alert.alert(
+        '👑 BYTALK Plus or Pro Required',
+        'Direct video calling with friends requires a BYTALK Plus or Pro subscription. Upgrade now to practice face-to-face!',
+        [
+          { text: 'Upgrade to PRO', onPress: () => openSubscription() },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
       return;
     }
     startCall(friend, 'video');
@@ -1476,11 +1651,11 @@ function App() {
         setFriendsList(unique);
       }
       if (res?.pendingRequests && Array.isArray(res.pendingRequests)) {
-        const uniqueReqs = Array.from(new Map(res.pendingRequests.map((r) => [String(r.id), r])).values());
+        const uniqueReqs = Array.from(new Map(res.pendingRequests.map((r) => [String(r.id || r._id || r.requestId || r.from?.id || r.from?.name || Math.random()), r])).values());
         setPendingFriendRequests(uniqueReqs);
       }
       if (res?.sentRequests && Array.isArray(res.sentRequests)) {
-        const uniqueSent = Array.from(new Map(res.sentRequests.map((r) => [String(r.id), r])).values());
+        const uniqueSent = Array.from(new Map(res.sentRequests.map((r) => [String(r.id || r._id || r.requestId || r.to?.id || r.to?.name || Math.random()), r])).values());
         setSentFriendRequests(uniqueSent);
       }
     } catch (err) {
@@ -1498,8 +1673,10 @@ function App() {
     return !subscription.expiresAt || new Date(subscription.expiresAt) > new Date();
   }
 
-  function hasMessageEntitlement() {
-    return isPaidSubscriber();
+  function hasMessageEntitlement(partner = selected) {
+    if (isPaidSubscriber()) return true;
+    if (partner && checkIsFriend(partner)) return true;
+    return false;
   }
 
   async function openSubscription() {
@@ -1692,10 +1869,8 @@ function App() {
   }
 
   function openConversation(partner) {
-    const isFriend = (friendsList || []).some(
-      (f) => String(f.id) === String(partner?.id) || String(f._id) === String(partner?.id)
-    );
-    if (!isFriend && !hasMessageEntitlement()) {
+    const isFriend = checkIsFriend(partner);
+    if (!isFriend && !hasMessageEntitlement(partner)) {
       Alert.alert(
         'Subscription Required',
         'Direct 1-on-1 messaging is a BYTALK Premium feature. Upgrade your plan to chat with any user, or add them as a friend to chat for free!',
@@ -1960,6 +2135,7 @@ function App() {
     setFeedbackSubmitted(false);
     setFeedbackError('');
     setScreen('call-complete');
+    loadFriends();
     setTimeout(() => {
       request('calls').then((history) => setCallHistory(history.filter((item) => Date.now() - Date.parse(item.createdAt) <= 86400000))).catch((error) => {
         setCallHistoryError(error.message || 'Call ended, but call history could not be refreshed.');
@@ -2029,15 +2205,18 @@ function App() {
       Alert.alert('Sign in required', 'Sign in before starting a private call.');
       return;
     }
-    if (type === 'audio' && !hasAudioEntitlement()) {
-      setSubscriptionError('Your first 5 minutes free trial has ended. Please purchase a subscription to continue speaking practice.');
-      await openSubscription();
-      return;
-    }
-    if (type === 'video' && !hasVideoEntitlement()) {
-      setSubscriptionError('BYTALK Plus or Pro is required for one-to-one video-call practice.');
-      await openSubscription();
-      return;
+    const isFriend = checkIsFriend(partner);
+    if (!isFriend) {
+      if (type === 'audio' && !hasAudioEntitlement()) {
+        setSubscriptionError('Your daily 10 minutes free trial has ended. Please purchase a subscription to continue speaking practice.');
+        await openSubscription();
+        return;
+      }
+      if (type === 'video' && !hasVideoEntitlement()) {
+        setSubscriptionError('BYTALK Plus or Pro is required for one-to-one video-call practice.');
+        await openSubscription();
+        return;
+      }
     }
 
     // Real registered co-learners only
@@ -2317,32 +2496,52 @@ function App() {
       });
       socket.on('message:new', (message) => {
         try {
-          const currentUserId = userIdRef.current;
-          const recipientId = String(message.to || '');
-          const senderId = String(message.from || '');
-          if (recipientId !== String(currentUserId || '') || senderId === String(currentUserId || '')) return;
+          const currentUserId = String(userIdRef.current || '');
+          const recipientId = String(message.to || '').toLowerCase();
+          const senderId = String(message.from || '').toLowerCase();
+          const myIdVariants = [
+            currentUserId.toLowerCase(),
+            String(nameRef.current || '').toLowerCase(),
+            String(emailRef.current || '').toLowerCase(),
+          ].filter(Boolean);
+
+          const isMeRecipient = myIdVariants.includes(recipientId);
+          const isMeSender = myIdVariants.includes(senderId);
+          if (!isMeRecipient && !isMeSender) return;
           if (seenMessageIdsRef.current.has(message.id)) return;
           seenMessageIdsRef.current.add(message.id);
-          const openConversation = screenRef.current === 'chat' && String(selectedRef.current.id) === senderId;
+
+          const isIncoming = isMeRecipient && !isMeSender;
+          const openConversation = screenRef.current === 'chat' && (
+            String(selectedRef.current.id).toLowerCase() === senderId ||
+            String(selectedRef.current.name).toLowerCase() === senderId
+          );
           const sender = conversationForMessage(message);
-          console.log('[BYTALK message] received', { messageId: message.id, from: senderId, to: recipientId, openConversation });
+          console.log('[BYTALK message] received', { messageId: message.id, from: message.from, to: message.to, openConversation });
           setMessages((previous) => previous.some((item) => item.id === message.id) ? previous : [...previous, message]);
-          setConversations((previous) => [
-            {
-              user: sender,
+          setConversations((previous) => {
+            const partnerKey = isIncoming ? senderId : recipientId;
+            const existing = previous.find((item) => String(item.user.id).toLowerCase() === partnerKey || String(item.user.name).toLowerCase() === partnerKey);
+            const userObj = existing?.user || sender;
+            const updatedEntry = {
+              user: userObj,
               latestMessage: message,
-              unreadCount: openConversation ? 0 : (previous.find((item) => item.user.id === senderId)?.unreadCount || 0) + 1,
-            },
-            ...previous.filter((item) => item.user.id !== senderId),
-          ]);
-          if (!openConversation) {
-            setUnreadByUser((previous) => ({ ...previous, [senderId]: (previous[senderId] || 0) + 1 }));
+              unreadCount: openConversation ? 0 : ((existing?.unreadCount || 0) + (isIncoming ? 1 : 0)),
+              timeDisplay: message.at ? new Date(message.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+            };
+            return [
+              updatedEntry,
+              ...previous.filter((item) => String(item.user.id).toLowerCase() !== partnerKey && String(item.user.name).toLowerCase() !== partnerKey),
+            ];
+          });
+          if (isIncoming && !openConversation) {
+            setUnreadByUser((previous) => ({ ...previous, [message.from]: (previous[message.from] || 0) + 1 }));
             setMessageBanner({ ...message, sender });
             notifyIncomingMessage(message);
-          } else {
-            request(`messages/${currentUserId}/${senderId}?limit=100`)
-              .catch((error) => console.warn('[BYTALK message] read update failed', error.message));
-            refreshConversations();
+          } else if (isIncoming && openConversation) {
+            request(`messages/${currentUserId}/${message.from}?limit=100`)
+              .then(() => refreshConversations())
+              .catch(() => {});
           }
         } catch (error) {
           console.warn('[BYTALK message] listener failed', error?.message || 'invalid message event');
@@ -2461,19 +2660,75 @@ function App() {
       });
       socket.on('friend:request', (payload) => {
         console.log('[BYTALK socket] friend:request received', payload);
+        if (payload?.from) {
+          setPendingFriendRequests((prev) => {
+            const exists = prev.some((r) => String(r.id) === String(payload.requestId) || String(r.from?.id) === String(payload.from?.id));
+            if (exists) return prev;
+            return [
+              {
+                id: payload.requestId || `req-${Date.now()}`,
+                from: payload.from,
+                createdAt: new Date().toISOString(),
+              },
+              ...prev,
+            ];
+          });
+        }
         loadFriends();
-        Alert.alert(
-          'Friend Request 🤝',
-          payload?.message || `${payload?.from?.name || 'A co-learner'} sent you a friend request!`
-        );
+        setFriendNotification({
+          type: 'request',
+          title: 'New Friend Request 📬',
+          message: payload?.message || `${payload?.from?.name || 'A co-learner'} sent you a friend request!`,
+          payload,
+        });
       });
       socket.on('friend:accepted', (payload) => {
         console.log('[BYTALK socket] friend:accepted received', payload);
+        if (payload?.userId) {
+          const friendObj = {
+            id: payload.userId,
+            name: payload.name || payload.displayName || 'Co-learner',
+            displayName: payload.displayName || payload.name || 'Co-learner',
+            avatarUrl: payload.avatarUrl || null,
+            online: true,
+          };
+          setFriendsList((prev) => {
+            const exists = prev.some((f) => String(f.id) === String(payload.userId) || f.name?.toLowerCase() === payload.name?.toLowerCase());
+            if (exists) return prev;
+            return [...prev, friendObj];
+          });
+          setConversations((prev) => {
+            const exists = prev.some((c) => String(c.user?.id) === String(payload.userId) || c.user?.name?.toLowerCase() === payload.name?.toLowerCase());
+            if (exists) return prev;
+            return [
+              {
+                user: friendObj,
+                latestMessage: null,
+                unreadCount: 0,
+                timeDisplay: 'Just now',
+              },
+              ...prev,
+            ];
+          });
+          setSentFriendRequests((prev) => prev.filter((r) => String(r.to?.id) !== String(payload.userId) && r.to?.name?.toLowerCase() !== payload.name?.toLowerCase()));
+        }
         loadFriends();
-        Alert.alert(
-          'Friend Request Accepted 🎉',
-          payload?.message || `${payload?.name || 'Your friend'} accepted your friend request!`
-        );
+        refreshConversations();
+        setFriendNotification({
+          type: 'accepted',
+          title: 'Friend Request Accepted 🎉',
+          message: payload?.message || `${payload?.name || 'Your friend'} accepted your friend request!`,
+          payload,
+        });
+      });
+      socket.on('friend:cancelled', () => {
+        loadFriends();
+      });
+      socket.on('friend:declined', (payload) => {
+        loadFriends();
+        if (payload?.userId) {
+          setSentFriendRequests((prev) => prev.filter((r) => String(r.to?.id) !== String(payload.userId)));
+        }
       });
       socket.on('subscription:plans_updated', (payload) => {
         console.log('[BYTALK socket] subscription:plans_updated received', payload);
@@ -2513,6 +2768,22 @@ function App() {
           await loadSubscription();
           Alert.alert('🎉 PRO Activated!', 'Your payment was confirmed. All features are now unlocked!');
         } catch {}
+      } else if (url && (url.includes('friend') || url.includes('requestId') || url.includes('friendId'))) {
+        try {
+          const parsed = new URL(url.replace('bytalk://', 'https://bytalk.practice/'));
+          const reqId = parsed.searchParams.get('requestId') || parsed.searchParams.get('id');
+          const friendId = parsed.searchParams.get('friendId') || parsed.searchParams.get('userId');
+          if (reqId || friendId) {
+            await request('friends/accept', {
+              method: 'POST',
+              body: { requestId: reqId, friendUserId: friendId },
+            });
+            await loadFriends();
+            Alert.alert('Friend Connected! 🎉', 'You have accepted the friend link! You can now chat or call anytime.');
+          }
+        } catch (e) {
+          console.warn('[DeepLink friend accept error]', e.message);
+        }
       }
     };
 
@@ -2545,10 +2816,32 @@ function App() {
     if (!sessionChecking && (screen === 'discover' || screen === 'call-tab' || screen === 'home') && activeAuthToken) {
       loadDiscoverUsers();
     }
-    if (!sessionChecking && screen === 'call-tab' && activeAuthToken) {
+    if (!sessionChecking && (screen === 'call-tab' || screen === 'discover') && activeAuthToken) {
       loadFriends();
+      refreshConversations();
     }
-  }, [screen, sessionChecking, sessionVersion, userId]);
+  }, [screen, sessionChecking, sessionVersion, userId, activeAuthToken]);
+
+  useEffect(() => {
+    if (!activeAuthToken || sessionChecking) return;
+    if (screen !== 'discover' && screen !== 'call-tab') return;
+
+    const interval = setInterval(() => {
+      loadFriends();
+      refreshConversations();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [screen, activeAuthToken, sessionChecking]);
+
+  useEffect(() => {
+    if (friendNotification) {
+      const timer = setTimeout(() => {
+        setFriendNotification(null);
+      }, 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [friendNotification]);
 
   useEffect(() => {
     if (callHistory && callHistory.length > 0) {
@@ -2939,10 +3232,10 @@ function App() {
   async function send(attachmentOverride = null) {
     const attach = attachmentOverride || pendingAttachment;
     if (!draft.trim() && !attach) return;
-    if (!hasMessageEntitlement()) {
+    if (!hasMessageEntitlement(selected)) {
       Alert.alert(
         'Subscription Required',
-        'Direct messaging is a BYTALK Premium feature. Upgrade your plan to send messages, photos, and files!',
+        'Direct messaging is a BYTALK Premium feature. Upgrade your plan to send messages, photos, and files, or add them as a friend to chat for free!',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'View Plans', onPress: openSubscription },
@@ -3506,7 +3799,11 @@ function App() {
 
       // 5. Chat screen -> Messages or Discover
       if (screen === 'chat') {
-        setScreen('messages');
+        const fallback = activeBottomTab === 'messages' ? 'messages' : 'discover';
+        setActiveBottomTab(fallback);
+        setScreen(fallback);
+        refreshConversations();
+        loadFriends();
         return true;
       }
 
@@ -3631,25 +3928,10 @@ function App() {
                 setScreen('premium');
               }}
               onPressLeaderboard={() => setShowLeaderboard(true)}
-              onPressNotifications={() => {
-                const isProActive = subscription?.plan?.id === 'pro' || subscription?.plan?.id === 'plus' || subscription?.active === true;
-                Alert.alert(
-                  '🔔 BYTALK Updates & Notifications',
-                  isProActive
-                    ? '👑 PRO Membership Active! You have full access to unlimited ARYA AI conversations, HD 1-on-1 Video Calling, and all interview topics.'
-                    : '🎉 Festive PRO Offer is Live! Get 25% off all PRO plans with unlimited ARYA AI & Video Calls.'
-                );
-              }}
+              onPressNotifications={() => setShowNotificationsModal(true)}
               isPro={subscription?.plan?.id === 'pro' || subscription?.plan?.id === 'plus' || subscription?.active === true}
+              notificationCount={pendingFriendRequests.length}
             />
-          )}
-          {messageBanner && (
-            <TouchableOpacity
-              onPress={() => openConversation(messageBanner.sender)}
-              style={{ marginHorizontal: 14, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: '#FFF0E8', borderWidth: 1, borderColor: '#FFD4C2' }}
-            >
-              <Txt size={12} color={navy} bold>{messageBanner.sender.displayName || messageBanner.sender.name}: <Txt size={12} color={navy} bold={false}>{messageBanner.text}</Txt></Txt>
-            </TouchableOpacity>
           )}
 
           {/* SCREEN: ARYA HOME (IMAGE 1) */}
@@ -3689,7 +3971,7 @@ function App() {
                 setActiveBottomTab('home');
                 setScreen('home');
               }}
-              currentUser={{ name, avatarUrl, level, streak }}
+              currentUser={{ id: userId, _id: userId, name, avatarUrl, level, streak }}
               onPressLeaderboard={() => setShowLeaderboard(true)}
               onPressStreak={() => setShowHistoryModal(true)}
               friends={friendsList}
@@ -3705,6 +3987,7 @@ function App() {
               onDeclineFriendRequest={handleDeclineFriendRequest}
               onCancelFriendRequest={handleCancelFriendRequest}
               onCancelMatch={() => setIsMatchingCall(false)}
+              onRefreshFriends={loadFriends}
             />
           )}
 
@@ -4383,7 +4666,10 @@ function App() {
                 refreshControl={
                   <RefreshControl
                     refreshing={discoverRefreshing}
-                    onRefresh={() => loadDiscoverUsers(true)}
+                    onRefresh={() => {
+                      loadDiscoverUsers(true);
+                      loadFriends();
+                    }}
                     tintColor={orange}
                     colors={[orange]}
                   />
@@ -4409,154 +4695,316 @@ function App() {
                     <Txt size={13} color={muted} style={{ marginTop: 10 }}>Finding registered users…</Txt>
                   </View>
                 ) : null}
-                {!isSearching && (
-                  <View style={styles.discoverPromptCard}>
-                    <View style={styles.discoverPromptIconCircle}>
-                      <Ionicons name="search" size={32} color="#5843E8" />
+                {/* INCOMING FRIEND REQUESTS SECTION IN DISCOVER */}
+                {pendingFriendRequests.length > 0 && (
+                  <View style={styles.discoverRequestsBox}>
+                    <View style={styles.discoverRequestsHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={styles.discoverRequestsBadge}>
+                          <Text style={styles.discoverRequestsBadgeText}>{pendingFriendRequests.length}</Text>
+                        </View>
+                        <Txt bold size={15} color={navy} style={{ marginLeft: 8 }}>Friend Requests</Txt>
+                      </View>
+                      <TouchableOpacity onPress={() => setShowNotificationsModal(true)} activeOpacity={0.7}>
+                        <Txt size={12} color={COLORS.primary} bold>View all</Txt>
+                      </TouchableOpacity>
                     </View>
-                    <Txt bold size={17} color={navy} style={{ marginTop: 14, textAlign: 'center' }}>
-                      Search Partners by Name
+                    <Txt size={12} color={muted} style={{ marginTop: 2, marginBottom: 12 }}>
+                      These co-learners want to connect with you. Accept to start practicing and chatting!
                     </Txt>
-                    <Txt size={13} color={muted} style={{ marginTop: 6, textAlign: 'center', lineHeight: 20, paddingHorizontal: 14 }}>
-                      Type a name in the search bar above to find language partners. Only searched users will be displayed.
-                    </Txt>
-                    {partners.length > 0 && (
-                      <View style={{ marginTop: 20, width: '100%', alignItems: 'center' }}>
-                        <Txt size={11} bold color={muted} style={{ letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
-                          Suggested Partners
-                        </Txt>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
-                          {partners.slice(0, 6).map((p) => (
+                    {pendingFriendRequests.map((req) => {
+                      const user = req.from || {};
+                      const uName = user.displayName || user.name || 'Co-learner';
+                      return (
+                        <View key={req.id || user.id} style={styles.discoverRequestItem}>
+                          <View style={styles.discoverRequestUser}>
+                            <View style={[styles.avatarCircle, { width: 42, height: 42, backgroundColor: '#FFE4E6' }]}>
+                              {user.avatarUrl || user.profilePhotoUrl ? (
+                                <Image source={{ uri: user.avatarUrl || user.profilePhotoUrl }} style={styles.partnerAvatarImage} />
+                              ) : (
+                                <Txt size={17} bold color="#E11D48">{uName.trim().charAt(0).toUpperCase()}</Txt>
+                              )}
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 10 }}>
+                              <Txt bold size={14} color={navy}>{uName}</Txt>
+                              <Txt size={11} color={muted}>{user.country ? `${user.country} · ` : ''}{user.level || 'Beginner'}</Txt>
+                            </View>
+                          </View>
+                          <View style={styles.discoverRequestBtns}>
                             <TouchableOpacity
-                              key={p.id}
-                              onPress={() => setSearch(p.displayName || p.name)}
-                              style={styles.searchChip}
+                              onPress={() => handleAcceptFriendRequest(req)}
+                              style={styles.discoverAcceptBtn}
                               activeOpacity={0.8}
                             >
-                              <Ionicons name="person-outline" size={12} color="#5843E8" />
-                              <Txt size={12} bold color="#5843E8">{p.displayName || p.name}</Txt>
+                              <Ionicons name="checkmark-sharp" size={14} color="#FFFFFF" style={{ marginRight: 3 }} />
+                              <Text style={styles.discoverAcceptBtnText}>Accept</Text>
                             </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleDeclineFriendRequest(req)}
+                              style={styles.discoverDeclineBtn}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.discoverDeclineBtnText}>Decline</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+                {/* CONVERSATION LIST (ACCEPTED FRIENDS) */}
+                {(() => {
+                  // Build accepted friend conversations
+                  const friendMap = new Map();
+                  (friendsList || []).forEach((f) => {
+                    const key = String(f.id || f._id || f.name).toLowerCase();
+                    friendMap.set(key, f);
+                  });
+                  (partners || []).filter((p) => checkIsFriend(p)).forEach((p) => {
+                    const key = String(p.id || p._id || p.name).toLowerCase();
+                    if (!friendMap.has(key)) friendMap.set(key, p);
+                  });
+
+                  const convList = [];
+                  const processedKeys = new Set();
+
+                  // First include any friend from `conversations`
+                  (conversations || []).forEach((c) => {
+                    const u = c.user;
+                    if (!u) return;
+                    const uKey = String(u.id || u._id || u.name).toLowerCase();
+                    const isFriend = friendMap.has(uKey) || checkIsFriend(u);
+                    if (!isFriend) return; // Pending or non-friends should NOT appear in conversation list
+
+                    processedKeys.add(uKey);
+                    const friendInfo = friendMap.get(uKey) || u;
+                    convList.push({
+                      ...c,
+                      user: {
+                        ...friendInfo,
+                        ...u,
+                        online: Boolean(u.online || friendInfo.online),
+                      },
+                    });
+                  });
+
+                  // Second, for any friend who has no conversation entry yet:
+                  friendMap.forEach((friend, key) => {
+                    if (!processedKeys.has(key)) {
+                      convList.push({
+                        user: friend,
+                        latestMessage: null, // Before first message: display "You are now connected. Say hello!"
+                        unreadCount: 0,
+                        timeDisplay: '',
+                      });
+                    }
+                  });
+
+                  // Search filter
+                  const q = (search || '').trim().toLowerCase();
+                  const filteredConvs = q
+                    ? convList.filter((c) => {
+                        const name = (c.user?.displayName || c.user?.name || '').toLowerCase();
+                        const country = (c.user?.country || '').toLowerCase();
+                        return name.includes(q) || country.includes(q);
+                      })
+                    : convList;
+
+                  // Searched non-friends when user is searching
+                  const searchedNonFriends = q
+                    ? (partners || []).filter((p) => {
+                        const pKey = String(p.id || p._id || p.name).toLowerCase();
+                        if (friendMap.has(pKey) || checkIsFriend(p)) return false;
+                        const name = (p.displayName || p.name || '').toLowerCase();
+                        const country = (p.country || '').toLowerCase();
+                        return name.includes(q) || country.includes(q);
+                      })
+                    : [];
+
+                  if (convList.length === 0 && !q) {
+                    return (
+                      <View style={styles.discoverEmptyCard}>
+                        <View style={styles.discoverEmptyIconCircle}>
+                          <Ionicons name="chatbubbles" size={36} color="#6366F1" />
+                        </View>
+                        <Txt bold size={16} color={navy} style={{ marginTop: 14, textAlign: 'center' }}>
+                          No conversations yet
+                        </Txt>
+                        <Txt size={12} color={muted} style={{ marginTop: 6, textAlign: 'center', lineHeight: 18, paddingHorizontal: 16 }}>
+                          When you connect with co-learners, your accepted friends and chats will appear here. Practice speaking or accept friend requests to start chatting!
+                        </Txt>
+                        <TouchableOpacity
+                          style={styles.discoverStartPracticeBtn}
+                          onPress={() => {
+                            setActiveBottomTab('call');
+                            setScreen('call-tab');
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="call" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <Text style={styles.discoverStartPracticeBtnText}>Start Speaking Practice</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 8, paddingHorizontal: 2 }}>
+                        <Txt bold size={16} color={navy}>
+                          {q ? `Conversations (${filteredConvs.length})` : 'Connected Friends'}
+                        </Txt>
+                        <Txt size={12} color={muted}>
+                          {convList.length} friend{convList.length === 1 ? '' : 's'}
+                        </Txt>
+                      </View>
+
+                      {/* Conversation rows card */}
+                      <View style={styles.convListCard}>
+                        {filteredConvs.length === 0 && q ? (
+                          <View style={{ padding: 20, alignItems: 'center' }}>
+                            <Txt size={13} color={muted}>No friends match "{search}"</Txt>
+                          </View>
+                        ) : (
+                          filteredConvs.map((conv, idx) => {
+                            const partner = conv.user;
+                            const latest = conv.latestMessage;
+                            const isMe = latest && (latest.from === userId || latest.from === 'me' || latest.from === name);
+                            const hasUnread = conv.unreadCount > 0;
+                            const timeDisplay = conv.timeDisplay || (latest?.at ? new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+                            const isLast = idx === filteredConvs.length - 1;
+
+                            return (
+                              <TouchableOpacity
+                                key={`disc-conv-${partner.id || partner._id || partner.name || idx}`}
+                                onPress={() => openConversation(partner)}
+                                style={[styles.convItemRow, isLast && { borderBottomWidth: 0 }]}
+                                activeOpacity={0.7}
+                              >
+                                {/* Profile Photo / Avatar with Online Dot */}
+                                <View style={styles.convAvatarContainer}>
+                                  {partner.avatarUrl || partner.profilePhotoUrl ? (
+                                    <Image
+                                      source={{ uri: partner.avatarUrl || partner.profilePhotoUrl }}
+                                      style={styles.convAvatarImg}
+                                    />
+                                  ) : (
+                                    <View style={[styles.convAvatarImg, styles.convAvatarFallback]}>
+                                      <Text style={styles.convAvatarInitial}>
+                                        {(partner.displayName || partner.name || 'F').trim().charAt(0).toUpperCase()}
+                                      </Text>
+                                    </View>
+                                  )}
+                                  {/* Online/Offline Status Indicator */}
+                                  <View style={[styles.convStatusDot, partner.online ? styles.convStatusOnline : styles.convStatusOffline]} />
+                                </View>
+
+                                {/* Details */}
+                                <View style={styles.convDetailsCol}>
+                                  <View style={styles.convTopLine}>
+                                    <Text style={styles.convNameText} numberOfLines={1}>
+                                      {partner.displayName || partner.name}
+                                    </Text>
+                                    <Text style={[styles.convTimeText, hasUnread && styles.convTimeTextUnread]}>
+                                      {timeDisplay}
+                                    </Text>
+                                  </View>
+
+                                  <View style={styles.convBottomLine}>
+                                    <View style={styles.convPreviewBox}>
+                                      {!latest || !latest.text ? (
+                                        <Text style={styles.convConnectedText} numberOfLines={1}>
+                                          You are now connected. Say hello! 👋
+                                        </Text>
+                                      ) : (
+                                        <>
+                                          {isMe && (
+                                            <Ionicons
+                                              name="checkmark-done"
+                                              size={14}
+                                              color={latest?.readAt ? '#2563EB' : '#94A3B8'}
+                                              style={{ marginRight: 4 }}
+                                            />
+                                          )}
+                                          <Text
+                                            style={[
+                                              styles.convSnippetText,
+                                              hasUnread && styles.convSnippetTextUnread,
+                                            ]}
+                                            numberOfLines={1}
+                                          >
+                                            {latest.text}
+                                          </Text>
+                                        </>
+                                      )}
+                                    </View>
+
+                                    {hasUnread ? (
+                                      <View style={styles.convUnreadPill}>
+                                        <Text style={styles.convUnreadCountText}>{conv.unreadCount}</Text>
+                                      </View>
+                                    ) : null}
+                                  </View>
+                                </View>
+
+                                {/* Direct Call Quick Buttons */}
+                                <View style={styles.convQuickActions}>
+                                  <TouchableOpacity
+                                    onPress={() => startCall(partner, 'audio')}
+                                    style={styles.convQuickBtn}
+                                    accessibilityLabel="Voice call"
+                                  >
+                                    <Ionicons name="call-outline" size={17} color="#10B981" />
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    onPress={() => startCall(partner, 'video')}
+                                    style={styles.convQuickBtn}
+                                    accessibilityLabel="Video call"
+                                  >
+                                    <Ionicons name="videocam-outline" size={18} color="#6366F1" />
+                                  </TouchableOpacity>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })
+                        )}
+                      </View>
+
+                      {/* If Searching, also show registered non-friends to add */}
+                      {q && searchedNonFriends.length > 0 && (
+                        <View style={{ marginTop: 20 }}>
+                          <Txt bold size={15} color={navy} style={{ marginBottom: 10 }}>
+                            Find More Co-learners 🌐
+                          </Txt>
+                          {searchedNonFriends.map((p) => (
+                            <View key={p.id} style={styles.partnerCard}>
+                              <View style={styles.partnerInfoRow}>
+                                <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3' }]}>
+                                  {p.avatarUrl ? (
+                                    <Image source={{ uri: p.avatarUrl }} style={styles.partnerAvatarImage} />
+                                  ) : (
+                                    <Txt size={18} bold color={orange}>{(p.displayName || p.name || '?').charAt(0).toUpperCase()}</Txt>
+                                  )}
+                                </View>
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                  <Txt bold size={15}>{p.displayName || p.name}</Txt>
+                                  <Txt size={11} color={muted}>{p.country || 'Global'} · {p.level || 'Beginner'}</Txt>
+                                </View>
+                                <TouchableOpacity
+                                  onPress={() => handleSendFriendRequest(p)}
+                                  style={styles.discoverAddFriendBtn}
+                                >
+                                  <Ionicons name="person-add-outline" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                                  <Text style={styles.discoverAddFriendBtnText}>Add Friend</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
                           ))}
                         </View>
-                      </View>
-                    )}
-                  </View>
-                )}
-                {isSearching && !discoverLoading && !discoverError && filteredPartners.length === 0 ? (
-                  <View style={styles.discoverMessage}>
-                    <Ionicons name="search-outline" size={36} color={muted} />
-                    <Txt size={14} color={muted} style={{ textAlign: 'center', marginTop: 10 }}>No users match “{search}”. Try a different search.</Txt>
-                  </View>
-                ) : null}
-                {!isSearching && partners.length > 0 && (
-                  <Txt bold size={16} color={navy} style={{ marginTop: 18, marginBottom: 10 }}>All Registered Co-learners</Txt>
-                )}
-                {(isSearching ? filteredPartners : partners).map((p) => (
-                    <View key={p.id} style={styles.partnerCard}>
-                      <View style={styles.partnerInfoRow}>
-                        <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3', overflow: 'hidden' }]}>
-                          {p.avatarUrl ? (
-                            typeof p.avatarUrl === 'string' && p.avatarUrl.startsWith('emoji:') ? (
-                              <View style={{ width: '100%', height: '100%', backgroundColor: p.avatarUrl.split(':')[2] || '#6C5CE7', alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={{ fontSize: 20 }}>{p.avatarUrl.split(':')[1] || '😎'}</Text>
-                              </View>
-                            ) : (
-                              <Image
-                                source={{ uri: p.avatarUrl }}
-                                accessibilityLabel={`${p.displayName || p.name} profile photo`}
-                                style={styles.partnerAvatarImage}
-                              />
-                            )
-                          ) : (
-                            <Txt size={20} bold color={orange}>{(p.displayName || p.name || '?').trim().charAt(0).toUpperCase()}</Txt>
-                          )}
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Txt bold size={15}>
-                            {p.displayName || p.name}  <Txt size={12} color={muted}>{p.country}</Txt>
-                          </Txt>
-                          <Txt size={11} color={muted} style={{ marginTop: 2 }}>
-                            Speaks: {p.nativeLanguage}, {p.learningLanguage}
-                          </Txt>
-                          <Txt size={11} color={COLORS.primary} style={{ marginTop: 2, fontWeight: '600' }}>
-                            {p.level}  ·  {p.learningLanguage}
-                          </Txt>
-                          <Txt size={10} color={p.online ? COLORS.success : muted} style={{ marginTop: 3 }}>
-                            {p.online ? '● Online' : '● Offline'}
-                          </Txt>
-                        </View>
-                      </View>
-                      <View style={styles.partnerActions}>
-                        {(() => {
-                          const isFriend = (friendsList || []).some(
-                            (f) => String(f.id) === String(p.id) || String(f._id) === String(p.id)
-                          );
-                          return isFriend ? (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, marginRight: 6 }}>
-                              <Ionicons name="checkmark-circle" size={14} color="#166534" />
-                              <Txt color="#166534" size={11} bold style={{ marginLeft: 3 }}>Friends</Txt>
-                            </View>
-                          ) : (
-                            <TouchableOpacity
-                              accessibilityRole="button"
-                              accessibilityLabel={`Add ${p.displayName || p.name} as friend`}
-                              onPress={() => handleSendFriendRequest(p)}
-                              style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF', borderColor: '#C7D2FE', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, marginRight: 6 }}
-                              activeOpacity={0.8}
-                            >
-                              <Ionicons name="person-add-outline" size={14} color="#4F46E5" />
-                              <Txt color="#4F46E5" size={11} bold style={{ marginLeft: 3 }}>Add Friend</Txt>
-                            </TouchableOpacity>
-                          );
-                        })()}
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel={`Chat with ${p.name}`}
-                          onPress={() => {
-                            openConversation(p);
-                          }}
-                          style={[styles.chatButtonOutline, styles.partnerAction]}
-                        >
-                          <Ionicons name="chatbubble-ellipses-outline" size={17} color={orange} />
-                          <Txt color={orange} size={12} bold>Start chat</Txt>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel={`Voice call ${p.name}`}
-                          onPress={() => startCall(p, 'audio')}
-                          disabled={Boolean(callStarting)}
-                          style={styles.partnerAction}
-                        >
-                          {callStarting?.partnerId === p.id && callStarting.type === 'audio' ? (
-                            <ActivityIndicator size="small" color={orange} />
-                          ) : (
-                            <>
-                              <Ionicons name="call-outline" size={17} color={orange} />
-                              <Txt color={orange} size={12} bold>Voice</Txt>
-                            </>
-                          )}
-                        </TouchableOpacity>
-                        {hasVideoEntitlement() ? (
-                          <TouchableOpacity
-                            accessibilityRole="button"
-                            accessibilityLabel={`Video call ${p.name}`}
-                            onPress={() => startCall(p, 'video')}
-                            disabled={Boolean(callStarting)}
-                            style={styles.partnerAction}
-                          >
-                            {callStarting?.partnerId === p.id && callStarting.type === 'video' ? (
-                              <ActivityIndicator size="small" color={orange} />
-                            ) : (
-                              <>
-                                <Ionicons name="videocam-outline" size={18} color={orange} />
-                                <Txt color={orange} size={12} bold>Video</Txt>
-                              </>
-                            )}
-                          </TouchableOpacity>
-                        ) : null}
-                      </View>
-                    </View>
-                  ))}
+                      )}
+                    </>
+                  );
+                })()}
               </ScrollView>
             </>
           )}
@@ -4706,7 +5154,13 @@ function App() {
               {/* Clean White Top Header */}
               <View style={styles.chatHeader}>
                 <TouchableOpacity
-                  onPress={() => setScreen('messages')}
+                  onPress={() => {
+                    const fallback = activeBottomTab === 'messages' ? 'messages' : 'discover';
+                    setActiveBottomTab(fallback);
+                    setScreen(fallback);
+                    refreshConversations();
+                    loadFriends();
+                  }}
                   style={styles.chatBackBtn}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
@@ -4851,7 +5305,7 @@ function App() {
               </ScrollView>
 
               {/* Bottom Message Input Bar */}
-              {hasMessageEntitlement() ? (
+              {hasMessageEntitlement(selected) ? (
                 <View style={styles.chatBottomBar}>
                   {/* Pending Attachment Banner */}
                   {pendingAttachment ? (
@@ -5026,35 +5480,81 @@ function App() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View style={{ flex: 1, marginRight: 10 }}>
                     <Text style={styles.postCallCardTitle}>
-                      Practice again with {callCompletion.peer?.name || 'Co-learner'}?
+                      Practice again with {callCompletion.peer?.displayName || callCompletion.peer?.name || 'Co-learner'}?
                     </Text>
                     <Text style={styles.postCallSubLabel}>
-                      Send a friend request to call directly from the Friends tab.
+                      Connect as friends to chat freely and call directly from the Friends tab.
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => handleSendFriendRequest(callCompletion.peer)}
-                    disabled={friendRequestSentInCall}
-                    style={[
-                      styles.postCallFriendBtn,
-                      friendRequestSentInCall && styles.postCallFriendBtnSent,
-                    ]}
-                  >
-                    <Ionicons
-                      name={friendRequestSentInCall ? 'checkmark' : 'person-add'}
-                      size={15}
-                      color={friendRequestSentInCall ? '#166534' : '#6366F1'}
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text
-                      style={[
-                        styles.postCallFriendBtnText,
-                        friendRequestSentInCall && { color: '#166534' },
-                      ]}
-                    >
-                      {friendRequestSentInCall ? 'Sent' : 'Add Friend'}
-                    </Text>
-                  </TouchableOpacity>
+                  {(() => {
+                    const peer = callCompletion.peer;
+                    const peerName = peer?.displayName || peer?.name || 'Co-learner';
+                    const isFriend = checkIsFriend(peer);
+                    const incomingReq = findIncomingFriendRequest(peer);
+                    const isSent = friendRequestSentInCall || Boolean(findSentFriendRequest(peer));
+
+                    if (isFriend) {
+                      return (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <View style={[styles.postCallFriendBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                            <Ionicons name="checkmark-circle" size={15} color="#166534" style={{ marginRight: 4 }} />
+                            <Text style={[styles.postCallFriendBtnText, { color: '#166534' }]}>Friends</Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => {
+                              leaveCallCompletion();
+                              openConversation(callCompletion.peer);
+                            }}
+                            style={[styles.postCallFriendBtn, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="chatbubble-ellipses-outline" size={14} color="#4F46E5" style={{ marginRight: 4 }} />
+                            <Text style={[styles.postCallFriendBtnText, { color: '#4F46E5' }]}>Chat</Text>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    }
+
+                    if (incomingReq) {
+                      return (
+                        <TouchableOpacity
+                          onPress={() => handleAcceptFriendRequest(incomingReq)}
+                          style={[styles.postCallFriendBtn, { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }]}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="checkmark-circle" size={15} color="#15803D" style={{ marginRight: 4 }} />
+                          <Text style={[styles.postCallFriendBtnText, { color: '#15803D' }]}>Accept Request</Text>
+                        </TouchableOpacity>
+                      );
+                    }
+
+                    return (
+                      <TouchableOpacity
+                        onPress={() => handleSendFriendRequest(callCompletion.peer)}
+                        disabled={isSent}
+                        style={[
+                          styles.postCallFriendBtn,
+                          isSent && styles.postCallFriendBtnSent,
+                        ]}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons
+                          name={isSent ? 'checkmark' : 'person-add'}
+                          size={15}
+                          color={isSent ? '#166534' : '#6366F1'}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text
+                          style={[
+                            styles.postCallFriendBtnText,
+                            isSent && { color: '#166534' },
+                          ]}
+                        >
+                          {isSent ? 'Request Sent' : 'Add Friend'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })()}
                 </View>
               </View>
 
@@ -6430,6 +6930,22 @@ function App() {
             />
           )}
 
+          <NotificationsModal
+            visible={showNotificationsModal}
+            onClose={() => setShowNotificationsModal(false)}
+            pendingRequests={pendingFriendRequests}
+            sentRequests={sentFriendRequests}
+            onAcceptRequest={handleAcceptFriendRequest}
+            onDeclineRequest={handleDeclineFriendRequest}
+            onCancelRequest={handleCancelFriendRequest}
+            onStartChat={(u) => {
+              openConversation(u);
+            }}
+            onGoToDiscover={() => {
+              setActiveBottomTab('discover');
+              setScreen('discover');
+            }}
+          />
           <LeaderboardModal
             visible={showLeaderboard}
             onClose={() => setShowLeaderboard(false)}
@@ -6504,6 +7020,77 @@ function App() {
               </View>
             </View>
           </Modal>
+
+          {/* FLOATING IN-APP FRIEND & MESSAGE NOTIFICATIONS (Rendered on top of all screens) */}
+          {friendNotification && (
+            <View style={styles.friendNotificationBanner}>
+              <View style={[styles.friendNotifIconBox, { backgroundColor: friendNotification.type === 'accepted' ? '#DCFCE7' : '#EEF2FF' }]}>
+                <Ionicons
+                  name={friendNotification.type === 'accepted' ? 'checkmark-circle' : 'person-add'}
+                  size={20}
+                  color={friendNotification.type === 'accepted' ? '#16A34A' : '#4F46E5'}
+                />
+              </View>
+              <View style={{ flex: 1, marginHorizontal: 10 }}>
+                <Text style={styles.friendNotifTitle}>{friendNotification.title}</Text>
+                <Text style={styles.friendNotifMsg} numberOfLines={2}>{friendNotification.message}</Text>
+              </View>
+              <View style={styles.friendNotifActions}>
+                {friendNotification.type === 'request' ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      const req = {
+                        id: friendNotification.payload?.requestId,
+                        from: friendNotification.payload?.from,
+                      };
+                      handleAcceptFriendRequest(req);
+                    }}
+                    style={styles.friendNotifAcceptBtn}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.friendNotifAcceptText}>Accept</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setFriendNotification(null);
+                      const pId = friendNotification.payload?.userId;
+                      const partner = partnersRef.current.find((p) => String(p.id) === String(pId)) || {
+                        id: pId,
+                        name: friendNotification.payload?.name,
+                        displayName: friendNotification.payload?.name,
+                      };
+                      openConversation(partner);
+                    }}
+                    style={styles.friendNotifChatBtn}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.friendNotifChatText}>Chat</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={() => setFriendNotification(null)}
+                  style={{ padding: 6, marginLeft: 2 }}
+                >
+                  <Ionicons name="close" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {messageBanner && (
+            <TouchableOpacity
+              onPress={() => openConversation(messageBanner.sender)}
+              style={styles.floatingMsgBanner}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="chatbubble-ellipses" size={18} color="#EA580C" style={{ marginRight: 8 }} />
+              <Txt size={12} color={navy} bold style={{ flex: 1 }} numberOfLines={1}>
+                {messageBanner.sender.displayName || messageBanner.sender.name}: <Txt size={12} color={navy} bold={false}>{messageBanner.text}</Txt>
+              </Txt>
+              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
         </KeyboardAvoidingView>
       </View>
     </SafeAreaView>
@@ -7022,6 +7609,165 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontSize: 14,
     fontWeight: '700',
+  },
+  discoverRequestsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  discoverRequestsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  discoverRequestsBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#4F46E5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discoverRequestsBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  discoverRequestItem: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginTop: 8,
+  },
+  discoverRequestUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  discoverRequestBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
+  },
+  discoverAcceptBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16A34A',
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  discoverAcceptBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  discoverDeclineBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: '#E2E8F0',
+  },
+  discoverDeclineBtnText: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  friendNotificationBanner: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 70 : (Platform.OS === 'ios' ? 56 : 46),
+    left: 16,
+    right: 16,
+    zIndex: 999999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    shadowColor: '#4338CA',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 9999,
+  },
+  floatingMsgBanner: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 70 : (Platform.OS === 'ios' ? 56 : 46),
+    left: 16,
+    right: 16,
+    zIndex: 999998,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF0E8',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: '#FFD4C2',
+    shadowColor: '#EA580C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 9998,
+  },
+  friendNotifIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendNotifTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  friendNotifMsg: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  friendNotifActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  friendNotifAcceptBtn: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  friendNotifAcceptText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  friendNotifChatBtn: {
+    backgroundColor: '#5843E8',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  friendNotifChatText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
   incomingCallTopBanner: {
     position: 'absolute',
@@ -10297,6 +11043,194 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
+  },
+
+  // DISCOVER CONVERSATION LIST STYLES
+  discoverEmptyCard: {
+    alignItems: 'center',
+    padding: 28,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: '#ECEEF5',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  discoverEmptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  discoverStartPracticeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 18,
+    shadowColor: '#6366F1',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  discoverStartPracticeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  convListCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#ECEEF5',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  convItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  convAvatarContainer: {
+    position: 'relative',
+    marginRight: 13,
+  },
+  convAvatarImg: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F1F5F9',
+  },
+  convAvatarFallback: {
+    backgroundColor: '#E0E7FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  convAvatarInitial: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#4F46E5',
+  },
+  convStatusDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+  },
+  convStatusOnline: {
+    backgroundColor: '#10B981',
+  },
+  convStatusOffline: {
+    backgroundColor: '#94A3B8',
+  },
+  convDetailsCol: {
+    flex: 1,
+  },
+  convTopLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  convNameText: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    flex: 1,
+    marginRight: 8,
+  },
+  convTimeText: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+  },
+  convTimeTextUnread: {
+    color: '#6366F1',
+    fontWeight: '700',
+  },
+  convBottomLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  convPreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  convConnectedText: {
+    fontSize: 13,
+    color: '#6366F1',
+    fontWeight: '600',
+  },
+  convSnippetText: {
+    fontSize: 13,
+    color: '#64748B',
+    flex: 1,
+  },
+  convSnippetTextUnread: {
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  convUnreadPill: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  convUnreadCountText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  convQuickActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 10,
+  },
+  convQuickBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discoverAddFriendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+  },
+  discoverAddFriendBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
 });
