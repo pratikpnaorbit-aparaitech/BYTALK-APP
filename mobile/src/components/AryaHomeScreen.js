@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -376,8 +377,10 @@ export default function AryaHomeScreen({
   onPressGetPro,
   onPressHistory,
   isPro = false,
+  freeCreditsRemaining = 5,
 }) {
   const [activeCategory, setActiveCategory] = useState('General'); // 'General' | 'Interview'
+  const [selectedTopic, setSelectedTopic] = useState(null);
 
   // Live countdown timer state (hours, minutes, seconds)
   const [timeLeft, setTimeLeft] = useState({ hours: 13, minutes: 15, seconds: 18 });
@@ -400,6 +403,12 @@ export default function AryaHomeScreen({
 
   const format2 = (n) => String(n).padStart(2, '0');
   const topics = activeCategory === 'General' ? GENERAL_TOPICS : INTERVIEW_TOPICS;
+  const selectPracticeMode = (mode) => {
+    if (!selectedTopic) return;
+    const topic = selectedTopic;
+    setSelectedTopic(null);
+    onSelectTopic(topic, mode);
+  };
 
   return (
     <View style={styles.screenContainer}>
@@ -408,7 +417,13 @@ export default function AryaHomeScreen({
         showsVerticalScrollIndicator={false}
       >
         {/* Top Header with History Button (ARYA AI banner removed) */}
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
+          <View style={styles.creditBadge}>
+            <Ionicons name={isPro ? 'infinite' : 'sparkles'} size={14} color={isPro ? '#047857' : '#7C3AED'} />
+            <Text style={[styles.creditBadgeText, isPro && styles.proCreditBadgeText]}>
+              {isPro ? 'Unlimited AI practice' : `${freeCreditsRemaining} AI credits left`}
+            </Text>
+          </View>
           <TouchableOpacity
             onPress={onPressHistory}
             style={styles.historyButton}
@@ -453,7 +468,7 @@ export default function AryaHomeScreen({
           {topics.map((topic) => (
             <TouchableOpacity
               key={topic.id}
-              onPress={() => onSelectTopic(topic)}
+              onPress={() => setSelectedTopic(topic)}
               style={styles.cardItem}
               activeOpacity={0.85}
               accessibilityRole="button"
@@ -494,6 +509,101 @@ export default function AryaHomeScreen({
         {/* Bottom padding to leave room for the floating banner */}
         <View style={{ height: 110 }} />
       </ScrollView>
+
+      <Modal
+        visible={Boolean(selectedTopic)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedTopic(null)}
+      >
+        <View style={styles.practiceOptionsOverlay}>
+          <View style={styles.practiceOptionsCard}>
+            {selectedTopic && (
+              <>
+                <View style={styles.practiceOptionsHeader}>
+                  <View style={[styles.practiceOptionsTopicIcon, { backgroundColor: selectedTopic.bgColor }]}>
+                    <Ionicons name={selectedTopic.icon} size={23} color={selectedTopic.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.practiceOptionsEyebrow}>PRACTICE TOPIC</Text>
+                    <Text style={styles.practiceOptionsTitle} numberOfLines={2}>{selectedTopic.title}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setSelectedTopic(null)}
+                    style={styles.practiceOptionsClose}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close practice options"
+                  >
+                    <Ionicons name="close" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.practiceOptionsSubtitle}>How would you like to practice?</Text>
+
+                <TouchableOpacity
+                  onPress={() => selectPracticeMode('call')}
+                  style={styles.practiceChoiceCard}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Find a learner to call"
+                >
+                  <View style={[styles.practiceChoiceIcon, styles.practiceChoiceCallIcon]}>
+                    <Ionicons name="call" size={20} color="#059669" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.practiceChoiceTitle}>Call a learner</Text>
+                    <Text style={styles.practiceChoiceDescription}>Find someone online to talk about this topic.</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => selectPracticeMode('chat')}
+                  style={styles.practiceChoiceCard}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Find a learner to chat with"
+                >
+                  <View style={[styles.practiceChoiceIcon, styles.practiceChoiceChatIcon]}>
+                    <Ionicons name="chatbubble-ellipses" size={20} color="#2563EB" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.practiceChoiceTitle}>Chat with a learner</Text>
+                    <Text style={styles.practiceChoiceDescription}>Match with a person who shares this practice topic.</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => selectPracticeMode('ai')}
+                  style={styles.practiceChoiceCard}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Practice this topic with AI"
+                >
+                  <View style={[styles.practiceChoiceIcon, styles.practiceChoiceAiIcon]}>
+                    <Ionicons name="sparkles" size={20} color="#7C3AED" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.practiceChoiceTitle}>Practice with AI</Text>
+                    <Text style={styles.practiceChoiceDescription}>Start an AI conversation about this topic.</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setSelectedTopic(null)}
+                  style={styles.practiceOptionsCancel}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel practice selection"
+                >
+                  <Text style={styles.practiceOptionsCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Floating Bottom Festive Offer Banner */}
       <View style={styles.floatingBannerWrapper}>
@@ -654,6 +764,128 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#94A3B8',
+  },
+  creditBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: '#F3EFFF',
+  },
+  creditBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6D28D9',
+  },
+  proCreditBadgeText: {
+    color: '#047857',
+  },
+  practiceOptionsOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.58)',
+  },
+  practiceOptionsCard: {
+    width: '100%',
+    maxWidth: 430,
+    padding: 20,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    elevation: 12,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+  },
+  practiceOptionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 18,
+  },
+  practiceOptionsTopicIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  practiceOptionsEyebrow: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+  },
+  practiceOptionsTitle: {
+    color: '#172033',
+    fontSize: 17,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  practiceOptionsClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  practiceOptionsSubtitle: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  practiceChoiceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 13,
+    marginBottom: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E8ECF3',
+    backgroundColor: '#FFFFFF',
+  },
+  practiceChoiceIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  practiceChoiceCallIcon: {
+    backgroundColor: '#ECFDF5',
+  },
+  practiceChoiceChatIcon: {
+    backgroundColor: '#EFF6FF',
+  },
+  practiceChoiceAiIcon: {
+    backgroundColor: '#F5F3FF',
+  },
+  practiceChoiceTitle: {
+    color: '#172033',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  practiceChoiceDescription: {
+    color: '#64748B',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  practiceOptionsCancel: {
+    alignItems: 'center',
+    paddingVertical: 11,
+  },
+  practiceOptionsCancelText: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
   },
   tabSwitcherContainer: {
     flexDirection: 'row',
