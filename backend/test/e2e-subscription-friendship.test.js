@@ -110,3 +110,106 @@ test('E2E: Razorpay Callback redirects cleanly to returnUrl on Web and activates
   // Confirm NO broken standalone bytalk:// deep links in href
   assert.ok(!html.includes('href="bytalk://'), 'Must not have broken href="bytalk://" link for web');
 });
+
+test('E2E: Admin Panel static dashboard is served at /admin with assets', async () => {
+  const res = await fetch(`${API}/admin`);
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.ok(html.includes('BYTALK Admin'), 'Should serve BYTALK Admin title');
+  assert.ok(html.includes('/admin/assets/'), 'Should reference /admin/assets/');
+});
+
+test('E2E: Admin API endpoints work (users, subscriptions, plans, grant, revoke)', async () => {
+  // 1. Get users list
+  const usersRes = await fetch(`${API}/api/admin/users`);
+  assert.equal(usersRes.status, 200);
+  const users = await usersRes.json();
+  assert.ok(Array.isArray(users), 'Admin users should return array');
+  assert.ok(users.length > 0, 'Admin users should have registered users');
+
+  // 2. Get subscriptions list
+  const subRes = await fetch(`${API}/api/admin/subscriptions`);
+  assert.equal(subRes.status, 200);
+  const subData = await subRes.json();
+  assert.ok(Array.isArray(subData.subscriptions), 'Subscriptions should return array');
+
+  // 3. Get plans list
+  const plansRes = await fetch(`${API}/api/admin/plans`);
+  assert.equal(plansRes.status, 200);
+  const plansData = await plansRes.json();
+  assert.ok(Array.isArray(plansData.plans), 'Plans should return array');
+
+  // 4. Create new test plan
+  const testPlanId = `test_plan_${Date.now()}`;
+  const createPlanRes = await fetch(`${API}/api/admin/plans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: testPlanId,
+      name: 'Test Special Plan',
+      duration: '45 Days',
+      durationDays: 45,
+      price: 299,
+      originalPrice: 499,
+      savings: 'Save 40%',
+      badge: 'TEST',
+      order: 99,
+      active: true,
+    }),
+  });
+  assert.equal(createPlanRes.status, 201);
+  const createdPlanData = await createPlanRes.json();
+  assert.equal(createdPlanData.plan.id, testPlanId);
+
+  // 5. Update the test plan
+  const updatePlanRes = await fetch(`${API}/api/admin/plans/${testPlanId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      price: 349,
+      savings: 'Save 30%',
+    }),
+  });
+  assert.equal(updatePlanRes.status, 200);
+  const updatedPlanData = await updatePlanRes.json();
+  assert.equal(updatedPlanData.plan.price, 349);
+
+  // 6. Delete the test plan
+  const deletePlanRes = await fetch(`${API}/api/admin/plans/${testPlanId}`, {
+    method: 'DELETE',
+  });
+  assert.equal(deletePlanRes.status, 200);
+
+  // 7. Test Grant PRO to user
+  const grantRes = await fetch(`${API}/api/admin/subscriptions/grant`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: '6ae9eae0964cf8d3052a1adf', // pratik demo
+      durationDays: 30,
+      amount: 199,
+    }),
+  });
+  assert.equal(grantRes.status, 200);
+  const grantData = await grantRes.json();
+  assert.equal(grantData.user.subscriptionPlan, 'pro');
+
+  // 8. Test Revoke PRO from user
+  const revokeRes = await fetch(`${API}/api/admin/subscriptions/revoke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: '6ae9eae0964cf8d3052a1adf',
+    }),
+  });
+  assert.equal(revokeRes.status, 200);
+  const revokeData = await revokeRes.json();
+  assert.equal(revokeData.user.subscriptionPlan, 'free');
+
+  // 9. Check Audit Log
+  const auditRes = await fetch(`${API}/api/admin/audit`);
+  assert.equal(auditRes.status, 200);
+  const auditData = await auditRes.json();
+  assert.ok(Array.isArray(auditData.auditLogs), 'Audit logs should return array');
+  assert.ok(auditData.auditLogs.length > 0, 'Audit logs should have records');
+});

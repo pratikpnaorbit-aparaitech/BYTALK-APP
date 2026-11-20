@@ -516,6 +516,27 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
+// Serve BYTALK Admin Dashboard
+const __currentDir = path.dirname(fileURLToPath(import.meta.url));
+const adminCandidates = [
+  path.resolve(__currentDir, '../../admin/dist'),
+  path.resolve(process.cwd(), 'admin/dist'),
+  path.resolve(process.cwd(), '../admin/dist'),
+  path.resolve(process.cwd(), 'BYTALK/admin/dist'),
+];
+const adminDistPath = adminCandidates.find((p) => fs.existsSync(p));
+if (adminDistPath) {
+  console.log('[Admin Panel] Serving static assets from:', adminDistPath);
+  app.use('/admin', express.static(adminDistPath));
+  app.get('/admin', (req, res) => {
+    res.sendFile(path.join(adminDistPath, 'index.html'));
+  });
+  app.get('/admin/*', (req, res, next) => {
+    if (req.path.includes('.')) return next();
+    res.sendFile(path.join(adminDistPath, 'index.html'));
+  });
+}
+
 app.post('/api/webhooks/revenuecat', express.raw({ type: 'application/json', limit: '128kb' }), async (req, res) => {
   const authorization = req.headers.authorization || '';
   if (!REVENUECAT_WEBHOOK_AUTH || authorization !== `Bearer ${REVENUECAT_WEBHOOK_AUTH}`) {
