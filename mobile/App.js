@@ -154,6 +154,8 @@ const SESSION_TOKEN_KEY = 'bytalk_session_token';
 const SESSION_USER_KEY = 'bytalk_session_user';
 const SESSION_EXPIRES_KEY = 'bytalk_session_expires_at';
 const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
+const AI_FREE_MESSAGE_LIMIT = 5;
+const AI_FREE_CREDITS_KEY_PREFIX = 'bytalk_ai_free_credits_';
 const TERMS_URL = process.env.EXPO_PUBLIC_TERMS_URL || '';
 const PRIVACY_URL = process.env.EXPO_PUBLIC_PRIVACY_URL || '';
 
@@ -1158,10 +1160,15 @@ function App() {
   const [practiceAnswer, setPracticeAnswer] = useState('');
   const [practiceProgress, setPracticeProgress] = useState(0);
   const [practiceMode, setPracticeMode] = useState('searching');
+  const [practiceConnectionMode, setPracticeConnectionMode] = useState('chat');
   const [practicePartner, setPracticePartner] = useState(null);
   const [practiceSearchError, setPracticeSearchError] = useState('');
   const [aiSession, setAiSession] = useState(null);
   const [aiMessages, setAiMessages] = useState([]);
+  const [aiFreeMessageCount, setAiFreeMessageCount] = useState(0);
+  const [aiCreditsLoaded, setAiCreditsLoaded] = useState(false);
+  const [showAiCreditsModal, setShowAiCreditsModal] = useState(false);
+  const aiFreeMessageCountRef = useRef(0);
   const [aiDraft, setAiDraft] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
@@ -1257,6 +1264,48 @@ function App() {
   screenRef.current = screen;
   callRef.current = call;
   partnersRef.current = partners;
+  const aiPracticeIsPro = subscription?.isPaidSubscriber === true
+    || ['basic', 'plus', 'pro', '1month', '3months', '1year'].includes(subscription?.plan?.id);
+  const aiFreeCreditsRemaining = Math.max(0, AI_FREE_MESSAGE_LIMIT - aiFreeMessageCount);
+  const aiFreeLimitReached = !aiPracticeIsPro && aiCreditsLoaded && aiFreeCreditsRemaining === 0;
+
+  useEffect(() => {
+    let active = true;
+    aiFreeMessageCountRef.current = 0;
+    setAiFreeMessageCount(0);
+    setAiCreditsLoaded(false);
+
+    if (!userId) {
+      setAiCreditsLoaded(true);
+      return () => {
+        active = false;
+      };
+    }
+
+    AsyncStorage.getItem(`${AI_FREE_CREDITS_KEY_PREFIX}${userId}`)
+      .then((storedCount) => {
+        if (!active) return;
+        const parsedCount = Number.parseInt(storedCount || '0', 10);
+        const count = Number.isFinite(parsedCount)
+          ? Math.min(AI_FREE_MESSAGE_LIMIT, Math.max(0, parsedCount))
+          : 0;
+        aiFreeMessageCountRef.current = count;
+        setAiFreeMessageCount(count);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.warn('[BYTALK AI credits] Could not load saved credits:', error?.message || error);
+        Alert.alert('AI credits unavailable', 'Could not load your free AI practice credits. Please try again.');
+      })
+      .finally(() => {
+        if (active) setAiCreditsLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
   const recentCallHistory = callHistory.filter((item) => {
     const createdAt = Date.parse(item.createdAt);
     return Number.isFinite(createdAt) && Date.now() - createdAt <= 86400000;
@@ -3513,16 +3562,17 @@ function App() {
     }
   }
 
-  async function beginPracticeTopic(topic = practiceTopic) {
+  async function beginPracticeTopic(topic = practiceTopic, connectionMode = 'chat') {
     setPracticeTopic(topic);
     setPracticeAnswer('');
+    setPracticeConnectionMode(connectionMode);
     setPracticeMode('searching');
     setPracticePartner(null);
     setPracticeSearchError('');
     setPracticeStep('conversation');
     setScreen('practiceSession');
     try {
-      const result = await request(`practice/partners?topic=${encodeURIComponent(topic.id)}&practiceOnly=true`);
+      const result = await request(`practice/partners?topic=${encodeURIComponent('All Topics')}&practiceOnly=true`);
       const partner = result?.users?.[0] || null;
       setPracticePartner(partner);
       setPracticeMode(partner ? 'real' : 'none');
@@ -3536,8 +3586,24 @@ function App() {
     beginPracticeTopic(topic);
   }
 
+  function handleHomeTopicSelection(topic, mode = 'ai') {
+    if (mode === 'ai') {
+      startAiPractice(topic);
+      return;
+    }
+    beginPracticeTopic(topic, mode);
+  }
+
   async function startAiPractice(customTopic = null) {
     const targetTopic = customTopic || practiceTopic;
+    if (!aiPracticeIsPro && !aiCreditsLoaded) {
+      Alert.alert('Checking AI credits', 'Please try again in a moment while we load your free practice credits.');
+      return false;
+    }
+    if (!aiPracticeIsPro && aiFreeMessageCountRef.current >= AI_FREE_MESSAGE_LIMIT) {
+      setShowAiCreditsModal(true);
+      return false;
+    }
     if (customTopic) setPracticeTopic(customTopic);
     stopSpeech();
     setSpeakingMessageIndex(null);
@@ -3602,6 +3668,10 @@ function App() {
   async function sendAiMessage() {
     const text = aiDraft.trim();
     if (!text || aiLoading) return;
+    if (!aiPracticeIsPro && aiFreeMessageCountRef.current >= AI_FREE_MESSAGE_LIMIT) {
+      setShowAiCreditsModal(true);
+      return;
+    }
 
     stopSpeech();
     setSpeakingMessageIndex(null);
@@ -3612,6 +3682,19 @@ function App() {
       timestamp: new Date().toISOString(),
     };
     setAiMessages((previous) => [...previous, userMessage]);
+    if (!aiPracticeIsPro) {
+      const nextCount = Math.min(AI_FREE_MESSAGE_LIMIT, aiFreeMessageCountRef.current + 1);
+      aiFreeMessageCountRef.current = nextCount;
+      setAiFreeMessageCount(nextCount);
+      if (userId) {
+        AsyncStorage.setItem(`${AI_FREE_CREDITS_KEY_PREFIX}${userId}`, String(nextCount))
+          .catch((error) => {
+            console.warn('[BYTALK AI credits] Could not save credit usage:', error?.message || error);
+            Alert.alert('AI credits could not be saved', 'Your message was sent, but your credit usage could not be saved on this device.');
+          });
+      }
+      if (nextCount >= AI_FREE_MESSAGE_LIMIT) setShowAiCreditsModal(true);
+    }
     setAiLoading(true);
     setAiError('');
 
@@ -4094,7 +4177,7 @@ function App() {
               }}
               onPressLeaderboard={() => setShowLeaderboard(true)}
               onPressNotifications={() => setShowNotificationsModal(true)}
-              isPro={subscription?.plan?.id === 'pro' || subscription?.plan?.id === 'plus' || subscription?.active === true}
+              isPro={aiPracticeIsPro}
               notificationCount={pendingFriendRequests.length}
             />
           )}
@@ -4103,13 +4186,14 @@ function App() {
           {screen === 'home' && (
             <AryaHomeScreen
               user={{ displayName: name, streak }}
-              onSelectTopic={(topic) => startAiPractice(topic)}
+              onSelectTopic={(topic, mode) => handleHomeTopicSelection(topic, mode)}
               onPressGetPro={() => {
                 setActiveBottomTab('pro');
                 setScreen('premium');
               }}
               onPressHistory={() => setShowHistoryModal(true)}
-              isPro={subscription?.plan?.id === 'pro' || subscription?.plan?.id === 'plus' || subscription?.active === true}
+              isPro={aiPracticeIsPro}
+              freeCreditsRemaining={aiFreeCreditsRemaining}
             />
           )}
 
@@ -6551,8 +6635,22 @@ function App() {
                   <Txt size={19} bold style={{ marginTop: 10 }}>Partner available</Txt>
                   <Txt size={15} color={navy} bold style={{ marginTop: 8 }}>{practicePartner?.displayName || practicePartner?.name}</Txt>
                   <Txt color={muted} size={13} style={{ textAlign: 'center', marginTop: 5 }}>Connected and ready to practice {practiceTopic.title}.</Txt>
-                  <Btn label="Start real conversation" onPress={() => openConversation(practicePartner)} style={{ marginTop: 18 }} />
-                  <Btn label="Search Again" outline onPress={() => beginPracticeTopic(practiceTopic)} style={{ marginTop: 10 }} />
+                  <Btn
+                    label={practiceConnectionMode === 'call' ? 'Start voice call' : 'Start chat'}
+                    onPress={() => practiceConnectionMode === 'call'
+                      ? startCall(practicePartner, 'audio')
+                      : openConversation(practicePartner)}
+                    style={{ marginTop: 18 }}
+                  />
+                  <Btn
+                    label={practiceConnectionMode === 'call' ? 'Chat instead' : 'Voice call instead'}
+                    outline
+                    onPress={() => practiceConnectionMode === 'call'
+                      ? openConversation(practicePartner)
+                      : startCall(practicePartner, 'audio')}
+                    style={{ marginTop: 10 }}
+                  />
+                  <Btn label="Search Again" outline onPress={() => beginPracticeTopic(practiceTopic, practiceConnectionMode)} style={{ marginTop: 10 }} />
                 </View>
               ) : practiceStep === 'exercise' ? (
                 <>
@@ -6637,6 +6735,11 @@ function App() {
                     </View>
                     <View style={styles.aiHeaderBadge}>
                       <Txt size={11} color={muted}>{learningLanguage || 'English'} · {level || 'Beginner'}</Txt>
+                    </View>
+                    <View style={[styles.aiHeaderBadge, aiPracticeIsPro && styles.aiProCreditBadge]}>
+                      <Txt size={10} color={aiPracticeIsPro ? '#047857' : '#6D28D9'} bold>
+                        {aiPracticeIsPro ? 'Unlimited' : `${aiFreeCreditsRemaining}/${AI_FREE_MESSAGE_LIMIT} credits`}
+                      </Txt>
                     </View>
                   </View>
                 </View>
@@ -6768,6 +6871,20 @@ function App() {
                         Practicing <Txt bold color={orange}>{practiceTopic.title}</Txt> in <Txt bold color={navy}>{learningLanguage}</Txt> ({level} level). Speak or type your messages!
                       </Txt>
                     </View>
+                    {aiFreeLimitReached && (
+                      <TouchableOpacity
+                        onPress={() => setShowAiCreditsModal(true)}
+                        style={styles.aiCreditsNotice}
+                        accessibilityRole="button"
+                        accessibilityLabel="View plans to continue AI practice"
+                      >
+                        <Ionicons name="lock-closed" size={15} color="#7C3AED" />
+                        <Txt size={12} color="#5B21B6" bold style={{ flex: 1 }}>
+                          Your 5 free AI credits are used. View plans to continue.
+                        </Txt>
+                        <Ionicons name="chevron-forward" size={16} color="#7C3AED" />
+                      </TouchableOpacity>
+                    )}
 
                     {/* Message bubbles */}
                     {aiMessages.map((message, index) => {
@@ -6871,6 +6988,7 @@ function App() {
                   <View style={styles.aiComposer}>
                     <TouchableOpacity
                       onPress={startSpeechRecognition}
+                      disabled={aiFreeLimitReached}
                       style={[styles.aiMicButton, listeningForSpeech && styles.aiMicButtonActive]}
                       accessibilityRole="button"
                       accessibilityLabel="Voice speech to text"
@@ -6889,13 +7007,14 @@ function App() {
                       placeholderTextColor="#9CA3AF"
                       multiline
                       maxLength={1500}
+                      editable={!aiFreeLimitReached}
                       style={styles.aiInput}
                     />
 
                     <TouchableOpacity
                       onPress={sendAiMessage}
-                      disabled={aiLoading || !aiDraft.trim()}
-                      style={[styles.aiSendButton, (!aiDraft.trim() || aiLoading) && { opacity: 0.5 }]}
+                      disabled={aiLoading || !aiDraft.trim() || aiFreeLimitReached}
+                      style={[styles.aiSendButton, (!aiDraft.trim() || aiLoading || aiFreeLimitReached) && { opacity: 0.5 }]}
                       accessibilityRole="button"
                       accessibilityLabel="Send message"
                     >
@@ -7061,13 +7180,14 @@ function App() {
           ].includes(screen) && !(screen === 'call' && call) && !(screen === 'call-complete' && callCompletion) && (
             <AryaHomeScreen
               user={{ displayName: name, streak }}
-              onSelectTopic={(topic) => startAiPractice(topic)}
+              onSelectTopic={(topic, mode) => handleHomeTopicSelection(topic, mode)}
               onPressGetPro={() => {
                 setActiveBottomTab('pro');
                 setScreen('premium');
               }}
               onPressHistory={() => setShowHistoryModal(true)}
-              isPro={subscription?.plan?.id === 'pro' || subscription?.plan?.id === 'plus' || subscription?.active === true}
+              isPro={aiPracticeIsPro}
+              freeCreditsRemaining={aiFreeCreditsRemaining}
             />
           )}
 
@@ -7244,6 +7364,89 @@ function App() {
             onClose={() => setShowHistoryModal(false)}
             callHistory={callHistory}
           />
+
+          <Modal
+            visible={showAiCreditsModal}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowAiCreditsModal(false)}
+          >
+            <View style={styles.aiCreditsModalOverlay}>
+              <View style={styles.aiCreditsModalCard}>
+                <TouchableOpacity
+                  onPress={() => setShowAiCreditsModal(false)}
+                  style={styles.aiCreditsModalClose}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close plans popup"
+                >
+                  <Ionicons name="close" size={21} color="#64748B" />
+                </TouchableOpacity>
+
+                <LinearGradient
+                  colors={['#6D28D9', '#8B5CF6', '#A855F7']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.aiCreditsModalHero}
+                >
+                  <View style={styles.aiCreditsModalIcon}>
+                    <Ionicons name="chatbubbles" size={25} color="#6D28D9" />
+                  </View>
+                  <Text style={styles.aiCreditsModalEyebrow}>FREE PRACTICE COMPLETE</Text>
+                  <Text style={styles.aiCreditsModalHeroTitle}>Great conversation!</Text>
+                  <Text style={styles.aiCreditsModalHeroSubtitle}>
+                    You used all 5 free AI credits across your practice topics.
+                  </Text>
+                </LinearGradient>
+
+                <Text style={styles.aiCreditsModalTitle}>Keep your momentum going</Text>
+                <Text style={styles.aiCreditsModalBody}>
+                  Choose a plan to continue practicing with ARYA across General and Interview topics.
+                </Text>
+
+                <View style={styles.aiCreditsBenefits}>
+                  {[
+                    'Unlimited AI conversations',
+                    'Practice every topic and interview scenario',
+                    'Get helpful feedback as you improve',
+                  ].map((benefit) => (
+                    <View key={benefit} style={styles.aiCreditsBenefitRow}>
+                      <Ionicons name="checkmark-circle" size={18} color="#059669" />
+                      <Text style={styles.aiCreditsBenefitText}>{benefit}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowAiCreditsModal(false);
+                    openSubscription();
+                  }}
+                  activeOpacity={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel="View available plans"
+                >
+                  <LinearGradient
+                    colors={['#F97316', '#EA580C']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.aiCreditsPrimaryButton}
+                  >
+                    <Text style={styles.aiCreditsPrimaryButtonText}>View Plans</Text>
+                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setShowAiCreditsModal(false)}
+                  style={styles.aiCreditsSecondaryButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Maybe later"
+                >
+                  <Text style={styles.aiCreditsSecondaryButtonText}>Maybe later</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
 
           {/* WHATSAPP ATTACHMENT MODAL */}
           <Modal
@@ -8767,6 +8970,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 8,
   },
+  aiProCreditBadge: {
+    backgroundColor: '#ECFDF5',
+  },
   aiEndSessionBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -8783,6 +8989,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#FFD8C9',
+    marginBottom: 14,
+  },
+  aiCreditsNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    backgroundColor: '#F5F3FF',
     marginBottom: 14,
   },
   aiMessageRow: {
@@ -9291,6 +9510,126 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     padding: 20,
     maxHeight: '80%',
+  },
+  aiCreditsModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 22,
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
+  },
+  aiCreditsModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+    elevation: 12,
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+  },
+  aiCreditsModalClose: {
+    position: 'absolute',
+    top: 24,
+    right: 24,
+    zIndex: 1,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.88)',
+  },
+  aiCreditsModalHero: {
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 20,
+    borderRadius: 18,
+  },
+  aiCreditsModalIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 12,
+  },
+  aiCreditsModalEyebrow: {
+    color: '#EDE9FE',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  aiCreditsModalHeroTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  aiCreditsModalHeroSubtitle: {
+    color: '#F5F3FF',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 7,
+    textAlign: 'center',
+  },
+  aiCreditsModalTitle: {
+    color: '#172033',
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  aiCreditsModalBody: {
+    color: '#64748B',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 7,
+    textAlign: 'center',
+  },
+  aiCreditsBenefits: {
+    gap: 10,
+    marginTop: 18,
+    marginBottom: 20,
+  },
+  aiCreditsBenefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  aiCreditsBenefitText: {
+    flex: 1,
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  aiCreditsPrimaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  aiCreditsPrimaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  aiCreditsSecondaryButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  aiCreditsSecondaryButtonText: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
   },
   waModalHeader: {
     flexDirection: 'row',
