@@ -14,6 +14,8 @@ import { Message, publicMessage } from './models/Message.js';
 import { CallHistory } from './models/CallHistory.js';
 import { PracticeSession } from './models/PracticeSession.js';
 import { messageCutoff } from './messageRetention.js';
+import { canonicalCallUserId } from './callIdentity.js';
+import { getOnlineObjectIds } from './onlineUserIds.js';
 import { SubscriptionEvent } from './models/SubscriptionEvent.js';
 import { Plan } from './models/Plan.js';
 import { decodePdfAttachment } from './attachments.js';
@@ -2084,12 +2086,7 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
     const currentUserId = String(req.authenticatedUser.id);
     const { gender } = req.query;
 
-    const onlineUserIds = [];
-    for (const [uId, sockets] of userSockets.entries()) {
-      if (String(uId) !== currentUserId && sockets && sockets.size > 0) {
-        onlineUserIds.push(uId);
-      }
-    }
+    const onlineUserIds = getOnlineObjectIds(userSockets, currentUserId);
 
     if (onlineUserIds.length === 0) {
       return res.json({ ok: false, message: 'No other registered co-learners are currently online.' });
@@ -3952,8 +3949,19 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const callerIds = Array.from(new Set([userId, socket.data.altUserId, callerDoc?._id ? String(callerDoc._id) : null, callerDoc?.name].filter(Boolean)));
-    const calleeIds = Array.from(new Set([to, calleeDoc?._id ? String(calleeDoc._id) : null, calleeDoc?.id ? String(calleeDoc.id) : null, calleeDoc?.name].filter(Boolean)));
+    const callerCallId = canonicalCallUserId(callerDoc, userId);
+    const calleeCallId = canonicalCallUserId(calleeDoc || targetUser, to);
+    if (!callerCallId || !calleeCallId) {
+      acknowledge({ error: 'Calling requires a valid registered account.' });
+      return;
+    }
+    if (callerCallId === calleeCallId) {
+      acknowledge({ error: 'You cannot call yourself.' });
+      return;
+    }
+
+    const callerIds = Array.from(new Set([callerCallId, userId, socket.data.altUserId, callerDoc?.name].filter(Boolean)));
+    const calleeIds = Array.from(new Set([calleeCallId, to, calleeDoc?.name, targetUser?.name].filter(Boolean)));
 
     // Check blocks
     if (callerDoc?.blockedUsers?.some((b) => calleeIds.includes(String(b))) || calleeDoc?.blockedUsers?.some((b) => callerIds.includes(String(b)))) {
@@ -4013,8 +4021,8 @@ io.on('connection', (socket) => {
     const createdAt = new Date().toISOString();
     const call = {
       id: crypto.randomUUID(),
-      callerId: userId,
-      calleeId: to,
+      callerId: callerCallId,
+      calleeId: calleeCallId,
       type,
       status: 'ringing',
       createdAt,
