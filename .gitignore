@@ -5,6 +5,7 @@ dist/
 *.log
 .DS_Store
 backend/data/store.json
+backend/data/attachments/
 powershell.bat
 
 .env*.local

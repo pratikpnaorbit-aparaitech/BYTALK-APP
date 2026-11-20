@@ -16,15 +16,47 @@ import { PracticeSession } from './models/PracticeSession.js';
 import { messageCutoff } from './messageRetention.js';
 import { SubscriptionEvent } from './models/SubscriptionEvent.js';
 import { Plan } from './models/Plan.js';
+import { decodePdfAttachment } from './attachments.js';
 import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, isPaidSubscriber, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded, getFreeTrialSecondsRemaining } from './subscriptions.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { generateAiResponse } from './aiService.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const attachmentsDir = path.join(root, 'data', 'attachments');
+const ATTACHMENT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const dbFile = process.env.BYTALK_DATA_FILE
   ? path.resolve(process.env.BYTALK_DATA_FILE)
   : path.join(root, 'data', 'store.json');
 fs.mkdirSync(path.dirname(dbFile), { recursive: true });
+
+async function cleanupExpiredAttachments() {
+  let entries;
+  try {
+    entries = await fs.promises.readdir(attachmentsDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn('[Attachment cleanup] Could not list files:', error.message);
+    }
+    return;
+  }
+
+  const cutoff = Date.now() - ATTACHMENT_RETENTION_MS;
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.pdf')) continue;
+    const filePath = path.join(attachmentsDir, entry.name);
+    try {
+      const fileInfo = await fs.promises.stat(filePath);
+      if (fileInfo.mtimeMs <= cutoff) await fs.promises.unlink(filePath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.warn('[Attachment cleanup] Could not remove file:', error.message);
+      }
+    }
+  }
+}
+
+cleanupExpiredAttachments();
+setInterval(cleanupExpiredAttachments, 60 * 60 * 1000).unref();
 
 // Environment configuration
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(48).toString('hex');
@@ -532,7 +564,14 @@ app.post('/api/webhooks/revenuecat', express.raw({ type: 'application/json', lim
   console.log(`RevenueCat subscription updated for account ${appUserId}: ${user.subscriptionPlan}/${user.subscriptionStatus}.`);
   return res.json({ ok: true });
 });
-app.use(express.json({ limit: '128kb' }));
+const defaultJsonParser = express.json({ limit: '128kb' });
+const messageJsonParser = express.json({ limit: '12mb' });
+app.use((req, res, next) => {
+  const parser = req.method === 'POST' && req.path === '/api/messages'
+    ? messageJsonParser
+    : defaultJsonParser;
+  parser(req, res, next);
+});
 
 // Auth Token Middleware
 app.use((req, res, next) => {
@@ -2869,7 +2908,7 @@ app.get('/api/messages/:a/:b', requireAuth, async (req, res) => {
 });
 
 app.post('/api/messages', requireAuth, async (req, res) => {
-  const { to, text = '', attachmentType, attachmentUrl, attachmentName, attachmentSize } = req.body || {};
+  const { to, text = '', attachmentType, attachmentUrl, attachmentName, attachmentSize, attachmentData } = req.body || {};
   const senderId = String(req.authenticatedUser.id);
 
   const senderAltId = req.authenticatedUser._id ? String(req.authenticatedUser._id) : senderId;
@@ -2911,7 +2950,9 @@ app.post('/api/messages', requireAuth, async (req, res) => {
     });
   }
 
-  const hasContent = (typeof text === 'string' && text.trim().length > 0) || Boolean(attachmentUrl);
+  const hasContent = (typeof text === 'string' && text.trim().length > 0)
+    || Boolean(attachmentUrl)
+    || Boolean(attachmentData);
   const isKnownUser = Boolean(recipientUser) || store.users.some((user) => String(user.id) === String(to));
 
   if (typeof to !== 'string' || possibleSenderIds.includes(to) || (!isKnownUser && !recipientUser) || !hasContent || (text && text.length > 1500)) {
@@ -2921,20 +2962,67 @@ app.post('/api/messages', requireAuth, async (req, res) => {
   if (recipientUser?.blockedUsers?.includes(String(senderId)) || req.authenticatedUser.blockedUsers?.includes(to)) {
     return res.status(403).json({ error: 'Messaging is unavailable for this user.' });
   }
+
+  if (attachmentData && attachmentType !== 'file') {
+    return res.status(400).json({ error: 'File data is only valid for PDF attachments.' });
+  }
+
+  let savedAttachmentUrl = attachmentUrl || null;
+  let attachmentFilePath = null;
+  if (attachmentType === 'file') {
+    if (typeof attachmentData !== 'string') {
+      return res.status(400).json({ error: 'The PDF attachment is missing.' });
+    }
+    let pdfBuffer;
+    try {
+      pdfBuffer = decodePdfAttachment(attachmentData);
+    } catch (error) {
+      return res.status(error.status || 400).json({ error: error.message });
+    }
+
+    const attachmentId = crypto.randomUUID();
+    attachmentFilePath = path.join(attachmentsDir, `${attachmentId}.pdf`);
+    try {
+      await fs.promises.mkdir(attachmentsDir, { recursive: true });
+      await fs.promises.writeFile(attachmentFilePath, pdfBuffer, { flag: 'wx' });
+    } catch (error) {
+      console.error('[POST /api/messages attachment error]', error.message);
+      return res.status(500).json({ error: 'The PDF could not be stored.' });
+    }
+    savedAttachmentUrl = `/api/attachments/${attachmentId}`;
+  } else if (attachmentData) {
+    return res.status(400).json({ error: 'Unsupported attachment type.' });
+  }
+
   const deliveredAt = (userSockets.get(String(to))?.size || 0) > 0 ? new Date() : null;
-  const msg = await Message.create({
-    id: crypto.randomUUID(),
-    from: String(senderId),
-    to: String(to),
-    text: (text || '').trim(),
-    attachmentType: attachmentType || null,
-    attachmentUrl: attachmentUrl || null,
-    attachmentName: attachmentName || null,
-    attachmentSize: attachmentSize || null,
-    at: new Date(),
-    createdAt: new Date(),
-    deliveredAt,
-  });
+  let msg;
+  try {
+    msg = await Message.create({
+      id: crypto.randomUUID(),
+      from: String(senderId),
+      to: String(to),
+      text: (text || '').trim(),
+      attachmentType: attachmentType || null,
+      attachmentUrl: savedAttachmentUrl,
+      attachmentName: attachmentName || null,
+      attachmentSize: attachmentSize || null,
+      at: new Date(),
+      createdAt: new Date(),
+      deliveredAt,
+    });
+  } catch (error) {
+    if (attachmentFilePath) {
+      try {
+        await fs.promises.unlink(attachmentFilePath);
+      } catch (cleanupError) {
+        if (cleanupError.code !== 'ENOENT') {
+          console.warn('[POST /api/messages attachment cleanup error]', cleanupError.message);
+        }
+      }
+    }
+    console.error('[POST /api/messages persistence error]', error.message);
+    return res.status(500).json({ error: 'The message could not be saved.' });
+  }
   const result = publicMessage(msg);
   console.log(`Message ${result.id} persisted; delivery target ${result.to} has active sockets.`);
 
@@ -2948,6 +3036,28 @@ app.post('/api/messages', requireAuth, async (req, res) => {
   });
 
   res.status(201).json(result);
+});
+
+app.get('/api/attachments/:attachmentId', requireAuth, async (req, res) => {
+  const { attachmentId } = req.params;
+  if (!/^[\da-f-]{36}$/i.test(attachmentId)) {
+    return res.status(404).json({ error: 'Attachment not found.' });
+  }
+
+  const attachmentUrl = `/api/attachments/${attachmentId}`;
+  const message = await Message.findOne({ attachmentUrl }).select('from to attachmentName').lean();
+  const currentUserId = String(req.authenticatedUser.id);
+  if (!message || (String(message.from) !== currentUserId && String(message.to) !== currentUserId)) {
+    return res.status(404).json({ error: 'Attachment not found.' });
+  }
+
+  const fileName = String(message.attachmentName || 'attachment.pdf').replace(/[\\/"\r\n]/g, '_');
+  res.download(path.join(attachmentsDir, `${attachmentId}.pdf`), fileName, (error) => {
+    if (error && !res.headersSent) {
+      if (error.code !== 'ENOENT') console.error('[GET /api/attachments error]', error.message);
+      res.status(error.code === 'ENOENT' ? 404 : 500).json({ error: 'Attachment is unavailable.' });
+    }
+  });
 });
 
 app.get('/api/messages/conversations', requireAuth, async (req, res) => {
