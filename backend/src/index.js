@@ -604,6 +604,16 @@ function emitToUser(userId, event, payload) {
   io.to(`user:${String(userId)}`).emit(event, payload);
 }
 
+function emitToUserRooms(userIds, event, payload) {
+  const ids = Array.from(new Set((Array.isArray(userIds) ? userIds : [userIds]).filter(Boolean).map(String)));
+  if (ids.length === 0) return;
+  let target = io;
+  for (const id of ids) {
+    target = target.to(`user:${id}`);
+  }
+  target.emit(event, payload);
+}
+
 async function requireAuth(req, res, next) {
   let user = store.users.find((item) => String(item.id) === String(req.user?.userId));
   if (!user && req.user?.userId) {
@@ -622,9 +632,18 @@ async function requireAuth(req, res, next) {
 
 function participantForCall(call, userId, altUserId = null) {
   if (!call) return null;
-  const ids = [userId, altUserId].filter(Boolean).map(String);
-  if (ids.includes(String(call.callerId))) return call.calleeId;
-  if (ids.includes(String(call.calleeId))) return call.callerId;
+  const ids = [
+    userId,
+    altUserId,
+    String(userId || '').toLowerCase(),
+    altUserId ? String(altUserId).toLowerCase() : null,
+  ].filter(Boolean).map(String);
+  const callerIds = (call.callerIds || [call.callerId]).filter(Boolean).map(String);
+  const calleeIds = (call.calleeIds || [call.calleeId]).filter(Boolean).map(String);
+  const isCaller = ids.some((id) => callerIds.includes(id) || callerIds.map((c) => c.toLowerCase()).includes(id.toLowerCase()));
+  if (isCaller) return call.calleeId;
+  const isCallee = ids.some((id) => calleeIds.includes(id) || calleeIds.map((c) => c.toLowerCase()).includes(id.toLowerCase()));
+  if (isCallee) return call.callerId;
   return null;
 }
 
@@ -3952,8 +3971,27 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const callerIds = Array.from(new Set([userId, socket.data.altUserId, callerDoc?._id ? String(callerDoc._id) : null, callerDoc?.name].filter(Boolean)));
-    const calleeIds = Array.from(new Set([to, calleeDoc?._id ? String(calleeDoc._id) : null, calleeDoc?.id ? String(calleeDoc.id) : null, calleeDoc?.name].filter(Boolean)));
+    const callerIds = Array.from(new Set([
+      userId,
+      socket.data.altUserId,
+      callerDoc?._id ? String(callerDoc._id) : null,
+      callerDoc?.id ? String(callerDoc.id) : null,
+      callerDoc?.name,
+      callerDoc?.email,
+      socket.data.username,
+      socket.data.displayName,
+    ].filter(Boolean).map(String)));
+
+    const calleeIds = Array.from(new Set([
+      to,
+      calleeDoc?._id ? String(calleeDoc._id) : null,
+      calleeDoc?.id ? String(calleeDoc.id) : null,
+      calleeDoc?.name,
+      calleeDoc?.email,
+      targetUser?.id ? String(targetUser.id) : null,
+      targetUser?._id ? String(targetUser._id) : null,
+      targetUser?.name,
+    ].filter(Boolean).map(String)));
 
     // Check blocks
     if (callerDoc?.blockedUsers?.some((b) => calleeIds.includes(String(b))) || calleeDoc?.blockedUsers?.some((b) => callerIds.includes(String(b)))) {
@@ -4015,6 +4053,8 @@ io.on('connection', (socket) => {
       id: crypto.randomUUID(),
       callerId: userId,
       calleeId: to,
+      callerIds,
+      calleeIds,
       type,
       status: 'ringing',
       createdAt,
@@ -4030,32 +4070,31 @@ io.on('connection', (socket) => {
       store.users.push(caller);
     }
 
-    // Emit to ALL callee rooms to ensure 100% receipt
-    calleeIds.forEach((cId) => {
-      emitToUser(cId, 'call:incoming', {
-        callId: call.id,
-        type,
-        createdAt,
-        restricted: restrictedForRecipient,
-        restrictionReason: restrictedForRecipient ? 'A BYTALK Plus or Pro subscription is required to accept video calls.' : null,
-        caller: sanitizeUser(caller) || { id: userId, name: caller?.name || 'BYTALK User' },
-      });
+    // Emit to ALL callee rooms with deduplication to ensure 100% receipt
+    emitToUserRooms(calleeIds, 'call:incoming', {
+      callId: call.id,
+      type,
+      createdAt,
+      restricted: restrictedForRecipient,
+      restrictionReason: restrictedForRecipient ? 'A BYTALK Plus or Pro subscription is required to accept video calls.' : null,
+      caller: sanitizeUser(caller) || { id: userId, name: caller?.name || 'BYTALK User' },
     });
 
     console.log(`Call ${call.id} is ringing for ${to}.`);
     acknowledge({ callId: call.id, status: 'ringing' });
     armCallTimeout(call, 'ringing', 35000, () => {
       finishCall(call, 'missed', null);
-      callerIds.forEach((id) => emitToUser(id, 'call:missed', { callId: call.id, status: 'missed' }));
-      calleeIds.forEach((id) => emitToUser(id, 'call:ended', { callId: call.id, status: 'missed' }));
+      emitToUserRooms(callerIds, 'call:missed', { callId: call.id, status: 'missed' });
+      emitToUserRooms(calleeIds, 'call:ended', { callId: call.id, status: 'missed' });
     });
   });
 
   socket.on('call:accept', async ({ callId } = {}, acknowledge = () => {}) => {
     console.log(`Call accept received from ${userId} for ${callId}.`);
     const call = activeCalls.get(callId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     if (!call || !isCallee || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
@@ -4066,36 +4105,43 @@ io.on('connection', (socket) => {
     call.status = 'connecting';
     call.acceptedAt = new Date().toISOString();
     saveCall(call);
-    emitToUser(call.callerId, 'call:accepted', { callId: call.id, status: 'connecting' });
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    emitToUserRooms(allCallerIds, 'call:accepted', { callId: call.id, status: 'connecting' });
     acknowledge({ ok: true });
     armCallTimeout(call, 'connecting', 45000, () => {
       finishCall(call, 'failed', null);
-      emitToUser(call.callerId, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
-      emitToUser(call.calleeId, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
+      const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+      emitToUserRooms(allCallerIds, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
+      emitToUserRooms(allCalleeIds, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
     });
   });
 
   socket.on('call:reject', ({ callId } = {}, acknowledge = () => {}) => {
     console.log(`Call reject received from ${userId} for ${callId}.`);
     const call = activeCalls.get(callId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     if (!call || !isCallee || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
     }
     finishCall(call, 'rejected', userId);
-    emitToUser(call.callerId, 'call:rejected', { callId: call.id, status: 'rejected' });
-    emitToUser(call.calleeId, 'call:ended', { callId: call.id, status: 'rejected' });
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    emitToUserRooms(allCallerIds, 'call:rejected', { callId: call.id, status: 'rejected' });
+    emitToUserRooms(allCalleeIds, 'call:ended', { callId: call.id, status: 'rejected' });
     acknowledge({ ok: true });
   });
 
   socket.on('call:signal', ({ callId, kind, signal } = {}, acknowledge = () => {}) => {
     const call = activeCalls.get(callId);
     const recipientId = call && participantForCall(call, userId, socket.data.altUserId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCaller = call && myIds.includes(String(call.callerId));
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const callerIds = (call?.callerIds || [call?.callerId]).filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCaller = call && myIds.some((id) => callerIds.includes(id) || callerIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     const validKind = ['offer', 'answer', 'ice'].includes(kind);
     const validRole = (kind !== 'offer' || isCaller) && (kind !== 'answer' || isCallee);
     let payloadSize = Infinity;
@@ -4103,11 +4149,13 @@ io.on('connection', (socket) => {
       payloadSize = JSON.stringify(signal).length;
     } catch {}
     if (!call || !['ringing', 'connecting', 'connected'].includes(call.status) || !recipientId || !validKind || !validRole || !signal || payloadSize > 100000) {
+      console.warn(`[call:signal] rejected: callExists=${Boolean(call)}, status=${call?.status}, recipientId=${recipientId}, validKind=${validKind}, validRole=${validRole}, payloadSize=${payloadSize}`);
       acknowledge({ error: 'Invalid or unauthorized call signal' });
       return;
     }
     console.log(`Call signal ${kind} for ${callId} from ${userId} to ${recipientId}.`);
-    emitToUser(recipientId, 'call:signal', { callId, kind, signal });
+    const targetIds = Array.from(new Set(isCaller ? calleeIds : callerIds));
+    emitToUserRooms(targetIds, 'call:signal', { callId, kind, signal });
     acknowledge({ ok: true });
   });
 
@@ -4126,8 +4174,10 @@ io.on('connection', (socket) => {
 
   socket.on('call:connected', ({ callId } = {}) => {
     const call = activeCalls.get(callId);
-    if (!call || !participantForCall(call, userId) || call.status === 'ringing') return;
-    for (const participantId of [call.callerId, call.calleeId]) {
+    if (!call || !participantForCall(call, userId, socket.data.altUserId) || call.status === 'ringing') return;
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    for (const participantId of [...allCallerIds, ...allCalleeIds]) {
       const reconnectTimer = callTimers.get(`disconnect:${call.id}:${participantId}`);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       callTimers.delete(`disconnect:${call.id}:${participantId}`);
@@ -4140,7 +4190,7 @@ io.on('connection', (socket) => {
       call.status = 'connected';
       saveCall(call);
 
-      // Enforce 5-minute free trial limit for unsubscribed users
+      // Enforce free trial limit for unsubscribed users
       Promise.all([
         User.findById(call.callerId),
         User.findById(call.calleeId),
@@ -4161,20 +4211,20 @@ io.on('connection', (socket) => {
               reason: 'free_trial_expired',
               endedAt: current.endedAt,
             };
-            emitToUser(current.callerId, 'call:ended', ended);
-            emitToUser(current.calleeId, 'call:ended', ended);
+            allCallerIds.forEach((id) => emitToUser(id, 'call:ended', ended));
+            allCalleeIds.forEach((id) => emitToUser(id, 'call:ended', ended));
           }, limitSec * 1000);
           callTimers.set(`trial:${call.id}`, trialTimer);
         }
       }).catch(() => {});
     }
-    emitToUser(call.callerId, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
-    emitToUser(call.calleeId, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
+    emitToUserRooms(allCallerIds, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
+    emitToUserRooms(allCalleeIds, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
   });
 
   socket.on('call:end', async ({ callId } = {}, acknowledge = () => {}) => {
     const call = activeCalls.get(callId);
-    if (!call || !participantForCall(call, userId)) {
+    if (!call || !participantForCall(call, userId, socket.data.altUserId)) {
       acknowledge({ error: 'This call is no longer available' });
       return;
     }
@@ -4193,8 +4243,10 @@ io.on('connection', (socket) => {
       durationSeconds: call.durationSeconds,
       type: call.type,
     };
-    emitToUser(call.callerId, 'call:ended', ended);
-    emitToUser(call.calleeId, 'call:ended', ended);
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    emitToUserRooms(allCallerIds, 'call:ended', ended);
+    emitToUserRooms(allCalleeIds, 'call:ended', ended);
     acknowledge({ ok: true, call: ended });
   });
 
@@ -4212,18 +4264,21 @@ io.on('connection', (socket) => {
       io.emit('presence:update', { userId, online: false });
     }
 
-    const callId = userCalls.get(userId);
+    const callId = userCalls.get(userId) || (socket.data.altUserId ? userCalls.get(socket.data.altUserId) : null);
     const call = activeCalls.get(callId);
     if (call) {
-      const otherUserId = participantForCall(call, userId);
-      emitToUser(otherUserId, 'call:state', { callId, status: 'reconnecting' });
+      const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+      const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+      const isCaller = allCallerIds.includes(String(userId)) || (socket.data.altUserId && allCallerIds.includes(String(socket.data.altUserId)));
+      const targetIds = isCaller ? allCalleeIds : allCallerIds;
+      targetIds.forEach((id) => emitToUser(id, 'call:state', { callId, status: 'reconnecting' }));
       const timerKey = `disconnect:${call.id}:${userId}`;
       const timer = setTimeout(() => {
         if (!activeCalls.has(callId) || (userSockets.get(userId)?.size || 0)) return;
         finishCall(call, 'ended', userId);
         const ended = { callId, status: 'ended', reason: 'disconnected' };
-        emitToUser(call.callerId, 'call:ended', ended);
-        emitToUser(call.calleeId, 'call:ended', ended);
+        allCallerIds.forEach((id) => emitToUser(id, 'call:ended', ended));
+        allCalleeIds.forEach((id) => emitToUser(id, 'call:ended', ended));
       }, 30000);
       timer.unref?.();
       callTimers.set(timerKey, timer);

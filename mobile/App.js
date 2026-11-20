@@ -2029,6 +2029,13 @@ function App() {
       }
     };
 
+    connection.onaddstream = (event) => {
+      if (event?.stream) {
+        console.log('[BYTALK call] onaddstream event received', { callId: peerRef.current?.callId });
+        setRemoteStream(event.stream);
+      }
+    };
+
     const updateConnectionState = () => {
       const state = connection.connectionState;
       const iceState = connection.iceConnectionState;
@@ -2064,9 +2071,14 @@ function App() {
       });
       await connection.setLocalDescription(offer);
       console.log('[BYTALK call] signaling offer', { callId });
-      socketRef.current?.emit('call:signal', { callId, kind: 'offer', signal: connection.localDescription || offer });
+      socketRef.current?.emit('call:signal', { callId, kind: 'offer', signal: connection.localDescription || offer }, (res) => {
+        if (res?.error) {
+          console.warn('[BYTALK call] offer signal response error:', res.error);
+        }
+      });
       updateCall((previous) => previous ? { ...previous, status: 'Connecting' } : previous);
     } catch (error) {
+      console.warn('[BYTALK call] createCallOffer error:', error?.message || error);
       setCallNotice(error.message || 'Could not start the media connection.');
     }
   }
@@ -2086,7 +2098,9 @@ function App() {
     try {
       if (kind === 'offer') {
         await connection.setRemoteDescription(makeSessionDescription(signal));
-        for (const candidate of pendingIceRef.current.splice(0)) {
+        const pendingForCall = (pendingIceByCallRef.current[callId] || []).splice(0);
+        const queuedIce = [...pendingIceRef.current.splice(0), ...pendingForCall];
+        for (const candidate of queuedIce) {
           try {
             await connection.addIceCandidate(makeIceCandidate(candidate));
           } catch (e) {}
@@ -2098,11 +2112,17 @@ function App() {
         });
         await connection.setLocalDescription(answer);
         console.log('[BYTALK call] signaling answer', { callId });
-        socketRef.current?.emit('call:signal', { callId, kind: 'answer', signal: connection.localDescription || answer });
+        socketRef.current?.emit('call:signal', { callId, kind: 'answer', signal: connection.localDescription || answer }, (res) => {
+          if (res?.error) {
+            console.warn('[BYTALK call] answer signal response error:', res.error);
+          }
+        });
         updateCall((previous) => previous ? { ...previous, status: 'Connecting' } : previous);
       } else if (kind === 'answer') {
         await connection.setRemoteDescription(makeSessionDescription(signal));
-        for (const candidate of pendingIceRef.current.splice(0)) {
+        const pendingForCall = (pendingIceByCallRef.current[callId] || []).splice(0);
+        const queuedIce = [...pendingIceRef.current.splice(0), ...pendingForCall];
+        for (const candidate of queuedIce) {
           try {
             await connection.addIceCandidate(makeIceCandidate(candidate));
           } catch (e) {}
@@ -2119,6 +2139,7 @@ function App() {
         }
       }
     } catch (error) {
+      console.warn('[BYTALK call] processCallSignal error:', error?.message || error);
       setCallNotice(error.message || 'Could not negotiate the media connection.');
     }
   }
@@ -2288,6 +2309,18 @@ function App() {
         return;
       }
       peerRef.current.callId = result.callId;
+      if (pendingIceByCallRef.current[result.callId]) {
+        const earlyCandidates = pendingIceByCallRef.current[result.callId].splice(0);
+        for (const candidate of earlyCandidates) {
+          if (peerRef.current?.connection?.remoteDescription) {
+            try {
+              peerRef.current.connection.addIceCandidate(makeIceCandidate(candidate));
+            } catch (e) {}
+          } else {
+            pendingIceRef.current.push(candidate);
+          }
+        }
+      }
       const ringingCall = { ...(callRef.current || initialCall), id: result.callId, status: 'Ringing' };
       callRef.current = ringingCall;
       updateCall(ringingCall);
@@ -2609,6 +2642,18 @@ function App() {
         console.log('[BYTALK call] call accepted', { callId, userId });
         ringtoneManager.stopRinging();
         if (peerRef.current) peerRef.current.callId = callId;
+        if (pendingIceByCallRef.current[callId]) {
+          const earlyCandidates = pendingIceByCallRef.current[callId].splice(0);
+          for (const candidate of earlyCandidates) {
+            if (peerRef.current?.connection?.remoteDescription) {
+              try {
+                peerRef.current.connection.addIceCandidate(makeIceCandidate(candidate));
+              } catch (e) {}
+            } else {
+              pendingIceRef.current.push(candidate);
+            }
+          }
+        }
         const current = callRef.current;
         if (!current?.id || current.id === callId) {
           const connectingCall = { ...(current || {}), id: callId, status: 'Connecting' };
@@ -2630,14 +2675,8 @@ function App() {
           ringtoneManager.stopRinging();
         }
         if (callRef.current?.id !== callId) return;
-        const connection = peerRef.current?.connection;
-        const locallyConnected = connection?.connectionState === 'connected'
-          || connection?.iceConnectionState === 'connected'
-          || connection?.iceConnectionState === 'completed';
-        console.log('[BYTALK call] server call state', { callId, status, locallyConnected });
-        if (status === 'connected' && !locallyConnected) return;
         const title = status === 'connected' ? 'Connected' : 'Reconnecting';
-        updateCall((previous) => previous ? { ...previous, status: title, connectedAt: connectedAt || previous.connectedAt } : previous);
+        updateCall((previous) => previous ? { ...previous, status: title, connectedAt: connectedAt || previous.connectedAt || new Date().toISOString() } : previous);
       });
       socket.on('call:missed', ({ callId, endedAt, durationSeconds }) => {
         ringtoneManager.stopRinging();
