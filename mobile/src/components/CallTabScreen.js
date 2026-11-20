@@ -116,14 +116,15 @@ export default function CallTabScreen({
     }
   };
 
-  const handleSendRequestLocal = (targetUser) => {
+  const handleSendRequestLocal = async (targetUser) => {
     const uid = targetUser.id || targetUser._id || targetUser.name || targetUser.displayName;
-    setSentMap((prev) => ({ ...prev, [uid]: true }));
     if (onSendFriendRequest) {
-      onSendFriendRequest(targetUser);
+      const requestSent = await onSendFriendRequest(targetUser);
+      if (requestSent === false) return;
     } else {
       Alert.alert('Friend Request Sent! 🤝', `Your friend request has been sent to ${targetUser.name || 'Co-learner'}.`);
     }
+    setSentMap((prev) => ({ ...prev, [uid]: true }));
   };
 
   const remainingSeconds = Math.max(0, freeTrialSecondsRemaining);

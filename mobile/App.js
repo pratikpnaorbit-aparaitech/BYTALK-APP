@@ -21,11 +21,15 @@ import {
   BackHandler,
   Modal,
   Animated,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { createPeerConnection, getLocalMediaStream, makeIceCandidate, makeSessionDescription, setAudioRoute, setMicrophoneMuted, startAudioRoute, stopAudioRoute, switchCamera } from './rtc';
 import CallAudio from './CallAudio';
 import CallVideo from './CallVideo';
@@ -44,6 +48,14 @@ import HistoryModal from './src/components/HistoryModal';
 import NotificationsModal from './src/components/NotificationsModal';
 
 const welcomeImage = require('./assets/bytalk-welcome-art.png');
+const MAX_PDF_SIZE_BYTES = 8 * 1024 * 1024;
+const CHAT_EMOJI_CATEGORIES = [
+  { id: 'faces', label: 'Faces', icon: 'happy-outline', emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😍', '🥰', '😘', '😋', '😜', '🤔', '😎', '😭', '😢', '😡', '🥳', '🤗', '🤩', '😴', '🙏', '✨', '👍', '👎', '👏'] },
+  { id: 'hands', label: 'Hands', icon: 'hand-left-outline', emojis: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🫰', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '✊', '👊', '🤛', '🤜', '💪', '🫶', '🙏', '👏', '🙌', '🤝', '👐', '🤲', '🖕'] },
+  { id: 'hearts', label: 'Hearts', icon: 'heart-outline', emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '♥️', '💌', '💋', '😍', '🥰', '😘', '😻', '💑', '💏', '🌹', '✨', '💐', '❤️‍🔥'] },
+  { id: 'nature', label: 'Nature', icon: 'leaf-outline', emojis: ['🐶', '🐱', '🐼', '🦊', '🐻', '🐸', '🐵', '🐣', '🦋', '🐝', '🌸', '🌻', '🌹', '🌷', '🌈', '☀️', '🌤️', '🌙', '⭐', '🔥', '🌊', '🍀', '🌱', '🌴', '🍁', '🌍', '☔', '❄️', '🌟', '🌺', '🌼', '🌿'] },
+  { id: 'food', label: 'Food', icon: 'fast-food-outline', emojis: ['🍎', '🍉', '🍓', '🍒', '🍑', '🥭', '🍍', '🥥', '🥑', '🍕', '🍔', '🍟', '🌮', '🍜', '🍣', '🍩', '🍪', '🎂', '🍰', '🍦', '☕', '🧋', '🥤', '🍿', '🥗', '🍫', '🥐', '🍞', '🧁', '🍇', '🍌', '🥳'] },
+];
 
 export const SERIF_FONT_FAMILY = Platform.OS === 'web'
   ? '"Times New Roman", Times, Georgia, "Nimbus Roman No9 L", serif'
@@ -53,12 +65,6 @@ const PRESET_ATTACHMENT_IMAGES = [
   { id: 'img1', name: 'Vocab_Flashcard.jpg', label: 'Daily Vocab Card', size: '1.2 MB', url: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=600&q=80', type: 'image' },
   { id: 'img2', name: 'Dialogue_Scene.jpg', label: 'Coffee Shop Scene', size: '1.8 MB', url: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=600&q=80', type: 'image' },
   { id: 'img3', name: 'Study_Notes.jpg', label: 'Study Notes Sheet', size: '950 KB', url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=600&q=80', type: 'image' },
-];
-
-const PRESET_ATTACHMENT_FILES = [
-  { id: 'doc1', name: 'English_Grammar_CheatSheet.pdf', size: '1.4 MB', type: 'file' },
-  { id: 'doc2', name: 'Daily_50_Idioms_Guide.pdf', size: '850 KB', type: 'file' },
-  { id: 'doc3', name: 'Speaking_Practice_Notes.docx', size: '420 KB', type: 'file' },
 ];
 
 export const getPartnerAvatarUrl = (partner) => {
@@ -1188,8 +1194,11 @@ function App() {
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [subscriptionBusy, setSubscriptionBusy] = useState(false);
   const [draft, setDraft] = useState('');
+  const chatTextInputRef = useRef(null);
   const [pendingAttachment, setPendingAttachment] = useState(null);
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [emojiCategory, setEmojiCategory] = useState('faces');
   const [vocab, setVocab] = useState([]);
   const [word, setWord] = useState('');
   const [backendUp, setBackendUp] = useState(false);
@@ -1432,7 +1441,7 @@ function App() {
   };
 
   const handleSendFriendRequest = async (targetUser) => {
-    if (!targetUser) return;
+    if (!targetUser) return false;
     const targetId = typeof targetUser === 'string'
       ? targetUser
       : (targetUser.id || targetUser._id || targetUser.userId || targetUser.callerId || targetUser.peer?.id || targetUser.peer?._id || targetUser.displayName || targetUser.name || targetUser.peer?.name);
@@ -1440,21 +1449,22 @@ function App() {
 
     if (!targetId && !targetName) {
       Alert.alert('Notice', 'Could not locate co-learner details.');
-      return;
+      return false;
     }
 
     if (String(targetId) === String(userId)) {
       Alert.alert('Notice', 'You cannot send a friend request to yourself.');
-      return;
+      return false;
     }
 
     // Check if this co-learner has already sent an incoming friend request -> accept immediately!
     const incomingReq = findIncomingFriendRequest(targetUser);
     if (incomingReq) {
-      handleAcceptFriendRequest(incomingReq);
-      return;
+      await handleAcceptFriendRequest(incomingReq);
+      return true;
     }
 
+    const optimisticRequestId = `temp-${Date.now()}`;
     try {
       setFriendRequestSentInCall(true);
       // Optimistically add to sent requests so UI immediately reflects pending sent state
@@ -1468,7 +1478,7 @@ function App() {
         return [
           ...prev,
           {
-            id: `temp-${Date.now()}`,
+            id: optimisticRequestId,
             to: {
               id: targetId,
               name: targetName,
@@ -1512,8 +1522,17 @@ function App() {
           res?.message || `Your friend request has been sent to ${targetName}. When accepted, you can connect directly anytime!`
         );
       }
+      return true;
     } catch (err) {
-      Alert.alert('Friend Request', err.message || 'Could not send friend request.');
+      setFriendRequestSentInCall(false);
+      setSentFriendRequests((prev) => prev.filter((requestItem) => requestItem.id !== optimisticRequestId));
+      const message = err.message || 'Could not send friend request.';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert(`Friend Request\n\n${message}`);
+      } else {
+        Alert.alert('Friend Request', message);
+      }
+      return false;
     }
   };
 
@@ -1883,6 +1902,7 @@ function App() {
       return;
     }
     setSelected(partner);
+    setShowEmojiPicker(false);
     setChatError('');
     setMessageBanner(null);
     setScreen('chat');
@@ -3229,6 +3249,129 @@ function App() {
     }
   }
 
+  async function pickPdfAttachment() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+        multiple: false,
+        base64: false,
+      });
+      if (result.canceled) return;
+
+      const file = result.assets?.[0];
+      if (!file) throw new Error('The selected PDF could not be read.');
+      const isPdf = file.mimeType?.toLowerCase() === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      if (!isPdf) throw new Error('Please select a PDF file.');
+      if (file.size && file.size > MAX_PDF_SIZE_BYTES) {
+        throw new Error('PDF files must be 8 MB or smaller.');
+      }
+
+      const base64 = Platform.OS === 'web'
+        ? await new Promise((resolve, reject) => {
+            if (!file.file) {
+              reject(new Error('The selected PDF could not be read in this browser.'));
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+              if (typeof reader.result !== 'string') {
+                reject(new Error('The selected PDF could not be read.'));
+                return;
+              }
+              const separator = reader.result.indexOf(',');
+              if (separator < 0) {
+                reject(new Error('The selected PDF could not be read.'));
+                return;
+              }
+              resolve(reader.result.slice(separator + 1));
+            };
+            reader.onerror = () => reject(new Error('The selected PDF could not be read.'));
+            reader.readAsDataURL(file.file);
+          })
+        : await FileSystem.readAsStringAsync(file.uri, { encoding: 'base64' });
+
+      const base64Padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+      const sizeBytes = Math.floor((base64.length * 3) / 4) - base64Padding;
+      if (sizeBytes > MAX_PDF_SIZE_BYTES) {
+        throw new Error('PDF files must be 8 MB or smaller.');
+      }
+
+      setPendingAttachment({
+        type: 'file',
+        name: file.name,
+        size: sizeBytes >= 1024 * 1024
+          ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+          : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`,
+        data: base64,
+      });
+      setChatError('');
+      setShowAttachmentModal(false);
+    } catch (error) {
+      setShowAttachmentModal(false);
+      setChatError(error.message || 'Could not select the PDF.');
+    }
+  }
+
+  async function openAttachment(message) {
+    if (!message?.attachmentUrl) return;
+    const fileName = message.attachmentName || 'attachment.pdf';
+    const attachmentUrl = message.attachmentUrl;
+
+    try {
+      if (Platform.OS === 'web') {
+        let downloadUrl = attachmentUrl;
+        if (!attachmentUrl.startsWith('data:')) {
+          const response = await fetch(
+            attachmentUrl.startsWith('http') ? attachmentUrl : `${API}${attachmentUrl}`,
+            { headers: { Authorization: `Bearer ${activeAuthToken}` } }
+          );
+          if (!response.ok) throw new Error(`Could not download PDF (${response.status}).`);
+          downloadUrl = URL.createObjectURL(await response.blob());
+        }
+
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        if (downloadUrl.startsWith('blob:')) {
+          window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+        }
+        return;
+      }
+
+      const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+      if (!directory) throw new Error('No temporary file storage is available on this device.');
+      const localUri = `${directory}${message.id}.pdf`;
+      const existingFile = await FileSystem.getInfoAsync(localUri);
+      if (existingFile.exists) await FileSystem.deleteAsync(localUri);
+      if (attachmentUrl.startsWith('data:application/pdf;base64,')) {
+        await FileSystem.writeAsStringAsync(
+          localUri,
+          attachmentUrl.slice('data:application/pdf;base64,'.length),
+          { encoding: 'base64' }
+        );
+      } else {
+        const response = await FileSystem.downloadAsync(
+          attachmentUrl.startsWith('http') ? attachmentUrl : `${API}${attachmentUrl}`,
+          localUri,
+          { headers: { Authorization: `Bearer ${activeAuthToken}` } }
+        );
+        if (response.status < 200 || response.status >= 300) {
+          throw new Error(`Could not download PDF (${response.status}).`);
+        }
+      }
+      if (!(await Sharing.isAvailableAsync())) {
+        throw new Error('PDF sharing is not available on this device.');
+      }
+      await Sharing.shareAsync(localUri, { mimeType: 'application/pdf', dialogTitle: fileName });
+    } catch (error) {
+      setChatError(error.message || 'Could not download the PDF.');
+    }
+  }
+
   async function send(attachmentOverride = null) {
     const attach = attachmentOverride || pendingAttachment;
     if (!draft.trim() && !attach) return;
@@ -3251,9 +3394,11 @@ function App() {
       attachmentUrl: attach?.url || null,
       attachmentName: attach?.name || null,
       attachmentSize: attach?.size || null,
+      attachmentData: attach?.data || null,
     };
     setDraft('');
     setPendingAttachment(null);
+    setShowEmojiPicker(false);
 
     // If chatting with sample partner from referral design, append locally
     if (selected.id && String(selected.id).startsWith('sample-')) {
@@ -3263,7 +3408,9 @@ function App() {
         to: selected.id,
         text,
         attachmentType: attach?.type || null,
-        attachmentUrl: attach?.url || null,
+        attachmentUrl: attach?.data
+          ? `data:application/pdf;base64,${attach.data}`
+          : attach?.url || null,
         attachmentName: attach?.name || null,
         attachmentSize: attach?.size || null,
         at: new Date().toISOString(),
@@ -3317,6 +3464,24 @@ function App() {
     } finally {
       setLoadingOlderMessages(false);
     }
+  }
+
+  function toggleEmojiPicker() {
+    if (showEmojiPicker) {
+      setShowEmojiPicker(false);
+      chatTextInputRef.current?.focus();
+      return;
+    }
+    Keyboard.dismiss();
+    setShowEmojiPicker(true);
+  }
+
+  function insertChatEmoji(emoji) {
+    updateDraft(`${draft}${emoji}`);
+  }
+
+  function deleteChatEmoji() {
+    updateDraft(Array.from(draft).slice(0, -1).join(''));
   }
 
   function updateDraft(text) {
@@ -4976,30 +5141,58 @@ function App() {
                           <Txt bold size={15} color={navy} style={{ marginBottom: 10 }}>
                             Find More Co-learners 🌐
                           </Txt>
-                          {searchedNonFriends.map((p) => (
-                            <View key={p.id} style={styles.partnerCard}>
-                              <View style={styles.partnerInfoRow}>
-                                <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3' }]}>
-                                  {p.avatarUrl ? (
-                                    <Image source={{ uri: p.avatarUrl }} style={styles.partnerAvatarImage} />
-                                  ) : (
-                                    <Txt size={18} bold color={orange}>{(p.displayName || p.name || '?').charAt(0).toUpperCase()}</Txt>
-                                  )}
+                          {searchedNonFriends.map((p) => {
+                            const isFriend = checkIsFriend(p);
+                            const incomingRequest = findIncomingFriendRequest(p);
+                            const isRequestSent = Boolean(findSentFriendRequest(p));
+                            const isUnavailable = isFriend || isRequestSent;
+                            const buttonLabel = isFriend
+                              ? 'Friends'
+                              : incomingRequest ? 'Accept' : isRequestSent ? 'Request Sent' : 'Add Friend';
+                            return (
+                              <View key={p.id} style={styles.partnerCard}>
+                                <View style={styles.partnerInfoRow}>
+                                  <View style={[styles.avatarCircle, { backgroundColor: '#FFE0D3' }]}>
+                                    {p.avatarUrl ? (
+                                      <Image source={{ uri: p.avatarUrl }} style={styles.partnerAvatarImage} />
+                                    ) : (
+                                      <Txt size={18} bold color={orange}>{(p.displayName || p.name || '?').charAt(0).toUpperCase()}</Txt>
+                                    )}
+                                  </View>
+                                  <View style={{ flex: 1, marginLeft: 12 }}>
+                                    <Txt bold size={15}>{p.displayName || p.name}</Txt>
+                                    <Txt size={11} color={muted}>{p.country || 'Global'} · {p.level || 'Beginner'}</Txt>
+                                  </View>
+                                  <TouchableOpacity
+                                    onPress={() => incomingRequest
+                                      ? handleAcceptFriendRequest(incomingRequest)
+                                      : handleSendFriendRequest(p)}
+                                    disabled={isUnavailable}
+                                    style={[
+                                      styles.discoverAddFriendBtn,
+                                      isUnavailable && { backgroundColor: '#DCFCE7' },
+                                      incomingRequest && { backgroundColor: '#15803D' },
+                                    ]}
+                                  >
+                                    <Ionicons
+                                      name={isFriend ? 'checkmark-circle' : incomingRequest ? 'checkmark' : isRequestSent ? 'checkmark' : 'person-add-outline'}
+                                      size={14}
+                                      color={isUnavailable ? '#166534' : '#FFFFFF'}
+                                      style={{ marginRight: 4 }}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.discoverAddFriendBtnText,
+                                        isUnavailable && { color: '#166534' },
+                                      ]}
+                                    >
+                                      {buttonLabel}
+                                    </Text>
+                                  </TouchableOpacity>
                                 </View>
-                                <View style={{ flex: 1, marginLeft: 12 }}>
-                                  <Txt bold size={15}>{p.displayName || p.name}</Txt>
-                                  <Txt size={11} color={muted}>{p.country || 'Global'} · {p.level || 'Beginner'}</Txt>
-                                </View>
-                                <TouchableOpacity
-                                  onPress={() => handleSendFriendRequest(p)}
-                                  style={styles.discoverAddFriendBtn}
-                                >
-                                  <Ionicons name="person-add-outline" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                                  <Text style={styles.discoverAddFriendBtnText}>Add Friend</Text>
-                                </TouchableOpacity>
                               </View>
-                            </View>
-                          ))}
+                            );
+                          })}
                         </View>
                       )}
                     </>
@@ -5263,7 +5456,13 @@ function App() {
 
                           {/* File Attachment Card */}
                           {m.attachmentType === 'file' ? (
-                            <View style={styles.chatFileBox}>
+                            <TouchableOpacity
+                              onPress={() => openAttachment(m)}
+                              disabled={!m.attachmentUrl}
+                              style={styles.chatFileBox}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Download ${m.attachmentName || 'PDF attachment'}`}
+                            >
                               <View style={styles.chatFileIconCircle}>
                                 <Ionicons name="document-text" size={22} color="#EF4444" />
                               </View>
@@ -5272,11 +5471,11 @@ function App() {
                                   {m.attachmentName || 'Document.pdf'}
                                 </Text>
                                 <Text style={styles.chatFileSize}>
-                                  {m.attachmentSize || 'Study Notes'} · PDF
+                                  {m.attachmentSize || 'PDF'} · Tap to download
                                 </Text>
                               </View>
                               <Ionicons name="arrow-down-circle" size={22} color="#7C3AED" />
-                            </View>
+                            </TouchableOpacity>
                           ) : null}
 
                           {/* Text Content */}
@@ -5307,6 +5506,77 @@ function App() {
               {/* Bottom Message Input Bar */}
               {hasMessageEntitlement(selected) ? (
                 <View style={styles.chatBottomBar}>
+                  {showEmojiPicker ? (
+                    <View style={styles.chatEmojiKeyboard}>
+                      <View style={styles.chatEmojiKeyboardHeader}>
+                        <Text style={styles.chatEmojiKeyboardTitle}>Emoji</Text>
+                        <View style={styles.chatEmojiKeyboardActions}>
+                          <TouchableOpacity
+                            onPress={deleteChatEmoji}
+                            disabled={!draft}
+                            style={styles.chatEmojiKeyboardAction}
+                            accessibilityRole="button"
+                            accessibilityLabel="Delete last character"
+                          >
+                            <Ionicons name="backspace-outline" size={21} color={draft ? '#475569' : '#CBD5E1'} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => setShowEmojiPicker(false)}
+                            style={styles.chatEmojiKeyboardAction}
+                            accessibilityRole="button"
+                            accessibilityLabel="Close emoji keyboard"
+                          >
+                            <Ionicons name="close" size={20} color="#64748B" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.chatEmojiCategoryRow}
+                      >
+                        {CHAT_EMOJI_CATEGORIES.map((category) => {
+                          const isActive = emojiCategory === category.id;
+                          return (
+                            <TouchableOpacity
+                              key={category.id}
+                              onPress={() => setEmojiCategory(category.id)}
+                              style={[styles.chatEmojiCategoryButton, isActive && styles.chatEmojiCategoryButtonActive]}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${category.label} emojis`}
+                              accessibilityState={{ selected: isActive }}
+                            >
+                              <Ionicons
+                                name={category.icon}
+                                size={18}
+                                color={isActive ? '#7C3AED' : '#64748B'}
+                              />
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                      <ScrollView
+                        style={styles.chatEmojiGridScroll}
+                        contentContainerStyle={styles.chatEmojiGrid}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="always"
+                      >
+                        {(CHAT_EMOJI_CATEGORIES.find((category) => category.id === emojiCategory) || CHAT_EMOJI_CATEGORIES[0]).emojis.map((emoji, index) => (
+                          <TouchableOpacity
+                            key={`${emoji}-${index}`}
+                            onPress={() => insertChatEmoji(emoji)}
+                            style={styles.chatEmojiCell}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Insert ${emoji}`}
+                          >
+                            <Text style={styles.chatEmojiText}>{emoji}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                      <Text style={styles.chatEmojiKeyboardHint}>Tap an emoji to add it to your message</Text>
+                    </View>
+                  ) : null}
+
                   {/* Pending Attachment Banner */}
                   {pendingAttachment ? (
                     <View style={styles.chatPendingBanner}>
@@ -5328,16 +5598,33 @@ function App() {
                   <View style={styles.chatInputRow}>
                     <View style={styles.chatInputCapsule}>
                       <TextInput
+                        ref={chatTextInputRef}
                         placeholder="Type your message..."
                         placeholderTextColor="#94A3B8"
                         value={draft}
                         onChangeText={updateDraft}
+                        onFocus={() => setShowEmojiPicker(false)}
                         style={styles.chatTextInput}
                         multiline
                       />
 
                       <TouchableOpacity
-                        onPress={() => setShowAttachmentModal(true)}
+                        onPress={toggleEmojiPicker}
+                        style={styles.chatAttachBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={showEmojiPicker ? 'Close emoji keyboard' : 'Open emoji keyboard'}
+                        accessibilityState={{ expanded: showEmojiPicker }}
+                      >
+                        <Text style={{ fontSize: 20, lineHeight: 24 }}>
+                          {showEmojiPicker ? '⌨️' : '😀'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowEmojiPicker(false);
+                          setShowAttachmentModal(true);
+                        }}
                         style={styles.chatAttachBtn}
                         accessibilityLabel="Attach photo or file"
                       >
@@ -6993,30 +7280,24 @@ function App() {
                   ))}
                 </View>
 
-                {/* SECTION 2: DOCUMENTS & FILES */}
-                <Text style={[styles.waSectionHeading, { marginTop: 16 }]}>📄 Share Practice Notes & File</Text>
-                <View style={{ gap: 8 }}>
-                  {PRESET_ATTACHMENT_FILES.map((doc) => (
-                    <TouchableOpacity
-                      key={doc.id}
-                      onPress={() => {
-                        setPendingAttachment(doc);
-                        setShowAttachmentModal(false);
-                      }}
-                      style={styles.waDocRow}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.waDocIconCircle}>
-                        <Ionicons name="document-text" size={20} color="#DC2626" />
-                      </View>
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={styles.waDocTitle} numberOfLines={1}>{doc.name}</Text>
-                        <Text style={styles.waDocSub}>{doc.size} · PDF / Document</Text>
-                      </View>
-                      <Ionicons name="arrow-up-circle-outline" size={20} color="#008069" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {/* SECTION 2: PDF FILE PICKER */}
+                <Text style={[styles.waSectionHeading, { marginTop: 16 }]}>📄 Share a PDF</Text>
+                <TouchableOpacity
+                  onPress={pickPdfAttachment}
+                  style={styles.waDocRow}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose a PDF file"
+                >
+                  <View style={styles.waDocIconCircle}>
+                    <Ionicons name="document-text" size={20} color="#DC2626" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.waDocTitle}>Choose PDF from this device</Text>
+                    <Text style={styles.waDocSub}>PDF only · Up to 8 MB</Text>
+                  </View>
+                  <Ionicons name="arrow-up-circle-outline" size={20} color="#008069" />
+                </TouchableOpacity>
               </View>
             </View>
           </Modal>
@@ -9837,10 +10118,11 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   chatBubbleContainer: {
+    width: '100%',
     marginBottom: 10,
-    maxWidth: '82%',
   },
   chatBubble: {
+    maxWidth: '82%',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 18,
@@ -9861,6 +10143,7 @@ const styles = StyleSheet.create({
   chatBubbleText: {
     fontSize: 14.5,
     lineHeight: 21,
+    ...(Platform.OS === 'web' ? { overflowWrap: 'anywhere', wordBreak: 'break-word' } : {}),
   },
   chatBubbleTextMe: {
     color: '#1E1B4B',
@@ -9925,6 +10208,83 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+  },
+  chatEmojiKeyboard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 18,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  chatEmojiKeyboardHeader: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  chatEmojiKeyboardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  chatEmojiKeyboardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  chatEmojiKeyboardAction: {
+    width: 32,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatEmojiCategoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  chatEmojiCategoryButton: {
+    width: 36,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  chatEmojiCategoryButtonActive: {
+    backgroundColor: '#EDE9FE',
+  },
+  chatEmojiGridScroll: {
+    maxHeight: 152,
+  },
+  chatEmojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  chatEmojiCell: {
+    width: '12.5%',
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  chatEmojiText: {
+    fontSize: 22,
+  },
+  chatEmojiKeyboardHint: {
+    paddingHorizontal: 10,
+    paddingBottom: 8,
+    textAlign: 'center',
+    color: '#94A3B8',
+    fontSize: 10,
   },
   chatPendingBanner: {
     flexDirection: 'row',
