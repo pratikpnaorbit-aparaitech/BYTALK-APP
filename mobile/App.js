@@ -2851,8 +2851,25 @@ function App() {
       if (url) handleDeepLink({ url });
     });
 
+    let onMsg = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (window.location?.href && (window.location.href.includes('payment-success') || window.location.href.includes('payment_id'))) {
+        handleDeepLink({ url: window.location.href });
+      }
+      onMsg = (e) => {
+        if (e.data?.type === 'BYTALK_PAYMENT_SUCCESS' || e.data?.type === 'PAYMENT_SUCCESS') {
+          loadSubscription().catch(() => {});
+          Alert.alert('🎉 PRO Activated!', 'Your payment was confirmed. All features are now unlocked!');
+        }
+      };
+      window.addEventListener('message', onMsg);
+    }
+
     return () => {
       sub.remove();
+      if (onMsg && typeof window !== 'undefined') {
+        window.removeEventListener('message', onMsg);
+      }
     };
   }, []);
 

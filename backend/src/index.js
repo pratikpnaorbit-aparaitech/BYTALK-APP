@@ -1433,10 +1433,14 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
         customer.contact = cleanPhone.slice(-10);
       }
 
-      const host = req.get('host') || 'k-app.onrender.com';
+      const clientOrigin = req.body?.returnUrl
+        || req.headers.origin
+        || (req.headers.referer ? new URL(req.headers.referer).origin : null)
+        || '';
+      const host = req.get('host') || 'bytalk-app.onrender.com';
       const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
       const scheme = isLocal ? req.protocol : 'https';
-      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}`;
+      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}${clientOrigin ? `&returnUrl=${encodeURIComponent(clientOrigin)}` : ''}`;
 
       const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
         method: 'POST',
@@ -1700,6 +1704,7 @@ app.post('/api/subscription/razorpay/check-payment-status', requireAuth, async (
 app.get('/api/subscription/razorpay/callback', async (req, res) => {
   const { userId, planId, duration = 'PRO' } = req.query;
   const paymentId = req.query.razorpay_payment_id || req.query.razorpay_payment_link_id;
+  const returnUrl = req.query.returnUrl || req.query.clientOrigin || '';
 
   if (userId) {
     try {
@@ -1720,6 +1725,21 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
         user.subscriptionExpiresAt = expiresAt;
         user.subscriptionRenewalStatus = 'not_renewing';
         await user.save();
+
+        const cachedUser = store.users.find((u) => String(u.id) === String(user._id) || String(u._id) === String(user._id));
+        if (cachedUser) {
+          cachedUser.subscriptionPlan = user.subscriptionPlan;
+          cachedUser.subscriptionStatus = user.subscriptionStatus;
+          cachedUser.subscriptionExpiresAt = user.subscriptionExpiresAt;
+        }
+
+        emitToUserRooms([String(user._id), user.id, user.name], 'subscription:updated', {
+          plan: { id: user.subscriptionPlan, name: duration },
+          status: 'active',
+          expiresAt: expiresAt.toISOString(),
+          subscription: entitlementPayload(user),
+          message: `🎉 Payment confirmed! Your BYTALK subscription (${duration}) is now active.`,
+        });
       }
     } catch (e) {
       console.warn('[Callback User Update Error]', e.message);
@@ -1729,20 +1749,36 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
   const html = `<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Payment Successful - BYTALK</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0; padding: 24px; background: #0B0F19; color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 85vh; text-align: center;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; text-align: center;
     }
-    .card { background: #1A1D2E; border: 1px solid #10B981; border-radius: 20px; padding: 32px 24px; max-width: 380px; width: 100%; box-shadow: 0 10px 30px rgba(16,185,129,0.2); }
+    .card {
+      background: #1A1D2E; border: 1px solid #10B981; border-radius: 20px;
+      padding: 36px 28px; max-width: 420px; width: 100%;
+      box-shadow: 0 10px 40px rgba(16,185,129,0.25);
+    }
     .icon { font-size: 58px; margin-bottom: 12px; }
-    h2 { color: #10B981; margin: 0 0 8px 0; font-size: 24px; }
-    p { color: #9CA3AF; font-size: 14px; line-height: 1.5; margin: 0 0 24px 0; }
-    .btn { background: #5843E8; color: white; display: block; padding: 14px 20px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 16px; transition: background 0.2s; }
-    .btn:hover { background: #4732D6; }
+    h2 { color: #10B981; margin: 0 0 10px 0; font-size: 26px; font-weight: 800; }
+    p { color: #9CA3AF; font-size: 15px; line-height: 1.5; margin: 0 0 28px 0; }
+    .btn {
+      background: #5843E8; color: white; display: block; width: 100%;
+      padding: 15px 20px; border-radius: 12px; border: none; cursor: pointer;
+      text-decoration: none; font-weight: 700; font-size: 16px; transition: all 0.2s;
+    }
+    .btn:hover { background: #4732D6; transform: translateY(-1px); }
+    .sub-link {
+      display: inline-block; margin-top: 16px; color: #818CF8; font-size: 14px;
+      text-decoration: none; font-weight: 600; cursor: pointer;
+    }
+    .sub-link:hover { text-decoration: underline; color: #A5B4FC; }
+    .hint { margin-top: 14px; font-size: 12px; color: #6B7280; }
   </style>
 </head>
 <body>
@@ -1750,12 +1786,83 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
     <div class="icon">🎉</div>
     <h2>Payment Successful!</h2>
     <p>Your <strong>${duration}</strong> subscription is active. All premium features, voice calling, and ARYA AI are unlocked.</p>
-    <a href="bytalk://payment-success" class="btn">Return to BYTALK App</a>
+    <button id="returnBtn" class="btn" onclick="returnToApp()">Return to BYTALK App</button>
+    <a id="webFallbackLink" class="sub-link" style="display:none;" onclick="returnToApp()">Open in Web App &rarr;</a>
+    <div id="statusHint" class="hint">Returning to your app automatically...</div>
   </div>
+
   <script>
+    var returnUrl = ${JSON.stringify(returnUrl || '')};
+    var planId = ${JSON.stringify(planId || 'pro')};
+    var duration = ${JSON.stringify(duration || 'PRO')};
+
+    function getWebDestination() {
+      if (returnUrl && returnUrl.startsWith('http')) {
+        var sep = returnUrl.indexOf('?') !== -1 ? '&' : '?';
+        return returnUrl + sep + 'payment-success=true&planId=' + encodeURIComponent(planId) + '&duration=' + encodeURIComponent(duration);
+      }
+      return null;
+    }
+
+    var webDest = getWebDestination();
+    if (webDest) {
+      var fallbackEl = document.getElementById('webFallbackLink');
+      if (fallbackEl) fallbackEl.style.display = 'inline-block';
+    }
+
+    function returnToApp() {
+      // 1. If window was opened by the app in a popup / new window
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'BYTALK_PAYMENT_SUCCESS', planId: planId, duration: duration }, '*');
+          window.close();
+          return;
+        } catch (e) {}
+      }
+
+      // 2. If we know the web app URL
+      if (webDest) {
+        window.location.href = webDest;
+        return;
+      }
+
+      // 3. Mobile devices (Android / iOS)
+      var ua = navigator.userAgent || '';
+      var isAndroid = /Android/i.test(ua);
+      var isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+      if (isAndroid) {
+        window.location.href = 'intent://payment-success#Intent;scheme=bytalk;package=com.bytalk.languageapp;end';
+        setTimeout(function() {
+          try { window.location.href = 'bytalk://payment-success'; } catch(e) {}
+        }, 500);
+        return;
+      }
+
+      if (isIOS) {
+        window.location.href = 'bytalk://payment-success';
+        return;
+      }
+
+      // 4. Desktop browser fallback:
+      if (window.history.length > 2) {
+        window.history.go(-2);
+        return;
+      } else if (window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+
+      // 5. Final fallback
+      window.location.href = '/';
+    }
+
+    // Auto-return after 1.5 seconds
     setTimeout(function() {
-      try { window.location.href = 'bytalk://payment-success'; } catch(e) {}
-    }, 1200);
+      try {
+        returnToApp();
+      } catch(e) {}
+    }, 1500);
   </script>
 </body>
 </html>`;
@@ -1781,10 +1888,14 @@ app.get('/api/subscription/razorpay/checkout-page', async (req, res) => {
       if (cleanPhone.length >= 10 && !/^(.)\1+$/.test(cleanPhone)) {
         customer.contact = cleanPhone.slice(-10);
       }
-      const host = req.get('host') || 'k-app.onrender.com';
+      const clientOrigin = req.query?.returnUrl
+        || req.headers.origin
+        || (req.headers.referer ? new URL(req.headers.referer).origin : null)
+        || '';
+      const host = req.get('host') || 'bytalk-app.onrender.com';
       const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
       const scheme = isLocal ? req.protocol : 'https';
-      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${token || ''}&planId=${planId}&duration=PRO`;
+      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${token || ''}&planId=${planId}&duration=PRO${clientOrigin ? `&returnUrl=${encodeURIComponent(clientOrigin)}` : ''}`;
 
       const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
         method: 'POST',

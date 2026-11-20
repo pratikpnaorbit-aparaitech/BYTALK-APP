@@ -255,11 +255,12 @@ export default function ProSubscriptionScreen({
             amount: finalPrice,
             duration: selectedPlan.duration,
             coupon: couponApplied ? 'SALE25' : null,
+            returnUrl: typeof window !== 'undefined' && window.location ? (window.location.origin + window.location.pathname) : null,
           }),
         });
       }
 
-      const keyId = orderData?.keyId || 'rzp_live_TwmnKWWhKKWPcz';
+      const keyId = orderData?.keyId || 'rzp_live_TzYofi2xRP46cu';
       const orderId = orderData?.orderId;
       const paymentLink = orderData?.paymentLink;
 
