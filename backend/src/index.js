@@ -2261,6 +2261,16 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
 
 // ==================== FRIENDS SYSTEM ====================
 // Persistent Friendships & Friend Requests (MongoDB backed)
+app.get('/api/debug/inspect', async (req, res) => {
+  try {
+    const users = await User.find({}, 'name displayName email subscriptionPlan subscriptionStatus subscriptionExpiresAt').lean();
+    const friendships = await Friendship.find({}).lean();
+    res.json({ users, friendships });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/friends', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
@@ -2528,8 +2538,27 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Cannot send friend request to yourself' });
     }
 
-    const senderIds = Array.from(new Set([currentUserId, String(sender?._id || ''), String(sender?.id || '')].filter(Boolean)));
-    const targetIds = Array.from(new Set([actualTargetId, String(target?._id || ''), String(target?.id || '')].filter(Boolean)));
+    const senderIds = Array.from(new Set([
+      currentUserId,
+      String(sender?._id || ''),
+      String(sender?.id || ''),
+      sender?.email,
+      sender?.name,
+      sender?.displayName,
+      sender?.email ? String(sender.email).toLowerCase() : null,
+      sender?.name ? String(sender.name).toLowerCase() : null,
+    ].filter(Boolean).map(String)));
+
+    const targetIds = Array.from(new Set([
+      actualTargetId,
+      String(target?._id || ''),
+      String(target?.id || ''),
+      target?.email,
+      target?.name,
+      target?.displayName,
+      target?.email ? String(target.email).toLowerCase() : null,
+      target?.name ? String(target.name).toLowerCase() : null,
+    ].filter(Boolean).map(String)));
 
     // Check if friendship already exists
     const existing = await Friendship.findOne({
