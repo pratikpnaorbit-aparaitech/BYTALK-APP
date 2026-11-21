@@ -23,10 +23,15 @@ import {
   ToggleRight,
   Check,
   ArrowRight,
+  House,
 } from 'lucide-react';
 import './style.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+function newHomeContentId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function App() {
   const [tab, setTab] = useState('Overview');
@@ -37,6 +42,9 @@ function App() {
   const [rooms, setRooms] = useState([]);
   const [reports, setReports] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [homeContent, setHomeContent] = useState({ sections: [] });
+  const [expandedHomeSectionId, setExpandedHomeSectionId] = useState(null);
+  const [homeContentSubmitting, setHomeContentSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -77,7 +85,7 @@ function App() {
   async function load() {
     setLoading(true);
     try {
-      const [sRes, uRes, subRes, pRes, rRes, repRes, audRes] = await Promise.all([
+      const [sRes, uRes, subRes, pRes, rRes, repRes, audRes, homeRes] = await Promise.all([
         fetch(`${API}/api/stats`).then((r) => r.json()),
         fetch(`${API}/api/admin/users`).then((r) => r.json()).catch(() => fetch(`${API}/api/users`).then((r) => r.json())),
         fetch(`${API}/api/admin/subscriptions`).then((r) => r.json()).catch(() => ({ subscriptions: [] })),
@@ -85,6 +93,7 @@ function App() {
         fetch(`${API}/api/rooms`).then((r) => r.json()),
         fetch(`${API}/api/reports`).then((r) => r.json()),
         fetch(`${API}/api/admin/audit`).then((r) => r.json()).catch(() => ({ auditLogs: [] })),
+        fetch(`${API}/api/admin/home-content`).then((r) => r.json()).catch(() => ({ sections: [] })),
       ]);
 
       setStats(sRes || {});
@@ -94,11 +103,105 @@ function App() {
       setRooms(Array.isArray(rRes) ? rRes : []);
       setReports(Array.isArray(repRes) ? repRes : []);
       setAuditLogs(audRes.auditLogs || []);
+      setHomeContent({ sections: Array.isArray(homeRes.sections) ? homeRes.sections : [] });
       setError('');
     } catch {
       setError('Backend unreachable. Ensure backend is running on port 4000.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  function updateHomeSection(sectionId, changes) {
+    setHomeContent((current) => ({
+      ...current,
+      sections: current.sections.map((section) => section.id === sectionId ? { ...section, ...changes } : section),
+    }));
+  }
+
+  function updateHomeTopic(sectionId, topicId, changes) {
+    setHomeContent((current) => ({
+      ...current,
+      sections: current.sections.map((section) => section.id === sectionId
+        ? { ...section, topics: section.topics.map((topic) => topic.id === topicId ? { ...topic, ...changes } : topic) }
+        : section),
+    }));
+  }
+
+  function moveHomeItem(items, index, offset) {
+    const targetIndex = index + offset;
+    if (targetIndex < 0 || targetIndex >= items.length) return items;
+    const updated = [...items];
+    [updated[index], updated[targetIndex]] = [updated[targetIndex], updated[index]];
+    return updated;
+  }
+
+  function moveHomeSection(index, offset) {
+    setHomeContent((current) => ({ ...current, sections: moveHomeItem(current.sections, index, offset) }));
+  }
+
+  function moveHomeTopic(sectionId, index, offset) {
+    setHomeContent((current) => ({
+      ...current,
+      sections: current.sections.map((section) => section.id === sectionId
+        ? { ...section, topics: moveHomeItem(section.topics, index, offset) }
+        : section),
+    }));
+  }
+
+  function addHomeSection() {
+    const id = newHomeContentId('section');
+    setHomeContent((current) => ({
+      ...current,
+      sections: [{ id, title: 'New section', enabled: true, topics: [] }, ...current.sections],
+    }));
+    setExpandedHomeSectionId(id);
+  }
+
+  function addHomeTopic(sectionId) {
+    const id = newHomeContentId('topic');
+    setExpandedHomeSectionId(sectionId);
+    setHomeContent((current) => ({
+      ...current,
+      sections: current.sections.map((section) => section.id === sectionId
+        ? {
+          ...section,
+          topics: [...section.topics, {
+            id,
+            title: 'New topic',
+            level: 'Easy',
+            starterPrompt: 'Start a friendly conversation about this topic.',
+            icon: 'chatbubbles',
+            color: '#8B5CF6',
+            bgColor: '#F5F3FF',
+            graphic: '',
+            enabled: true,
+          }],
+        }
+        : section),
+    }));
+  }
+
+  async function publishHomeContent() {
+    setHomeContentSubmitting(true);
+    try {
+      const response = await fetch(`${API}/api/admin/home-content`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(homeContent),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setError(result.error || 'Failed to publish home content.');
+        return;
+      }
+      setHomeContent(result.homeContent);
+      setError('');
+      alert('Home page content published.');
+    } catch {
+      setError('Network error while publishing home content.');
+    } finally {
+      setHomeContentSubmitting(false);
     }
   }
 
@@ -355,6 +458,7 @@ function App() {
 
   const menu = [
     ['Overview', LayoutDashboard],
+    ['Home Content', House],
     ['Users', Users],
     ['Subscriptions', CreditCard],
     ['Plans & Pricing', Sparkles],
@@ -941,6 +1045,169 @@ function App() {
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {tab === 'Home Content' && (
+          <div className="panel home-content-panel">
+            <div className="toolbar">
+              <div>
+                <h3 style={{ margin: '0 0 4px' }}>Home page sections</h3>
+                <p className="muted" style={{ margin: 0 }}>
+                  Edit section tabs and the practice cards shown to learners. Publish to make changes live.
+                </p>
+              </div>
+              <div className="home-content-actions">
+                <button type="button" className="action" onClick={addHomeSection}>Add section</button>
+                <button type="button" className="action" onClick={publishHomeContent} disabled={homeContentSubmitting}>
+                  {homeContentSubmitting ? 'Publishing…' : 'Publish changes'}
+                </button>
+              </div>
+            </div>
+
+            {homeContent.sections.length === 0 && (
+              <p className="muted">No sections yet. Add a section to begin customizing the home page.</p>
+            )}
+
+            {homeContent.sections.map((section, sectionIndex) => (
+              <section className={`home-section-editor ${section.enabled ? '' : 'home-section-disabled'}`} key={section.id}>
+                <div className="home-section-heading">
+                  <button
+                    type="button"
+                    className="home-section-expander"
+                    aria-expanded={expandedHomeSectionId === section.id}
+                    onClick={() => setExpandedHomeSectionId((current) => current === section.id ? null : section.id)}
+                  >
+                    <span className="home-section-expander-icon">{expandedHomeSectionId === section.id ? '−' : '+'}</span>
+                    <span className="home-section-expander-title">{section.title || 'Untitled section'}</span>
+                    <span className="home-section-summary">
+                      {section.topics.length} cards · {section.enabled ? 'Published' : 'Hidden'}
+                    </span>
+                  </button>
+                  <div className="home-section-controls">
+                    <button type="button" className="home-move" disabled={sectionIndex === 0} onClick={() => moveHomeSection(sectionIndex, -1)} aria-label="Move section up">↑</button>
+                    <button type="button" className="home-move" disabled={sectionIndex === homeContent.sections.length - 1} onClick={() => moveHomeSection(sectionIndex, 1)} aria-label="Move section down">↓</button>
+                    <button
+                      type="button"
+                      className="home-status-toggle"
+                      onClick={() => updateHomeSection(section.id, { enabled: !section.enabled })}
+                    >
+                      {section.enabled ? 'Published' : 'Hidden'}
+                    </button>
+                    <button
+                      type="button"
+                      className="home-delete"
+                      onClick={() => setHomeContent((current) => ({
+                        ...current,
+                        sections: current.sections.filter((item) => item.id !== section.id),
+                      }))}
+                    >
+                      Remove section
+                    </button>
+                  </div>
+                </div>
+
+                {expandedHomeSectionId === section.id && (
+                  <>
+                    <input
+                      className="home-content-input home-section-title"
+                      aria-label="Section title"
+                      maxLength={60}
+                      value={section.title}
+                      onChange={(event) => updateHomeSection(section.id, { title: event.target.value })}
+                    />
+                    <div className="home-topic-list">
+                  {section.topics.map((topic, topicIndex) => (
+                    <div className="home-topic-editor" key={topic.id}>
+                      <div className="home-topic-toolbar">
+                        <strong>Home card {topicIndex + 1}</strong>
+                        <div className="home-section-controls">
+                          <button type="button" className="home-move" disabled={topicIndex === 0} onClick={() => moveHomeTopic(section.id, topicIndex, -1)} aria-label="Move card up">↑</button>
+                          <button type="button" className="home-move" disabled={topicIndex === section.topics.length - 1} onClick={() => moveHomeTopic(section.id, topicIndex, 1)} aria-label="Move card down">↓</button>
+                          <button
+                            type="button"
+                            className="home-status-toggle"
+                            onClick={() => updateHomeTopic(section.id, topic.id, { enabled: topic.enabled === false })}
+                          >
+                            {topic.enabled === false ? 'Hidden' : 'Published'}
+                          </button>
+                          <button
+                            type="button"
+                            className="home-delete"
+                            onClick={() => updateHomeSection(section.id, {
+                              topics: section.topics.filter((item) => item.id !== topic.id),
+                            })}
+                          >
+                            Remove card
+                          </button>
+                        </div>
+                      </div>
+                      <div className="home-topic-fields">
+                        <label>
+                          Card title
+                          <input
+                            className="home-content-input"
+                            maxLength={80}
+                            value={topic.title}
+                            onChange={(event) => updateHomeTopic(section.id, topic.id, { title: event.target.value })}
+                          />
+                        </label>
+                        <label>
+                          Level
+                          <select
+                            className="home-content-input"
+                            value={topic.level}
+                            onChange={(event) => updateHomeTopic(section.id, topic.id, { level: event.target.value })}
+                          >
+                            <option>Easy</option>
+                            <option>Medium</option>
+                            <option>Hard</option>
+                          </select>
+                        </label>
+                        <label>
+                          Icon name
+                          <input
+                            className="home-content-input"
+                            maxLength={40}
+                            value={topic.icon || ''}
+                            onChange={(event) => updateHomeTopic(section.id, topic.id, { icon: event.target.value })}
+                          />
+                        </label>
+                        <label className="home-color-field">
+                          Card color
+                          <input
+                            type="color"
+                            value={topic.color || '#8B5CF6'}
+                            onChange={(event) => updateHomeTopic(section.id, topic.id, { color: event.target.value })}
+                          />
+                        </label>
+                        <label className="home-color-field">
+                          Background
+                          <input
+                            type="color"
+                            value={topic.bgColor || '#F5F3FF'}
+                            onChange={(event) => updateHomeTopic(section.id, topic.id, { bgColor: event.target.value })}
+                          />
+                        </label>
+                        <label className="home-prompt-field">
+                          Conversation starter
+                          <textarea
+                            className="home-content-input"
+                            maxLength={500}
+                            rows={3}
+                            value={topic.starterPrompt}
+                            onChange={(event) => updateHomeTopic(section.id, topic.id, { starterPrompt: event.target.value })}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                    </div>
+                    <button type="button" className="home-add-topic" onClick={() => addHomeTopic(section.id)}>+ Add home card</button>
+                  </>
+                )}
+              </section>
+            ))}
           </div>
         )}
 

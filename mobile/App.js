@@ -3618,7 +3618,7 @@ function App() {
     setScreen('aiPractice'); // Open AI screen immediately
 
     try {
-      const topicName = targetTopic.id || targetTopic.title || 'All Topics';
+      const topicName = targetTopic.title || targetTopic.id || 'All Topics';
       const result = await request('practice/ai/start', {
         method: 'POST',
         body: JSON.stringify({
@@ -4194,6 +4194,7 @@ function App() {
               onPressHistory={() => setShowHistoryModal(true)}
               isPro={aiPracticeIsPro}
               freeCreditsRemaining={aiFreeCreditsRemaining}
+              request={request}
             />
           )}
 
@@ -7188,6 +7189,7 @@ function App() {
               onPressHistory={() => setShowHistoryModal(true)}
               isPro={aiPracticeIsPro}
               freeCreditsRemaining={aiFreeCreditsRemaining}
+              request={request}
             />
           )}
 

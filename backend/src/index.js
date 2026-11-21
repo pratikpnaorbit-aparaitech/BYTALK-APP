@@ -20,6 +20,7 @@ import { decodePdfAttachment } from './attachments.js';
 import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, isPaidSubscriber, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded, getFreeTrialSecondsRemaining } from './subscriptions.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { generateAiResponse } from './aiService.js';
+import { DEFAULT_HOME_CONTENT, normalizeHomeContent, publishedHomeContent } from './homeContent.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const attachmentsDir = path.join(root, 'data', 'attachments');
@@ -415,8 +416,11 @@ try {
 
 if (!Array.isArray(store.messages)) store.messages = [];
 if (!Array.isArray(store.calls)) store.calls = [];
+const hadHomeContent = Boolean(store.homeContent);
+store.homeContent = normalizeHomeContent(store.homeContent) || DEFAULT_HOME_CONTENT;
 
 const save = () => fs.writeFileSync(dbFile, JSON.stringify(store, null, 2));
+if (!hadHomeContent) save();
 
 const auditLogs = [
   { id: 'aud-1', timestamp: new Date(Date.now() - 3600000).toISOString(), actor: 'System', eventType: 'SYSTEM_BOOT', target: 'BYTALK Server Online' },
@@ -3386,6 +3390,31 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ADMIN API ENDPOINTS
+app.get('/api/home-content', (req, res) => {
+  res.json(publishedHomeContent(store.homeContent));
+});
+
+app.get('/api/admin/home-content', (req, res) => {
+  res.json(store.homeContent);
+});
+
+app.put('/api/admin/home-content', (req, res) => {
+  const content = normalizeHomeContent(req.body);
+  if (!content) {
+    return res.status(400).json({ error: 'Invalid home content. Check section names, topic titles, and prompts.' });
+  }
+  store.homeContent = content;
+  save();
+  auditLogs.unshift({
+    id: `aud-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    actor: 'Admin',
+    eventType: 'HOME_CONTENT_PUBLISHED',
+    target: `${content.sections.length} home sections`,
+  });
+  res.json({ ok: true, homeContent: content });
+});
+
 app.get('/api/admin/users', async (req, res) => {
   try {
     const users = await User.find().sort({ createdAt: -1 }).lean();

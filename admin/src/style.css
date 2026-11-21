@@ -436,6 +436,133 @@ th {
   padding: 14px;
   margin-top: 10px;
 }
+.home-content-panel {
+  padding: 24px;
+}
+.home-content-actions, .home-section-controls, .home-section-heading, .home-topic-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.home-section-editor {
+  padding: 20px 0;
+  border-top: 1px solid #E2E8F0;
+}
+.home-section-disabled {
+  opacity: 0.65;
+}
+.home-section-heading {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.home-section-expander {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 220px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: #0F172A;
+  text-align: left;
+  cursor: pointer;
+}
+.home-section-expander-icon {
+  width: 26px;
+  height: 26px;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #4F46E5;
+  font-size: 18px;
+  line-height: 1;
+}
+.home-section-expander-title {
+  font-size: 16px;
+  font-weight: 800;
+}
+.home-section-summary {
+  margin-left: auto;
+  color: #64748B;
+  font-size: 12px;
+  font-weight: 600;
+}
+.home-section-title {
+  max-width: 360px;
+  font-size: 17px !important;
+  font-weight: 800;
+}
+.home-content-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: #172747;
+  font: inherit;
+}
+.home-topic-editor {
+  padding: 16px;
+  margin: 12px 0;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  background: #F8FAFC;
+}
+.home-topic-toolbar {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.home-topic-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+.home-topic-fields label {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+.home-topic-fields textarea {
+  resize: vertical;
+}
+.home-topic-fields .home-prompt-field {
+  grid-column: 1 / -1;
+}
+.home-color-field input {
+  width: 48px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid #CBD5E1;
+  border-radius: 7px;
+  background: #FFFFFF;
+}
+.home-move, .home-status-toggle, .home-delete, .home-add-topic {
+  border: 1px solid #CBD5E1;
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: white;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.home-move:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.home-delete {
+  color: #B91C1C;
+  border-color: #FECACA;
+}
+.home-add-topic {
+  color: #4F46E5;
+  border-color: #C7D2FE;
+}
 
 @media (max-width: 760px) {
   .shell { display: block; }
