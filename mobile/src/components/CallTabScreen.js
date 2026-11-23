@@ -37,11 +37,13 @@ export default function CallTabScreen({
   onAcceptFriendRequest,
   onDeclineFriendRequest,
   onCancelFriendRequest,
+  onRemoveFriend,
   recentCoLearners = [],
   onCancelMatch,
   onRefreshFriends,
 }) {
   const [friendsRefreshing, setFriendsRefreshing] = useState(false);
+  const [pendingFriendRemoval, setPendingFriendRemoval] = useState(null);
 
   const handleRefreshFriends = async () => {
     if (onRefreshFriends) {
@@ -51,6 +53,9 @@ export default function CallTabScreen({
       } catch {}
       setFriendsRefreshing(false);
     }
+  };
+  const confirmRemoveFriend = (friend) => {
+    setPendingFriendRemoval(String(friend.id || friend._id || friend.name || ''));
   };
   const [activeTopTab, setActiveTopTab] = useState('practice'); // 'practice' | 'friends' | 'progress'
   const [selectedGender, setSelectedGender] = useState(isSubscribed ? 'female' : 'any');
@@ -744,6 +749,43 @@ export default function CallTabScreen({
                     <Text style={styles.friendSub}>
                       {f.country || 'Global'} • {f.level || 'Intermediate'}
                     </Text>
+                    {pendingFriendRemoval === String(f.id || f._id || f.name || '') ? (
+                      <View style={styles.removeFriendConfirm}>
+                        <Text style={styles.removeFriendConfirmText}>Remove friend?</Text>
+                        <TouchableOpacity
+                          onPress={() => setPendingFriendRemoval(null)}
+                          style={styles.removeFriendCancelBtn}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel removing friend"
+                        >
+                          <Text style={styles.removeFriendCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setPendingFriendRemoval(null);
+                            onRemoveFriend && onRemoveFriend(f);
+                          }}
+                          style={styles.removeFriendConfirmBtn}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Confirm removing ${f.name || 'friend'}`}
+                        >
+                          <Text style={styles.removeFriendConfirmBtnText}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => confirmRemoveFriend(f)}
+                        style={styles.removeFriendAction}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${f.name || 'friend'} from friends`}
+                      >
+                        <Ionicons name="person-remove-outline" size={13} color="#B91C1C" />
+                        <Text style={styles.removeFriendActionText}>Remove friend</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                   {/* Actions for Accepted Friend: Chat, Video Call, Voice Call */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1484,6 +1526,62 @@ const styles = StyleSheet.create({
   directCallBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '700',
+  },
+  removeFriendAction: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  removeFriendActionText: {
+    color: '#B91C1C',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  removeFriendConfirm: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#FFF7F7',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  removeFriendConfirmText: {
+    color: '#7F1D1D',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  removeFriendCancelBtn: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  removeFriendCancelText: {
+    color: '#475569',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  removeFriendConfirmBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#B91C1C',
+  },
+  removeFriendConfirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '700',
   },
   friendReqRow: {

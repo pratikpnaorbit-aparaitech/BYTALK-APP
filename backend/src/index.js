@@ -2637,6 +2637,88 @@ app.post('/api/friends/cancel', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/friends/remove', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    const currentAltId = req.authenticatedUser._id ? String(req.authenticatedUser._id) : currentUserId;
+    const myIds = Array.from(new Set([
+      currentUserId,
+      currentAltId,
+      req.authenticatedUser.name,
+      req.authenticatedUser.displayName,
+      req.authenticatedUser.email,
+    ].filter(Boolean).map((value) => String(value))));
+    const { friendUserId } = req.body || {};
+    const requestedFriendId = String(friendUserId || '').trim();
+
+    if (!requestedFriendId || myIds.some((id) => id.toLowerCase() === requestedFriendId.toLowerCase())) {
+      return res.status(400).json({ error: 'Invalid friend to remove.' });
+    }
+
+    let friendUser = null;
+    if (mongoose.isValidObjectId(requestedFriendId)) {
+      friendUser = await User.findById(requestedFriendId).lean();
+    }
+    if (!friendUser) {
+      friendUser = await User.findOne({
+        $or: [
+          { email: requestedFriendId },
+          { name: requestedFriendId },
+          { displayName: requestedFriendId },
+        ],
+      }).lean();
+    }
+    if (!friendUser) {
+      friendUser = store.users.find((user) =>
+        [user.id, user._id, user.name, user.displayName, user.email]
+          .some((value) => String(value || '').toLowerCase() === requestedFriendId.toLowerCase())
+      );
+    }
+
+    const friendIds = Array.from(new Set([
+      requestedFriendId,
+      friendUser?._id,
+      friendUser?.id,
+      friendUser?.name,
+      friendUser?.displayName,
+      friendUser?.email,
+    ].filter(Boolean).map((value) => String(value))));
+    const friendshipQuery = {
+      status: 'accepted',
+      $or: [
+        { user1: { $in: myIds }, user2: { $in: friendIds } },
+        { user1: { $in: friendIds }, user2: { $in: myIds } },
+      ],
+    };
+    const friendships = await Friendship.find(friendshipQuery).lean();
+
+    if (friendships.length === 0) {
+      return res.status(404).json({ error: 'Friendship not found.' });
+    }
+
+    const otherIds = Array.from(new Set(friendships.map((friendship) =>
+      myIds.some((id) => id.toLowerCase() === String(friendship.user1).toLowerCase())
+        ? String(friendship.user2)
+        : String(friendship.user1)
+    )));
+    const { deletedCount } = await Friendship.deleteMany(friendshipQuery);
+    if (deletedCount === 0) {
+      return res.status(404).json({ error: 'Friendship not found.' });
+    }
+
+    const removedPayloadForFriend = { userId: currentUserId };
+    const removedPayloadForCurrent = { userId: requestedFriendId };
+    otherIds.forEach((id) => emitToUser(id, 'friend:removed', removedPayloadForFriend));
+    friendIds.forEach((id) => emitToUser(id, 'friend:removed', removedPayloadForFriend));
+    myIds.forEach((id) => emitToUser(id, 'friend:removed', removedPayloadForCurrent));
+
+    res.json({ ok: true, message: 'Friend removed.' });
+  } catch (err) {
+    console.warn('[POST /api/friends/remove error]', err.message);
+    res.status(500).json({ error: 'Failed to remove friend.' });
+  }
+});
+
 
 app.get('/api/friends/link', requireAuth, (req, res) => {
   const currentUserId = String(req.authenticatedUser.id);
