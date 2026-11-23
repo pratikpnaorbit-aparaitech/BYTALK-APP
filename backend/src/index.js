@@ -518,6 +518,27 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
+// Serve BYTALK Admin Dashboard
+const __currentDir = path.dirname(fileURLToPath(import.meta.url));
+const adminCandidates = [
+  path.resolve(__currentDir, '../../admin/dist'),
+  path.resolve(process.cwd(), 'admin/dist'),
+  path.resolve(process.cwd(), '../admin/dist'),
+  path.resolve(process.cwd(), 'BYTALK/admin/dist'),
+];
+const adminDistPath = adminCandidates.find((p) => fs.existsSync(p));
+if (adminDistPath) {
+  console.log('[Admin Panel] Serving static assets from:', adminDistPath);
+  app.use('/admin', express.static(adminDistPath));
+  app.get('/admin', (req, res) => {
+    res.sendFile(path.join(adminDistPath, 'index.html'));
+  });
+  app.get('/admin/*', (req, res, next) => {
+    if (req.path.includes('.')) return next();
+    res.sendFile(path.join(adminDistPath, 'index.html'));
+  });
+}
+
 app.post('/api/webhooks/revenuecat', express.raw({ type: 'application/json', limit: '128kb' }), async (req, res) => {
   const authorization = req.headers.authorization || '';
   if (!REVENUECAT_WEBHOOK_AUTH || authorization !== `Bearer ${REVENUECAT_WEBHOOK_AUTH}`) {
@@ -606,6 +627,16 @@ function emitToUser(userId, event, payload) {
   io.to(`user:${String(userId)}`).emit(event, payload);
 }
 
+function emitToUserRooms(userIds, event, payload) {
+  const ids = Array.from(new Set((Array.isArray(userIds) ? userIds : [userIds]).filter(Boolean).map(String)));
+  if (ids.length === 0) return;
+  let target = io;
+  for (const id of ids) {
+    target = target.to(`user:${id}`);
+  }
+  target.emit(event, payload);
+}
+
 async function requireAuth(req, res, next) {
   let user = store.users.find((item) => String(item.id) === String(req.user?.userId));
   if (!user && req.user?.userId) {
@@ -624,9 +655,18 @@ async function requireAuth(req, res, next) {
 
 function participantForCall(call, userId, altUserId = null) {
   if (!call) return null;
-  const ids = [userId, altUserId].filter(Boolean).map(String);
-  if (ids.includes(String(call.callerId))) return call.calleeId;
-  if (ids.includes(String(call.calleeId))) return call.callerId;
+  const ids = [
+    userId,
+    altUserId,
+    String(userId || '').toLowerCase(),
+    altUserId ? String(altUserId).toLowerCase() : null,
+  ].filter(Boolean).map(String);
+  const callerIds = (call.callerIds || [call.callerId]).filter(Boolean).map(String);
+  const calleeIds = (call.calleeIds || [call.calleeId]).filter(Boolean).map(String);
+  const isCaller = ids.some((id) => callerIds.includes(id) || callerIds.map((c) => c.toLowerCase()).includes(id.toLowerCase()));
+  if (isCaller) return call.calleeId;
+  const isCallee = ids.some((id) => calleeIds.includes(id) || calleeIds.map((c) => c.toLowerCase()).includes(id.toLowerCase()));
+  if (isCallee) return call.callerId;
   return null;
 }
 
@@ -1416,10 +1456,14 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
         customer.contact = cleanPhone.slice(-10);
       }
 
-      const host = req.get('host') || 'k-app.onrender.com';
+      const clientOrigin = req.body?.returnUrl
+        || req.headers.origin
+        || (req.headers.referer ? new URL(req.headers.referer).origin : null)
+        || '';
+      const host = req.get('host') || 'bytalk-app.onrender.com';
       const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
       const scheme = isLocal ? req.protocol : 'https';
-      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}`;
+      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}${clientOrigin ? `&returnUrl=${encodeURIComponent(clientOrigin)}` : ''}`;
 
       const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
         method: 'POST',
@@ -1683,6 +1727,7 @@ app.post('/api/subscription/razorpay/check-payment-status', requireAuth, async (
 app.get('/api/subscription/razorpay/callback', async (req, res) => {
   const { userId, planId, duration = 'PRO' } = req.query;
   const paymentId = req.query.razorpay_payment_id || req.query.razorpay_payment_link_id;
+  const returnUrl = req.query.returnUrl || req.query.clientOrigin || '';
 
   if (userId) {
     try {
@@ -1703,6 +1748,21 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
         user.subscriptionExpiresAt = expiresAt;
         user.subscriptionRenewalStatus = 'not_renewing';
         await user.save();
+
+        const cachedUser = store.users.find((u) => String(u.id) === String(user._id) || String(u._id) === String(user._id));
+        if (cachedUser) {
+          cachedUser.subscriptionPlan = user.subscriptionPlan;
+          cachedUser.subscriptionStatus = user.subscriptionStatus;
+          cachedUser.subscriptionExpiresAt = user.subscriptionExpiresAt;
+        }
+
+        emitToUserRooms([String(user._id), user.id, user.name], 'subscription:updated', {
+          plan: { id: user.subscriptionPlan, name: duration },
+          status: 'active',
+          expiresAt: expiresAt.toISOString(),
+          subscription: entitlementPayload(user),
+          message: `🎉 Payment confirmed! Your BYTALK subscription (${duration}) is now active.`,
+        });
       }
     } catch (e) {
       console.warn('[Callback User Update Error]', e.message);
@@ -1712,20 +1772,36 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
   const html = `<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Payment Successful - BYTALK</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0; padding: 24px; background: #0B0F19; color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 85vh; text-align: center;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; text-align: center;
     }
-    .card { background: #1A1D2E; border: 1px solid #10B981; border-radius: 20px; padding: 32px 24px; max-width: 380px; width: 100%; box-shadow: 0 10px 30px rgba(16,185,129,0.2); }
+    .card {
+      background: #1A1D2E; border: 1px solid #10B981; border-radius: 20px;
+      padding: 36px 28px; max-width: 420px; width: 100%;
+      box-shadow: 0 10px 40px rgba(16,185,129,0.25);
+    }
     .icon { font-size: 58px; margin-bottom: 12px; }
-    h2 { color: #10B981; margin: 0 0 8px 0; font-size: 24px; }
-    p { color: #9CA3AF; font-size: 14px; line-height: 1.5; margin: 0 0 24px 0; }
-    .btn { background: #5843E8; color: white; display: block; padding: 14px 20px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 16px; transition: background 0.2s; }
-    .btn:hover { background: #4732D6; }
+    h2 { color: #10B981; margin: 0 0 10px 0; font-size: 26px; font-weight: 800; }
+    p { color: #9CA3AF; font-size: 15px; line-height: 1.5; margin: 0 0 28px 0; }
+    .btn {
+      background: #5843E8; color: white; display: block; width: 100%;
+      padding: 15px 20px; border-radius: 12px; border: none; cursor: pointer;
+      text-decoration: none; font-weight: 700; font-size: 16px; transition: all 0.2s;
+    }
+    .btn:hover { background: #4732D6; transform: translateY(-1px); }
+    .sub-link {
+      display: inline-block; margin-top: 16px; color: #818CF8; font-size: 14px;
+      text-decoration: none; font-weight: 600; cursor: pointer;
+    }
+    .sub-link:hover { text-decoration: underline; color: #A5B4FC; }
+    .hint { margin-top: 14px; font-size: 12px; color: #6B7280; }
   </style>
 </head>
 <body>
@@ -1733,12 +1809,83 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
     <div class="icon">🎉</div>
     <h2>Payment Successful!</h2>
     <p>Your <strong>${duration}</strong> subscription is active. All premium features, voice calling, and ARYA AI are unlocked.</p>
-    <a href="bytalk://payment-success" class="btn">Return to BYTALK App</a>
+    <button id="returnBtn" class="btn" onclick="returnToApp()">Return to BYTALK App</button>
+    <a id="webFallbackLink" class="sub-link" style="display:none;" onclick="returnToApp()">Open in Web App &rarr;</a>
+    <div id="statusHint" class="hint">Returning to your app automatically...</div>
   </div>
+
   <script>
+    var returnUrl = ${JSON.stringify(returnUrl || '')};
+    var planId = ${JSON.stringify(planId || 'pro')};
+    var duration = ${JSON.stringify(duration || 'PRO')};
+
+    function getWebDestination() {
+      if (returnUrl && returnUrl.startsWith('http')) {
+        var sep = returnUrl.indexOf('?') !== -1 ? '&' : '?';
+        return returnUrl + sep + 'payment-success=true&planId=' + encodeURIComponent(planId) + '&duration=' + encodeURIComponent(duration);
+      }
+      return null;
+    }
+
+    var webDest = getWebDestination();
+    if (webDest) {
+      var fallbackEl = document.getElementById('webFallbackLink');
+      if (fallbackEl) fallbackEl.style.display = 'inline-block';
+    }
+
+    function returnToApp() {
+      // 1. If window was opened by the app in a popup / new window
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'BYTALK_PAYMENT_SUCCESS', planId: planId, duration: duration }, '*');
+          window.close();
+          return;
+        } catch (e) {}
+      }
+
+      // 2. If we know the web app URL
+      if (webDest) {
+        window.location.href = webDest;
+        return;
+      }
+
+      // 3. Mobile devices (Android / iOS)
+      var ua = navigator.userAgent || '';
+      var isAndroid = /Android/i.test(ua);
+      var isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+      if (isAndroid) {
+        window.location.href = 'intent://payment-success#Intent;scheme=bytalk;package=com.bytalk.languageapp;end';
+        setTimeout(function() {
+          try { window.location.href = 'bytalk://payment-success'; } catch(e) {}
+        }, 500);
+        return;
+      }
+
+      if (isIOS) {
+        window.location.href = 'bytalk://payment-success';
+        return;
+      }
+
+      // 4. Desktop browser fallback:
+      if (window.history.length > 2) {
+        window.history.go(-2);
+        return;
+      } else if (window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+
+      // 5. Final fallback
+      window.location.href = '/';
+    }
+
+    // Auto-return after 1.5 seconds
     setTimeout(function() {
-      try { window.location.href = 'bytalk://payment-success'; } catch(e) {}
-    }, 1200);
+      try {
+        returnToApp();
+      } catch(e) {}
+    }, 1500);
   </script>
 </body>
 </html>`;
@@ -1764,10 +1911,14 @@ app.get('/api/subscription/razorpay/checkout-page', async (req, res) => {
       if (cleanPhone.length >= 10 && !/^(.)\1+$/.test(cleanPhone)) {
         customer.contact = cleanPhone.slice(-10);
       }
-      const host = req.get('host') || 'k-app.onrender.com';
+      const clientOrigin = req.query?.returnUrl
+        || req.headers.origin
+        || (req.headers.referer ? new URL(req.headers.referer).origin : null)
+        || '';
+      const host = req.get('host') || 'bytalk-app.onrender.com';
       const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
       const scheme = isLocal ? req.protocol : 'https';
-      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${token || ''}&planId=${planId}&duration=PRO`;
+      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${token || ''}&planId=${planId}&duration=PRO${clientOrigin ? `&returnUrl=${encodeURIComponent(clientOrigin)}` : ''}`;
 
       const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
         method: 'POST',
@@ -2128,6 +2279,16 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
 
 // ==================== FRIENDS SYSTEM ====================
 // Persistent Friendships & Friend Requests (MongoDB backed)
+app.get('/api/debug/inspect', async (req, res) => {
+  try {
+    const users = await User.find({}, 'name displayName email subscriptionPlan subscriptionStatus subscriptionExpiresAt').lean();
+    const friendships = await Friendship.find({}).lean();
+    res.json({ users, friendships });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/friends', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
@@ -2395,8 +2556,27 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Cannot send friend request to yourself' });
     }
 
-    const senderIds = Array.from(new Set([currentUserId, String(sender?._id || ''), String(sender?.id || '')].filter(Boolean)));
-    const targetIds = Array.from(new Set([actualTargetId, String(target?._id || ''), String(target?.id || '')].filter(Boolean)));
+    const senderIds = Array.from(new Set([
+      currentUserId,
+      String(sender?._id || ''),
+      String(sender?.id || ''),
+      sender?.email,
+      sender?.name,
+      sender?.displayName,
+      sender?.email ? String(sender.email).toLowerCase() : null,
+      sender?.name ? String(sender.name).toLowerCase() : null,
+    ].filter(Boolean).map(String)));
+
+    const targetIds = Array.from(new Set([
+      actualTargetId,
+      String(target?._id || ''),
+      String(target?.id || ''),
+      target?.email,
+      target?.name,
+      target?.displayName,
+      target?.email ? String(target.email).toLowerCase() : null,
+      target?.name ? String(target.name).toLowerCase() : null,
+    ].filter(Boolean).map(String)));
 
     // Check if friendship already exists
     const existing = await Friendship.findOne({
@@ -4031,6 +4211,29 @@ io.on('connection', (socket) => {
       return;
     }
 
+<<<<<<< HEAD
+    const callerIds = Array.from(new Set([
+      userId,
+      socket.data.altUserId,
+      callerDoc?._id ? String(callerDoc._id) : null,
+      callerDoc?.id ? String(callerDoc.id) : null,
+      callerDoc?.name,
+      callerDoc?.email,
+      socket.data.username,
+      socket.data.displayName,
+    ].filter(Boolean).map(String)));
+
+    const calleeIds = Array.from(new Set([
+      to,
+      calleeDoc?._id ? String(calleeDoc._id) : null,
+      calleeDoc?.id ? String(calleeDoc.id) : null,
+      calleeDoc?.name,
+      calleeDoc?.email,
+      targetUser?.id ? String(targetUser.id) : null,
+      targetUser?._id ? String(targetUser._id) : null,
+      targetUser?.name,
+    ].filter(Boolean).map(String)));
+=======
     const callerCallId = canonicalCallUserId(callerDoc, userId);
     const calleeCallId = canonicalCallUserId(calleeDoc || targetUser, to);
     if (!callerCallId || !calleeCallId) {
@@ -4044,6 +4247,7 @@ io.on('connection', (socket) => {
 
     const callerIds = Array.from(new Set([callerCallId, userId, socket.data.altUserId, callerDoc?.name].filter(Boolean)));
     const calleeIds = Array.from(new Set([calleeCallId, to, calleeDoc?.name, targetUser?.name].filter(Boolean)));
+>>>>>>> a9d08af21793ae58b461f6aafa1f170694145650
 
     // Check blocks
     if (callerDoc?.blockedUsers?.some((b) => calleeIds.includes(String(b))) || calleeDoc?.blockedUsers?.some((b) => callerIds.includes(String(b)))) {
@@ -4103,8 +4307,15 @@ io.on('connection', (socket) => {
     const createdAt = new Date().toISOString();
     const call = {
       id: crypto.randomUUID(),
+<<<<<<< HEAD
+      callerId: userId,
+      calleeId: to,
+      callerIds,
+      calleeIds,
+=======
       callerId: callerCallId,
       calleeId: calleeCallId,
+>>>>>>> a9d08af21793ae58b461f6aafa1f170694145650
       type,
       status: 'ringing',
       createdAt,
@@ -4120,32 +4331,31 @@ io.on('connection', (socket) => {
       store.users.push(caller);
     }
 
-    // Emit to ALL callee rooms to ensure 100% receipt
-    calleeIds.forEach((cId) => {
-      emitToUser(cId, 'call:incoming', {
-        callId: call.id,
-        type,
-        createdAt,
-        restricted: restrictedForRecipient,
-        restrictionReason: restrictedForRecipient ? 'A BYTALK Plus or Pro subscription is required to accept video calls.' : null,
-        caller: sanitizeUser(caller) || { id: userId, name: caller?.name || 'BYTALK User' },
-      });
+    // Emit to ALL callee rooms with deduplication to ensure 100% receipt
+    emitToUserRooms(calleeIds, 'call:incoming', {
+      callId: call.id,
+      type,
+      createdAt,
+      restricted: restrictedForRecipient,
+      restrictionReason: restrictedForRecipient ? 'A BYTALK Plus or Pro subscription is required to accept video calls.' : null,
+      caller: sanitizeUser(caller) || { id: userId, name: caller?.name || 'BYTALK User' },
     });
 
     console.log(`Call ${call.id} is ringing for ${to}.`);
     acknowledge({ callId: call.id, status: 'ringing' });
     armCallTimeout(call, 'ringing', 35000, () => {
       finishCall(call, 'missed', null);
-      callerIds.forEach((id) => emitToUser(id, 'call:missed', { callId: call.id, status: 'missed' }));
-      calleeIds.forEach((id) => emitToUser(id, 'call:ended', { callId: call.id, status: 'missed' }));
+      emitToUserRooms(callerIds, 'call:missed', { callId: call.id, status: 'missed' });
+      emitToUserRooms(calleeIds, 'call:ended', { callId: call.id, status: 'missed' });
     });
   });
 
   socket.on('call:accept', async ({ callId } = {}, acknowledge = () => {}) => {
     console.log(`Call accept received from ${userId} for ${callId}.`);
     const call = activeCalls.get(callId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     if (!call || !isCallee || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
@@ -4156,36 +4366,43 @@ io.on('connection', (socket) => {
     call.status = 'connecting';
     call.acceptedAt = new Date().toISOString();
     saveCall(call);
-    emitToUser(call.callerId, 'call:accepted', { callId: call.id, status: 'connecting' });
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    emitToUserRooms(allCallerIds, 'call:accepted', { callId: call.id, status: 'connecting' });
     acknowledge({ ok: true });
     armCallTimeout(call, 'connecting', 45000, () => {
       finishCall(call, 'failed', null);
-      emitToUser(call.callerId, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
-      emitToUser(call.calleeId, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
+      const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+      emitToUserRooms(allCallerIds, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
+      emitToUserRooms(allCalleeIds, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
     });
   });
 
   socket.on('call:reject', ({ callId } = {}, acknowledge = () => {}) => {
     console.log(`Call reject received from ${userId} for ${callId}.`);
     const call = activeCalls.get(callId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     if (!call || !isCallee || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
     }
     finishCall(call, 'rejected', userId);
-    emitToUser(call.callerId, 'call:rejected', { callId: call.id, status: 'rejected' });
-    emitToUser(call.calleeId, 'call:ended', { callId: call.id, status: 'rejected' });
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    emitToUserRooms(allCallerIds, 'call:rejected', { callId: call.id, status: 'rejected' });
+    emitToUserRooms(allCalleeIds, 'call:ended', { callId: call.id, status: 'rejected' });
     acknowledge({ ok: true });
   });
 
   socket.on('call:signal', ({ callId, kind, signal } = {}, acknowledge = () => {}) => {
     const call = activeCalls.get(callId);
     const recipientId = call && participantForCall(call, userId, socket.data.altUserId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCaller = call && myIds.includes(String(call.callerId));
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const callerIds = (call?.callerIds || [call?.callerId]).filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCaller = call && myIds.some((id) => callerIds.includes(id) || callerIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     const validKind = ['offer', 'answer', 'ice'].includes(kind);
     const validRole = (kind !== 'offer' || isCaller) && (kind !== 'answer' || isCallee);
     let payloadSize = Infinity;
@@ -4193,11 +4410,13 @@ io.on('connection', (socket) => {
       payloadSize = JSON.stringify(signal).length;
     } catch {}
     if (!call || !['ringing', 'connecting', 'connected'].includes(call.status) || !recipientId || !validKind || !validRole || !signal || payloadSize > 100000) {
+      console.warn(`[call:signal] rejected: callExists=${Boolean(call)}, status=${call?.status}, recipientId=${recipientId}, validKind=${validKind}, validRole=${validRole}, payloadSize=${payloadSize}`);
       acknowledge({ error: 'Invalid or unauthorized call signal' });
       return;
     }
     console.log(`Call signal ${kind} for ${callId} from ${userId} to ${recipientId}.`);
-    emitToUser(recipientId, 'call:signal', { callId, kind, signal });
+    const targetIds = Array.from(new Set(isCaller ? calleeIds : callerIds));
+    emitToUserRooms(targetIds, 'call:signal', { callId, kind, signal });
     acknowledge({ ok: true });
   });
 
@@ -4216,8 +4435,10 @@ io.on('connection', (socket) => {
 
   socket.on('call:connected', ({ callId } = {}) => {
     const call = activeCalls.get(callId);
-    if (!call || !participantForCall(call, userId) || call.status === 'ringing') return;
-    for (const participantId of [call.callerId, call.calleeId]) {
+    if (!call || !participantForCall(call, userId, socket.data.altUserId) || call.status === 'ringing') return;
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    for (const participantId of [...allCallerIds, ...allCalleeIds]) {
       const reconnectTimer = callTimers.get(`disconnect:${call.id}:${participantId}`);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       callTimers.delete(`disconnect:${call.id}:${participantId}`);
@@ -4230,7 +4451,7 @@ io.on('connection', (socket) => {
       call.status = 'connected';
       saveCall(call);
 
-      // Enforce 5-minute free trial limit for unsubscribed users
+      // Enforce free trial limit for unsubscribed users
       Promise.all([
         User.findById(call.callerId),
         User.findById(call.calleeId),
@@ -4251,20 +4472,20 @@ io.on('connection', (socket) => {
               reason: 'free_trial_expired',
               endedAt: current.endedAt,
             };
-            emitToUser(current.callerId, 'call:ended', ended);
-            emitToUser(current.calleeId, 'call:ended', ended);
+            allCallerIds.forEach((id) => emitToUser(id, 'call:ended', ended));
+            allCalleeIds.forEach((id) => emitToUser(id, 'call:ended', ended));
           }, limitSec * 1000);
           callTimers.set(`trial:${call.id}`, trialTimer);
         }
       }).catch(() => {});
     }
-    emitToUser(call.callerId, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
-    emitToUser(call.calleeId, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
+    emitToUserRooms(allCallerIds, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
+    emitToUserRooms(allCalleeIds, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
   });
 
   socket.on('call:end', async ({ callId } = {}, acknowledge = () => {}) => {
     const call = activeCalls.get(callId);
-    if (!call || !participantForCall(call, userId)) {
+    if (!call || !participantForCall(call, userId, socket.data.altUserId)) {
       acknowledge({ error: 'This call is no longer available' });
       return;
     }
@@ -4283,8 +4504,10 @@ io.on('connection', (socket) => {
       durationSeconds: call.durationSeconds,
       type: call.type,
     };
-    emitToUser(call.callerId, 'call:ended', ended);
-    emitToUser(call.calleeId, 'call:ended', ended);
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    emitToUserRooms(allCallerIds, 'call:ended', ended);
+    emitToUserRooms(allCalleeIds, 'call:ended', ended);
     acknowledge({ ok: true, call: ended });
   });
 
@@ -4302,18 +4525,21 @@ io.on('connection', (socket) => {
       io.emit('presence:update', { userId, online: false });
     }
 
-    const callId = userCalls.get(userId);
+    const callId = userCalls.get(userId) || (socket.data.altUserId ? userCalls.get(socket.data.altUserId) : null);
     const call = activeCalls.get(callId);
     if (call) {
-      const otherUserId = participantForCall(call, userId);
-      emitToUser(otherUserId, 'call:state', { callId, status: 'reconnecting' });
+      const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+      const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+      const isCaller = allCallerIds.includes(String(userId)) || (socket.data.altUserId && allCallerIds.includes(String(socket.data.altUserId)));
+      const targetIds = isCaller ? allCalleeIds : allCallerIds;
+      targetIds.forEach((id) => emitToUser(id, 'call:state', { callId, status: 'reconnecting' }));
       const timerKey = `disconnect:${call.id}:${userId}`;
       const timer = setTimeout(() => {
         if (!activeCalls.has(callId) || (userSockets.get(userId)?.size || 0)) return;
         finishCall(call, 'ended', userId);
         const ended = { callId, status: 'ended', reason: 'disconnected' };
-        emitToUser(call.callerId, 'call:ended', ended);
-        emitToUser(call.calleeId, 'call:ended', ended);
+        allCallerIds.forEach((id) => emitToUser(id, 'call:ended', ended));
+        allCalleeIds.forEach((id) => emitToUser(id, 'call:ended', ended));
       }, 30000);
       timer.unref?.();
       callTimers.set(timerKey, timer);

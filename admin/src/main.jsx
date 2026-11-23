@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import './style.css';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
 
 function App() {
   const [tab, setTab] = useState('Overview');
