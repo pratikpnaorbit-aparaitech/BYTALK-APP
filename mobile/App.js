@@ -237,6 +237,14 @@ function getApiUrl() {
     console.warn('[BYTALK] EXPO_PUBLIC_API_URL uses localhost on a native target; resolving the Expo host instead.');
   }
 
+  if (
+    Platform.OS === 'web' &&
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location?.hostname)
+  ) {
+    return `http://${window.location.hostname}:4000`;
+  }
+
   // 2. Web browser runtime
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.location?.hostname) {

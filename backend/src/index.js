@@ -3949,6 +3949,29 @@ io.on('connection', (socket) => {
       return;
     }
 
+<<<<<<< HEAD
+    const callerIds = Array.from(new Set([
+      userId,
+      socket.data.altUserId,
+      callerDoc?._id ? String(callerDoc._id) : null,
+      callerDoc?.id ? String(callerDoc.id) : null,
+      callerDoc?.name,
+      callerDoc?.email,
+      socket.data.username,
+      socket.data.displayName,
+    ].filter(Boolean).map(String)));
+
+    const calleeIds = Array.from(new Set([
+      to,
+      calleeDoc?._id ? String(calleeDoc._id) : null,
+      calleeDoc?.id ? String(calleeDoc.id) : null,
+      calleeDoc?.name,
+      calleeDoc?.email,
+      targetUser?.id ? String(targetUser.id) : null,
+      targetUser?._id ? String(targetUser._id) : null,
+      targetUser?.name,
+    ].filter(Boolean).map(String)));
+=======
     const callerCallId = canonicalCallUserId(callerDoc, userId);
     const calleeCallId = canonicalCallUserId(calleeDoc || targetUser, to);
     if (!callerCallId || !calleeCallId) {
@@ -3962,6 +3985,7 @@ io.on('connection', (socket) => {
 
     const callerIds = Array.from(new Set([callerCallId, userId, socket.data.altUserId, callerDoc?.name].filter(Boolean)));
     const calleeIds = Array.from(new Set([calleeCallId, to, calleeDoc?.name, targetUser?.name].filter(Boolean)));
+>>>>>>> a9d08af21793ae58b461f6aafa1f170694145650
 
     // Check blocks
     if (callerDoc?.blockedUsers?.some((b) => calleeIds.includes(String(b))) || calleeDoc?.blockedUsers?.some((b) => callerIds.includes(String(b)))) {
@@ -4023,6 +4047,7 @@ io.on('connection', (socket) => {
       id: crypto.randomUUID(),
       callerId: callerCallId,
       calleeId: calleeCallId,
+>>>>>>> a9d08af21793ae58b461f6aafa1f170694145650
       type,
       status: 'ringing',
       createdAt,
