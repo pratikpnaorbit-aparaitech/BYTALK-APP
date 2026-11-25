@@ -231,20 +231,20 @@ export async function clearSession() {
 
 // Runtime-aware API base URL resolution
 function getApiUrl() {
-  if (
-    Platform.OS === 'web' &&
-    typeof window !== 'undefined' &&
-    ['localhost', '127.0.0.1'].includes(window.location?.hostname)
-  ) {
-    return `http://${window.location.hostname}:4000`;
-  }
-
   // 1. Explicit environment variable override
   if (process.env.EXPO_PUBLIC_API_URL) {
     const configuredUrl = process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
     const isNativeLocalhost = Platform.OS !== 'web' && /:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(configuredUrl);
     if (!isNativeLocalhost) return configuredUrl;
     console.warn('[BYTALK] EXPO_PUBLIC_API_URL uses localhost on a native target; resolving the Expo host instead.');
+  }
+
+  if (
+    Platform.OS === 'web' &&
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location?.hostname)
+  ) {
+    return `http://${window.location.hostname}:4000`;
   }
 
   // 2. Web browser runtime
