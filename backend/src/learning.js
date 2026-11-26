@@ -305,7 +305,7 @@ export function evaluateGameAttempt(user, answers) {
   // Update User Learning Progress and Streak (Section 14)
   const todayStr = new Date().toISOString().slice(0, 10);
   if (!user.lastPracticeDate) {
-    user.streak = (user.streak || 0) + 1;
+    user.streak = Math.max(1, user.streak || 0);
     user.lastPracticeDate = todayStr;
   } else if (user.lastPracticeDate !== todayStr) {
     const lastDate = new Date(user.lastPracticeDate);
