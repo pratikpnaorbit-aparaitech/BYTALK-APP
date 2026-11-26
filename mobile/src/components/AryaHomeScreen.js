@@ -382,6 +382,7 @@ export default function AryaHomeScreen({
 }) {
   const [publishedSections, setPublishedSections] = useState(null);
   const [selectedTopic, setSelectedTopic] = useState(null);
+  const [selectedSectionId, setSelectedSectionId] = useState(null);
 
   // Live countdown timer state (hours, minutes, seconds)
   const [timeLeft, setTimeLeft] = useState({ hours: 13, minutes: 15, seconds: 18 });
@@ -422,10 +423,20 @@ export default function AryaHomeScreen({
     { id: 'general', title: 'General', topics: GENERAL_TOPICS },
     { id: 'interview', title: 'Interview', topics: INTERVIEW_TOPICS },
   ];
-  const topics = sections.flatMap((section) => section.topics.map((topic) => ({
-    ...topic,
-    category: topic.category || section.title,
-  })));
+  const displaySections = sections.flatMap((section) => {
+    const topicsByCategory = new Map();
+    section.topics.forEach((topic) => {
+      const title = topic.category || section.title;
+      if (!topicsByCategory.has(title)) topicsByCategory.set(title, []);
+      topicsByCategory.get(title).push(topic);
+    });
+    return Array.from(topicsByCategory, ([title, sectionTopics]) => ({
+      id: `${section.id}-${title}`,
+      title,
+      topics: sectionTopics,
+    }));
+  });
+  const activeSection = displaySections.find((section) => section.id === selectedSectionId) || displaySections[0];
   const selectPracticeMode = (mode) => {
     if (!selectedTopic) return;
     const topic = selectedTopic;
@@ -459,51 +470,74 @@ export default function AryaHomeScreen({
           </TouchableOpacity>
         </View>
 
-        {/* 2-Column Cards Grid with Floating Crown Badges */}
-        <View style={styles.cardsGrid}>
-          {topics.map((topic) => {
-            const levelBars = topic.bars || (topic.level === 'Hard' ? 3 : topic.level === 'Medium' ? 2 : 1);
-            return (
-              <TouchableOpacity
-                key={topic.id}
-                onPress={() => setSelectedTopic(topic)}
-                style={styles.cardItem}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel={`Practice ${topic.title}`}
-              >
-              {/* Crown Badge floating on top center border */}
-              <View style={styles.crownBadgeFloating}>
-                <Text style={styles.crownBadgeEmoji}>👑</Text>
-              </View>
+        {displaySections.length > 0 && (
+          <View style={styles.sectionTabs} accessibilityRole="tablist">
+            {displaySections.map((section) => {
+              const isSelected = activeSection?.id === section.id;
+              return (
+                <TouchableOpacity
+                  key={section.id}
+                  onPress={() => setSelectedSectionId(section.id)}
+                  style={[styles.sectionTab, isSelected && styles.sectionTabSelected]}
+                  activeOpacity={0.8}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: isSelected }}
+                >
+                  <Text style={[styles.sectionTabText, isSelected && styles.sectionTabTextSelected]}>
+                    {section.title}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
-              {/* Top Row: Signal Level Bars + Text */}
-              <View style={styles.cardTopRow}>
-                <View style={styles.levelSignalContainer}>
-                  <View style={styles.signalBarGroup}>
-                    <View style={[styles.signalBar, levelBars >= 1 && styles.signalBarFilled]} />
-                    <View style={[styles.signalBar, levelBars >= 2 && styles.signalBarFilled]} />
-                    <View style={[styles.signalBar, levelBars >= 3 && styles.signalBarFilled]} />
+        {activeSection && (
+          <View style={styles.cardsGrid}>
+            {activeSection.topics.map((topic) => {
+              const levelBars = topic.bars || (topic.level === 'Hard' ? 3 : topic.level === 'Medium' ? 2 : 1);
+              return (
+                <TouchableOpacity
+                  key={topic.id}
+                  onPress={() => setSelectedTopic(topic)}
+                  style={styles.cardItem}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Practice ${topic.title}`}
+                >
+                  {/* Crown Badge floating on top center border */}
+                  <View style={styles.crownBadgeFloating}>
+                    <Text style={styles.crownBadgeEmoji}>👑</Text>
                   </View>
-                  <Text style={styles.levelText}>{topic.level}</Text>
-                </View>
-              </View>
 
-              {/* Graphic Illustration with soft pastel background pill */}
-              <View style={[styles.graphicArea, { backgroundColor: topic.bgColor || '#F8FAFC' }]}>
-                <CardIllustration type={topic.graphic} color={topic.color} icon={topic.icon} />
-              </View>
+                  {/* Top Row: Signal Level Bars + Text */}
+                  <View style={styles.cardTopRow}>
+                    <View style={styles.levelSignalContainer}>
+                      <View style={styles.signalBarGroup}>
+                        <View style={[styles.signalBar, levelBars >= 1 && styles.signalBarFilled]} />
+                        <View style={[styles.signalBar, levelBars >= 2 && styles.signalBarFilled]} />
+                        <View style={[styles.signalBar, levelBars >= 3 && styles.signalBarFilled]} />
+                      </View>
+                      <Text style={styles.levelText}>{topic.level}</Text>
+                    </View>
+                  </View>
 
-              {/* Card Title Box: Fixed height for uniform alignment */}
-              <View style={styles.cardTitleBox}>
-                <Text style={styles.cardTitleText} numberOfLines={2}>
-                  {topic.title}
-                </Text>
-              </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                  {/* Graphic Illustration with soft pastel background pill */}
+                  <View style={[styles.graphicArea, { backgroundColor: topic.bgColor || '#F8FAFC' }]}>
+                    <CardIllustration type={topic.graphic} color={topic.color} icon={topic.icon} />
+                  </View>
+
+                  {/* Card Title Box: Fixed height for uniform alignment */}
+                  <View style={styles.cardTitleBox}>
+                    <Text style={styles.cardTitleText} numberOfLines={2}>
+                      {topic.title}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {/* Bottom padding to leave room for the floating banner */}
         <View style={{ height: 110 }} />
@@ -885,6 +919,36 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 13,
     fontWeight: '700',
+  },
+  sectionTabs: {
+    flexDirection: 'row',
+    marginTop: 14,
+    padding: 4,
+    borderRadius: 14,
+    backgroundColor: '#F1F0F8',
+  },
+  sectionTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    borderRadius: 11,
+  },
+  sectionTabSelected: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#5843E8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  sectionTabText: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sectionTabTextSelected: {
+    color: '#5B43D6',
   },
   cardsGrid: {
     flexDirection: 'row',
