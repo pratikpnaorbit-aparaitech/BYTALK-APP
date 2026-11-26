@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import './style.css';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
 
 const EMPTY_HOME_CARD_FORM = {
   title: '',

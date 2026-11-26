@@ -107,3 +107,49 @@ test('entitlementPayload reverts to free when revoked or expired', () => {
   assert.equal(canUseAudio(revokedUser), false);
   assert.equal(canUseVideo(revokedUser), false);
 });
+
+test('free voice usage remains locked for 24 hours after reaching the limit', () => {
+  const reachedAt = new Date('2026-11-25T10:00:00.000Z');
+  const user = {
+    subscriptionPlan: 'free',
+    subscriptionStatus: 'inactive',
+    freeVoiceDay: dayKey(reachedAt),
+    freeVoiceLimitReachedAt: reachedAt,
+    voiceSecondsUsed: 600,
+  };
+  const afterTwentyThreeHours = new Date(reachedAt.getTime() + 23 * 60 * 60 * 1000);
+
+  assert.equal(getFreeTrialSecondsRemaining(user, afterTwentyThreeHours), 0);
+  assert.equal(user.voiceSecondsUsed, 600);
+  assert.equal(entitlementPayload(user, afterTwentyThreeHours).freeTrial.resetAt, '2026-11-26T10:00:00.000Z');
+});
+
+test('free voice usage resets exactly 24 hours after the limit is reached', () => {
+  const reachedAt = new Date('2026-11-25T10:00:00.000Z');
+  const resetAt = new Date(reachedAt.getTime() + FREE_TRIAL_RESET_DELAY_MS);
+  const user = {
+    subscriptionPlan: 'free',
+    subscriptionStatus: 'inactive',
+    freeVoiceDay: dayKey(reachedAt),
+    freeVoiceLimitReachedAt: reachedAt,
+    voiceSecondsUsed: 600,
+  };
+
+  assert.equal(getFreeTrialSecondsRemaining(user, resetAt), 600);
+  assert.equal(user.voiceSecondsUsed, 0);
+  assert.equal(user.freeVoiceLimitReachedAt, null);
+});
+
+test('partially used free voice resets on a new UTC day before the limit is reached', () => {
+  const previousDay = new Date('2026-11-24T23:59:59.000Z');
+  const newDay = new Date('2026-11-25T00:00:00.000Z');
+  const user = {
+    subscriptionPlan: 'free',
+    subscriptionStatus: 'inactive',
+    freeVoiceDay: dayKey(previousDay),
+    voiceSecondsUsed: 300,
+  };
+
+  assert.equal(getFreeTrialSecondsRemaining(user, newDay), 600);
+  assert.equal(user.freeVoiceDay, dayKey(newDay));
+});

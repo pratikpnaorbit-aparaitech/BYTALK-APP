@@ -187,17 +187,37 @@ export function dayKey(date = new Date()) {
   return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`;
 }
 
-export function resetDailyFreeVoiceIfNeeded(user) {
+export const FREE_TRIAL_VOICE_SECONDS = 600;
+export const FREE_TRIAL_VOICE_MINUTES = 10;
+export const FREE_TRIAL_RESET_DELAY_MS = 24 * 60 * 60 * 1000;
+
+export function resetDailyFreeVoiceIfNeeded(user, now = new Date()) {
   if (!user) return;
-  const currentDay = dayKey();
+
+  const nowMs = now.getTime();
+  const currentDay = dayKey(now);
+  const reachedAtMs = user.freeVoiceLimitReachedAt
+    ? new Date(user.freeVoiceLimitReachedAt).getTime()
+    : NaN;
+
+  if (Number.isFinite(reachedAtMs)) {
+    if (nowMs < reachedAtMs + FREE_TRIAL_RESET_DELAY_MS) return;
+    user.freeVoiceLimitReachedAt = null;
+    user.voiceSecondsUsed = 0;
+    user.freeVoiceDay = currentDay;
+    return;
+  }
+
+  if (Number(user.voiceSecondsUsed || 0) >= FREE_TRIAL_VOICE_SECONDS) {
+    user.freeVoiceLimitReachedAt = new Date(nowMs);
+    return;
+  }
+
   if (user.freeVoiceDay !== currentDay) {
     user.freeVoiceDay = currentDay;
     user.voiceSecondsUsed = 0;
   }
 }
-
-export const FREE_TRIAL_VOICE_SECONDS = 600; // 10 minutes free trial every day
-export const FREE_TRIAL_VOICE_MINUTES = 10;
 
 export function isPaidSubscriber(user) {
   if (!user) return false;
@@ -212,7 +232,7 @@ export function canStartSubscribedCall(caller, recipient) {
 export function getFreeTrialSecondsRemaining(user) {
   if (!user) return 0;
   if (isPaidSubscriber(user)) return Infinity;
-  resetDailyFreeVoiceIfNeeded(user);
+  resetDailyFreeVoiceIfNeeded(user, now);
   const usedSeconds = user.voiceSecondsUsed ?? ((user.voiceMinutesUsed || 0) * 60);
   return Math.max(0, FREE_TRIAL_VOICE_SECONDS - usedSeconds);
 }
@@ -220,7 +240,7 @@ export function getFreeTrialSecondsRemaining(user) {
 /**
  * Normal voice/audio calling:
  * - Paid subscribers have unlimited/plan-based calling.
- * - Every user gets 10 minutes free every day.
+ * - Free users get 10 minutes, then regain access 24 hours after reaching the limit.
  */
 export function canUseAudio(user) {
   if (!user) return false;
@@ -246,12 +266,12 @@ export function canUseVideo(user) {
   return limit === null || (user.videoCallsUsed || 0) < limit;
 }
 
-export function entitlementPayload(user) {
+export function entitlementPayload(user, now = new Date()) {
   const subscription = activeSubscription(user);
   resetUsageIfNeeded(user);
-  resetDailyFreeVoiceIfNeeded(user);
+  resetDailyFreeVoiceIfNeeded(user, now);
   const isPaid = subscription.plan.id !== 'free';
-  const freeSecondsRemaining = getFreeTrialSecondsRemaining(user);
+  const freeSecondsRemaining = getFreeTrialSecondsRemaining(user, now);
   return {
     ...subscription,
     isPaidSubscriber: isPaid,
@@ -260,6 +280,9 @@ export function entitlementPayload(user) {
       remainingSeconds: isPaid ? null : freeSecondsRemaining,
       remainingMinutes: isPaid ? null : Math.ceil(freeSecondsRemaining / 60),
       isExpired: !isPaid && freeSecondsRemaining <= 0,
+      resetAt: !isPaid && user?.freeVoiceLimitReachedAt
+        ? new Date(new Date(user.freeVoiceLimitReachedAt).getTime() + FREE_TRIAL_RESET_DELAY_MS).toISOString()
+        : null,
     },
     usage: {
       month: user?.usageMonth || monthKey(),
