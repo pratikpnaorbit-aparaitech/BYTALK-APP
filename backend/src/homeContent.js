@@ -133,17 +133,17 @@ export function normalizeHomeContent(value) {
   if (!value || !Array.isArray(value.sections) || value.sections.length > 12) return null;
 
   const sectionIds = new Set();
-  const sections = [];
+  const topics = [];
+  const topicIds = new Set();
   for (const section of value.sections) {
     if (!section || typeof section !== 'object' || !ID_PATTERN.test(section.id || '') || sectionIds.has(section.id)) return null;
     const title = cleanText(section.title, 60);
     if (!title || !Array.isArray(section.topics) || section.topics.length > 30) return null;
 
     sectionIds.add(section.id);
-    const topicIds = new Set();
-    const topics = [];
     for (const topic of section.topics) {
       if (!topic || typeof topic !== 'object' || !ID_PATTERN.test(topic.id || '') || topicIds.has(topic.id)) return null;
+      if (topics.length >= 30) return null;
       const topicTitle = cleanText(topic.title, 80);
       const level = LEVELS.has(topic.level) ? topic.level : 'Easy';
       const starterPrompt = cleanText(topic.starterPrompt, 500);
@@ -157,25 +157,20 @@ export function normalizeHomeContent(value) {
         id: topic.id,
         title: topicTitle,
         level,
-        category: title,
+        category: cleanText(topic.category, 60) || title,
         starterPrompt,
         icon: icon || 'chatbubbles',
         color,
         bgColor,
         graphic: cleanText(topic.graphic, 40),
-        enabled: topic.enabled !== false,
+        enabled: section.enabled !== false && topic.enabled !== false,
       });
     }
-
-    sections.push({
-      id: section.id,
-      title,
-      enabled: section.enabled !== false,
-      topics,
-    });
   }
 
-  return { sections };
+  return {
+    sections: [{ id: 'home-cards', title: 'Home', enabled: true, topics }],
+  };
 }
 
 export function publishedHomeContent(content) {

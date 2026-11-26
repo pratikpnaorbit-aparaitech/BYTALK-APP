@@ -380,7 +380,6 @@ export default function AryaHomeScreen({
   freeCreditsRemaining = 5,
   request,
 }) {
-  const [activeCategory, setActiveCategory] = useState('general');
   const [publishedSections, setPublishedSections] = useState(null);
   const [selectedTopic, setSelectedTopic] = useState(null);
 
@@ -423,8 +422,10 @@ export default function AryaHomeScreen({
     { id: 'general', title: 'General', topics: GENERAL_TOPICS },
     { id: 'interview', title: 'Interview', topics: INTERVIEW_TOPICS },
   ];
-  const activeSection = sections.find((section) => section.id === activeCategory) || sections[0];
-  const topics = activeSection?.topics || [];
+  const topics = sections.flatMap((section) => section.topics.map((topic) => ({
+    ...topic,
+    category: topic.category || section.title,
+  })));
   const selectPracticeMode = (mode) => {
     if (!selectedTopic) return;
     const topic = selectedTopic;
@@ -458,24 +459,6 @@ export default function AryaHomeScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Home sections are managed from the admin console. */}
-        <View style={styles.tabSwitcherContainer}>
-          {sections.map((section) => (
-            <TouchableOpacity
-              key={section.id}
-              onPress={() => setActiveCategory(section.id)}
-              style={[styles.switcherTab, activeSection?.id === section.id && styles.switcherTabActive]}
-              activeOpacity={0.8}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: activeSection?.id === section.id }}
-            >
-              <Text numberOfLines={1} style={[styles.switcherTabText, activeSection?.id === section.id && styles.switcherTabTextActive]}>
-                {section.title}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         {/* 2-Column Cards Grid with Floating Crown Badges */}
         <View style={styles.cardsGrid}>
           {topics.map((topic) => {
@@ -483,7 +466,7 @@ export default function AryaHomeScreen({
             return (
               <TouchableOpacity
                 key={topic.id}
-                onPress={() => setSelectedTopic({ ...topic, category: activeSection?.title || topic.category })}
+                onPress={() => setSelectedTopic(topic)}
                 style={styles.cardItem}
                 activeOpacity={0.85}
                 accessibilityRole="button"
@@ -902,41 +885,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 13,
     fontWeight: '700',
-  },
-  tabSwitcherContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    backgroundColor: '#F1F0FB',
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
-    marginTop: 6,
-    marginBottom: 20,
-  },
-  switcherTab: {
-    flex: 1,
-    minWidth: 110,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 11,
-  },
-  switcherTabActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#5843E8',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  switcherTabText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#718096',
-  },
-  switcherTabTextActive: {
-    fontWeight: '800',
-    color: '#5843E8',
   },
   cardsGrid: {
     flexDirection: 'row',

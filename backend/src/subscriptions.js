@@ -205,6 +205,10 @@ export function isPaidSubscriber(user) {
   return subscription.plan.id !== 'free';
 }
 
+export function canStartSubscribedCall(caller, recipient) {
+  return isPaidSubscriber(caller) && isPaidSubscriber(recipient);
+}
+
 export function getFreeTrialSecondsRemaining(user) {
   if (!user) return 0;
   if (isPaidSubscriber(user)) return Infinity;

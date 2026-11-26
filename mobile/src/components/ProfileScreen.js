@@ -92,6 +92,7 @@ export default function ProfileScreen({
 
   const [editName, setEditName] = useState(user?.displayName || user?.name || '');
   const [editEmail, setEditEmail] = useState(user?.email || '');
+  const [editGender, setEditGender] = useState(user?.gender || '');
   const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [giftClaimed, setGiftClaimed] = useState(false);
 
@@ -102,10 +103,11 @@ export default function ProfileScreen({
     if (user?.email) {
       setEditEmail(user.email);
     }
+    setEditGender(user?.gender || '');
     if (user?.profilePhotoUrl) {
       setSelectedAvatarUrl(user.profilePhotoUrl);
     }
-  }, [user?.name, user?.displayName, user?.email, user?.profilePhotoUrl]);
+  }, [user?.name, user?.displayName, user?.email, user?.gender, user?.profilePhotoUrl]);
 
   // Subscription remaining days calculation
   const hasActiveSub = isPro || subscription?.active === true || ['basic', 'plus', 'pro', '1month', '3months', '1year'].includes(subscription?.plan?.id);
@@ -188,18 +190,24 @@ export default function ProfileScreen({
     setShowAvatarModal(false);
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     if (!editName.trim()) {
       Alert.alert('Validation Error', 'Please enter your name.');
       return;
     }
+    if (!['male', 'female'].includes(editGender)) {
+      Alert.alert('Validation Error', 'Please select your profile gender so others can find you when matching.');
+      return;
+    }
     if (onUpdateProfile) {
-      onUpdateProfile({
+      const saved = await onUpdateProfile({
         name: editName.trim(),
         displayName: editName.trim(),
         email: editEmail.trim(),
         profilePhotoUrl: selectedAvatarUrl,
+        gender: editGender,
       });
+      if (saved === false) return;
     }
     setShowEditModal(false);
   };
@@ -724,6 +732,31 @@ export default function ProfileScreen({
               placeholder="Email"
               placeholderTextColor="#94A3B8"
             />
+
+            <Text style={styles.inputLabel}>Your Profile Gender</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+              {['male', 'female'].map((gender) => (
+                <TouchableOpacity
+                  key={gender}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: editGender === gender }}
+                  onPress={() => setEditGender(gender)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 11,
+                    borderRadius: 10,
+                    alignItems: 'center',
+                    borderWidth: 1,
+                    borderColor: editGender === gender ? '#5843E8' : '#E2E8F0',
+                    backgroundColor: editGender === gender ? '#F3F0FF' : '#FFFFFF',
+                  }}
+                >
+                  <Text style={{ color: '#1E293B', fontSize: 14, fontWeight: '700' }}>
+                    {gender.charAt(0).toUpperCase() + gender.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <TouchableOpacity
               onPress={handleSaveProfile}

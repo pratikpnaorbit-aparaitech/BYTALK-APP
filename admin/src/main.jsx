@@ -29,6 +29,17 @@ import './style.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+const EMPTY_HOME_CARD_FORM = {
+  title: '',
+  category: 'General',
+  level: 'Easy',
+  graphic: '',
+  icon: 'chatbubbles',
+  color: '#8B5CF6',
+  bgColor: '#F5F3FF',
+  starterPrompt: '',
+};
+
 function newHomeContentId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -43,8 +54,10 @@ function App() {
   const [reports, setReports] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [homeContent, setHomeContent] = useState({ sections: [] });
-  const [expandedHomeSectionId, setExpandedHomeSectionId] = useState(null);
   const [homeContentSubmitting, setHomeContentSubmitting] = useState(false);
+  const [showHomeCardModal, setShowHomeCardModal] = useState(false);
+  const [editingHomeTopicId, setEditingHomeTopicId] = useState(null);
+  const [homeCardForm, setHomeCardForm] = useState({ ...EMPTY_HOME_CARD_FORM });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -112,19 +125,13 @@ function App() {
     }
   }
 
-  function updateHomeSection(sectionId, changes) {
+  function updateHomeTopic(topicId, changes) {
     setHomeContent((current) => ({
       ...current,
-      sections: current.sections.map((section) => section.id === sectionId ? { ...section, ...changes } : section),
-    }));
-  }
-
-  function updateHomeTopic(sectionId, topicId, changes) {
-    setHomeContent((current) => ({
-      ...current,
-      sections: current.sections.map((section) => section.id === sectionId
-        ? { ...section, topics: section.topics.map((topic) => topic.id === topicId ? { ...topic, ...changes } : topic) }
-        : section),
+      sections: current.sections.map((section) => ({
+        ...section,
+        topics: section.topics.map((topic) => topic.id === topicId ? { ...topic, ...changes } : topic),
+      })),
     }));
   }
 
@@ -136,49 +143,73 @@ function App() {
     return updated;
   }
 
-  function moveHomeSection(index, offset) {
-    setHomeContent((current) => ({ ...current, sections: moveHomeItem(current.sections, index, offset) }));
+  function moveHomeTopic(index, offset) {
+    setHomeContent((current) => {
+      const topics = current.sections.flatMap((section) => section.topics);
+      return {
+        sections: [{ id: 'home-cards', title: 'Home', enabled: true, topics: moveHomeItem(topics, index, offset) }],
+      };
+    });
   }
 
-  function moveHomeTopic(sectionId, index, offset) {
-    setHomeContent((current) => ({
-      ...current,
-      sections: current.sections.map((section) => section.id === sectionId
-        ? { ...section, topics: moveHomeItem(section.topics, index, offset) }
-        : section),
-    }));
+  function openAddHomeCard() {
+    setEditingHomeTopicId(null);
+    setHomeCardForm({ ...EMPTY_HOME_CARD_FORM });
+    setShowHomeCardModal(true);
   }
 
-  function addHomeSection() {
-    const id = newHomeContentId('section');
-    setHomeContent((current) => ({
-      ...current,
-      sections: [{ id, title: 'New section', enabled: true, topics: [] }, ...current.sections],
-    }));
-    setExpandedHomeSectionId(id);
+  function openEditHomeCard(topic) {
+    setEditingHomeTopicId(topic.id);
+    setHomeCardForm({
+      title: topic.title || '',
+      category: topic.category || 'General',
+      level: topic.level || 'Easy',
+      graphic: topic.graphic || '',
+      icon: topic.icon || 'chatbubbles',
+      color: topic.color || '#8B5CF6',
+      bgColor: topic.bgColor || '#F5F3FF',
+      starterPrompt: topic.starterPrompt || '',
+    });
+    setShowHomeCardModal(true);
   }
 
-  function addHomeTopic(sectionId) {
-    const id = newHomeContentId('topic');
-    setExpandedHomeSectionId(sectionId);
-    setHomeContent((current) => ({
-      ...current,
-      sections: current.sections.map((section) => section.id === sectionId
-        ? {
-          ...section,
-          topics: [...section.topics, {
-            id,
-            title: 'New topic',
-            level: 'Easy',
-            starterPrompt: 'Start a friendly conversation about this topic.',
-            icon: 'chatbubbles',
-            color: '#8B5CF6',
-            bgColor: '#F5F3FF',
-            graphic: '',
-            enabled: true,
+  function saveHomeCard(event) {
+    event.preventDefault();
+    const card = {
+      ...homeCardForm,
+      title: homeCardForm.title.trim(),
+      category: homeCardForm.category.trim() || 'General',
+      starterPrompt: homeCardForm.starterPrompt.trim(),
+    };
+    if (!card.title || !card.starterPrompt) {
+      alert('Card title and conversation starter are required.');
+      return;
+    }
+
+    if (editingHomeTopicId) {
+      updateHomeTopic(editingHomeTopicId, card);
+    } else {
+      const id = newHomeContentId('topic');
+      setHomeContent((current) => {
+        const section = current.sections[0] || { id: 'home-cards', title: 'Home', enabled: true, topics: [] };
+        return {
+          sections: [{
+            ...section,
+            topics: [...(section.topics || []), { id, ...card, enabled: true }],
           }],
-        }
-        : section),
+        };
+      });
+    }
+
+    setShowHomeCardModal(false);
+  }
+
+  function removeHomeTopic(topicId) {
+    setHomeContent((current) => ({
+      sections: current.sections.map((section) => ({
+        ...section,
+        topics: section.topics.filter((topic) => topic.id !== topicId),
+      })),
     }));
   }
 
@@ -197,7 +228,7 @@ function App() {
       }
       setHomeContent(result.homeContent);
       setError('');
-      alert('Home page content published.');
+      alert('Home page cards published.');
     } catch {
       setError('Network error while publishing home content.');
     } finally {
@@ -458,7 +489,7 @@ function App() {
 
   const menu = [
     ['Overview', LayoutDashboard],
-    ['Home Content', House],
+    ['Home Cards', House],
     ['Users', Users],
     ['Subscriptions', CreditCard],
     ['Plans & Pricing', Sparkles],
@@ -466,6 +497,7 @@ function App() {
     ['Reports', ShieldAlert],
     ['Audit Logs', History],
   ];
+  const homeCards = homeContent.sections.flatMap((section) => section.topics);
 
   return (
     <div className="shell">
@@ -1048,166 +1080,63 @@ function App() {
           </div>
         )}
 
-        {tab === 'Home Content' && (
+        {tab === 'Home Cards' && (
           <div className="panel home-content-panel">
             <div className="toolbar">
               <div>
-                <h3 style={{ margin: '0 0 4px' }}>Home page sections</h3>
+                <h3 style={{ margin: '0 0 4px' }}>Home page cards</h3>
                 <p className="muted" style={{ margin: 0 }}>
-                  Edit section tabs and the practice cards shown to learners. Publish to make changes live.
+                  Add, edit, hide, delete, or reorder the cards shown to learners. Publish to make changes live.
                 </p>
               </div>
               <div className="home-content-actions">
-                <button type="button" className="action" onClick={addHomeSection}>Add section</button>
+                <button type="button" className="action" onClick={openAddHomeCard}>+ Add card</button>
                 <button type="button" className="action" onClick={publishHomeContent} disabled={homeContentSubmitting}>
                   {homeContentSubmitting ? 'Publishing…' : 'Publish changes'}
                 </button>
               </div>
             </div>
 
-            {homeContent.sections.length === 0 && (
-              <p className="muted">No sections yet. Add a section to begin customizing the home page.</p>
+            {homeCards.length === 0 && (
+              <p className="muted">No home page cards yet. Add a card to get started.</p>
             )}
 
-            {homeContent.sections.map((section, sectionIndex) => (
-              <section className={`home-section-editor ${section.enabled ? '' : 'home-section-disabled'}`} key={section.id}>
-                <div className="home-section-heading">
-                  <button
-                    type="button"
-                    className="home-section-expander"
-                    aria-expanded={expandedHomeSectionId === section.id}
-                    onClick={() => setExpandedHomeSectionId((current) => current === section.id ? null : section.id)}
-                  >
-                    <span className="home-section-expander-icon">{expandedHomeSectionId === section.id ? '−' : '+'}</span>
-                    <span className="home-section-expander-title">{section.title || 'Untitled section'}</span>
-                    <span className="home-section-summary">
-                      {section.topics.length} cards · {section.enabled ? 'Published' : 'Hidden'}
-                    </span>
-                  </button>
-                  <div className="home-section-controls">
-                    <button type="button" className="home-move" disabled={sectionIndex === 0} onClick={() => moveHomeSection(sectionIndex, -1)} aria-label="Move section up">↑</button>
-                    <button type="button" className="home-move" disabled={sectionIndex === homeContent.sections.length - 1} onClick={() => moveHomeSection(sectionIndex, 1)} aria-label="Move section down">↓</button>
+            <ol className="home-card-list">
+              {homeCards.map((topic, topicIndex) => (
+                <li className="home-card-row" key={topic.id}>
+                  <span className="home-card-number">{String(topicIndex + 1).padStart(2, '0')}</span>
+                  <div className="home-card-summary">
+                    <strong>{topic.title || 'Untitled card'}</strong>
+                    <div className="home-card-meta">
+                      <span>{topic.category || 'General'}</span>
+                      <span>{topic.level || 'Easy'}</span>
+                      <span className={`home-card-status ${topic.enabled === false ? 'is-hidden' : ''}`}>
+                        {topic.enabled === false ? 'Hidden' : 'Published'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="home-card-row-actions">
+                    <button type="button" className="home-move" disabled={topicIndex === 0} onClick={() => moveHomeTopic(topicIndex, -1)} aria-label="Move card up">↑</button>
+                    <button type="button" className="home-move" disabled={topicIndex === homeCards.length - 1} onClick={() => moveHomeTopic(topicIndex, 1)} aria-label="Move card down">↓</button>
                     <button
                       type="button"
                       className="home-status-toggle"
-                      onClick={() => updateHomeSection(section.id, { enabled: !section.enabled })}
+                      onClick={() => updateHomeTopic(topic.id, { enabled: topic.enabled === false })}
                     >
-                      {section.enabled ? 'Published' : 'Hidden'}
+                      {topic.enabled === false ? 'Publish' : 'Hide'}
                     </button>
-                    <button
-                      type="button"
-                      className="home-delete"
-                      onClick={() => setHomeContent((current) => ({
-                        ...current,
-                        sections: current.sections.filter((item) => item.id !== section.id),
-                      }))}
-                    >
-                      Remove section
+                    <button type="button" className="home-card-icon-button" onClick={() => openEditHomeCard(topic)} aria-label={`Edit ${topic.title}`}>
+                      <Edit2 size={15} />
+                      <span>Edit</span>
+                    </button>
+                    <button type="button" className="home-card-icon-button is-delete" onClick={() => removeHomeTopic(topic.id)} aria-label={`Remove ${topic.title}`}>
+                      <Trash2 size={15} />
+                      <span>Remove</span>
                     </button>
                   </div>
-                </div>
-
-                {expandedHomeSectionId === section.id && (
-                  <>
-                    <input
-                      className="home-content-input home-section-title"
-                      aria-label="Section title"
-                      maxLength={60}
-                      value={section.title}
-                      onChange={(event) => updateHomeSection(section.id, { title: event.target.value })}
-                    />
-                    <div className="home-topic-list">
-                  {section.topics.map((topic, topicIndex) => (
-                    <div className="home-topic-editor" key={topic.id}>
-                      <div className="home-topic-toolbar">
-                        <strong>Home card {topicIndex + 1}</strong>
-                        <div className="home-section-controls">
-                          <button type="button" className="home-move" disabled={topicIndex === 0} onClick={() => moveHomeTopic(section.id, topicIndex, -1)} aria-label="Move card up">↑</button>
-                          <button type="button" className="home-move" disabled={topicIndex === section.topics.length - 1} onClick={() => moveHomeTopic(section.id, topicIndex, 1)} aria-label="Move card down">↓</button>
-                          <button
-                            type="button"
-                            className="home-status-toggle"
-                            onClick={() => updateHomeTopic(section.id, topic.id, { enabled: topic.enabled === false })}
-                          >
-                            {topic.enabled === false ? 'Hidden' : 'Published'}
-                          </button>
-                          <button
-                            type="button"
-                            className="home-delete"
-                            onClick={() => updateHomeSection(section.id, {
-                              topics: section.topics.filter((item) => item.id !== topic.id),
-                            })}
-                          >
-                            Remove card
-                          </button>
-                        </div>
-                      </div>
-                      <div className="home-topic-fields">
-                        <label>
-                          Card title
-                          <input
-                            className="home-content-input"
-                            maxLength={80}
-                            value={topic.title}
-                            onChange={(event) => updateHomeTopic(section.id, topic.id, { title: event.target.value })}
-                          />
-                        </label>
-                        <label>
-                          Level
-                          <select
-                            className="home-content-input"
-                            value={topic.level}
-                            onChange={(event) => updateHomeTopic(section.id, topic.id, { level: event.target.value })}
-                          >
-                            <option>Easy</option>
-                            <option>Medium</option>
-                            <option>Hard</option>
-                          </select>
-                        </label>
-                        <label>
-                          Icon name
-                          <input
-                            className="home-content-input"
-                            maxLength={40}
-                            value={topic.icon || ''}
-                            onChange={(event) => updateHomeTopic(section.id, topic.id, { icon: event.target.value })}
-                          />
-                        </label>
-                        <label className="home-color-field">
-                          Card color
-                          <input
-                            type="color"
-                            value={topic.color || '#8B5CF6'}
-                            onChange={(event) => updateHomeTopic(section.id, topic.id, { color: event.target.value })}
-                          />
-                        </label>
-                        <label className="home-color-field">
-                          Background
-                          <input
-                            type="color"
-                            value={topic.bgColor || '#F5F3FF'}
-                            onChange={(event) => updateHomeTopic(section.id, topic.id, { bgColor: event.target.value })}
-                          />
-                        </label>
-                        <label className="home-prompt-field">
-                          Conversation starter
-                          <textarea
-                            className="home-content-input"
-                            maxLength={500}
-                            rows={3}
-                            value={topic.starterPrompt}
-                            onChange={(event) => updateHomeTopic(section.id, topic.id, { starterPrompt: event.target.value })}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  ))}
-                    </div>
-                    <button type="button" className="home-add-topic" onClick={() => addHomeTopic(section.id)}>+ Add home card</button>
-                  </>
-                )}
-              </section>
-            ))}
+                </li>
+              ))}
+            </ol>
           </div>
         )}
 
@@ -1710,6 +1639,128 @@ function App() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {showHomeCardModal && (
+          <div
+            className="modal-backdrop"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setShowHomeCardModal(false);
+            }}
+          >
+            <form className="modal-box home-card-modal" onSubmit={saveHomeCard} role="dialog" aria-modal="true" aria-labelledby="home-card-modal-title">
+              <div className="home-card-modal-heading">
+                <div>
+                  <small>HOME PAGE</small>
+                  <h4 id="home-card-modal-title">{editingHomeTopicId ? 'Edit card' : 'Add a new card'}</h4>
+                </div>
+                <button type="button" className="home-card-close" onClick={() => setShowHomeCardModal(false)} aria-label="Close form">
+                  ×
+                </button>
+              </div>
+
+              <div className="home-card-form-grid">
+                <label className="home-card-form-field">
+                  Card title
+                  <input
+                    className="home-content-input"
+                    maxLength={80}
+                    required
+                    autoFocus
+                    value={homeCardForm.title}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, title: event.target.value })}
+                    placeholder="e.g. Talk about your favorite food"
+                  />
+                </label>
+                <label className="home-card-form-field">
+                  Category
+                  <input
+                    className="home-content-input"
+                    maxLength={60}
+                    required
+                    value={homeCardForm.category}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, category: event.target.value })}
+                    placeholder="e.g. General"
+                  />
+                </label>
+                <label className="home-card-form-field">
+                  Difficulty level
+                  <select
+                    className="home-content-input"
+                    value={homeCardForm.level}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, level: event.target.value })}
+                  >
+                    <option>Easy</option>
+                    <option>Medium</option>
+                    <option>Hard</option>
+                  </select>
+                </label>
+                <label className="home-card-form-field">
+                  Card illustration
+                  <select
+                    className="home-content-input"
+                    value={homeCardForm.graphic}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, graphic: event.target.value })}
+                  >
+                    <option value="">Use icon</option>
+                    <option value="people_chatting">People chatting</option>
+                    <option value="person_walking">Person walking</option>
+                    <option value="classroom_board">Classroom board</option>
+                    <option value="child_balloon">Childhood memory</option>
+                    <option value="travel_world">Travel</option>
+                    <option value="headphones_music">Music</option>
+                    <option value="interview_handshake">Interview</option>
+                    <option value="job_interview">Job interview</option>
+                    <option value="strengths_weaknesses">Strengths and weaknesses</option>
+                    <option value="career_aspirations">Career aspirations</option>
+                  </select>
+                </label>
+                <label className="home-card-form-field">
+                  Icon name
+                  <input
+                    className="home-content-input"
+                    maxLength={40}
+                    value={homeCardForm.icon}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, icon: event.target.value })}
+                    placeholder="chatbubbles"
+                  />
+                </label>
+                <label className="home-card-form-field home-card-color-field">
+                  Card color
+                  <input
+                    type="color"
+                    value={homeCardForm.color}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, color: event.target.value })}
+                  />
+                </label>
+                <label className="home-card-form-field home-card-color-field">
+                  Background color
+                  <input
+                    type="color"
+                    value={homeCardForm.bgColor}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, bgColor: event.target.value })}
+                  />
+                </label>
+                <label className="home-card-form-field is-wide">
+                  Conversation starter
+                  <textarea
+                    className="home-content-input"
+                    maxLength={500}
+                    rows={4}
+                    required
+                    value={homeCardForm.starterPrompt}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, starterPrompt: event.target.value })}
+                    placeholder="What should the AI ask the learner?"
+                  />
+                </label>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="home-card-cancel" onClick={() => setShowHomeCardModal(false)}>Cancel</button>
+                <button type="submit" className="action">{editingHomeTopicId ? 'Save changes' : 'Add card'}</button>
+              </div>
+            </form>
           </div>
         )}
       </main>

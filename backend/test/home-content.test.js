@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_HOME_CONTENT, normalizeHomeContent, publishedHomeContent } from '../src/homeContent.js';
 
-test('default home content preserves the existing practice sections and prompts', () => {
+test('default home cards preserve their titles, categories, and prompts', () => {
   const content = publishedHomeContent(DEFAULT_HOME_CONTENT);
-  assert.deepEqual(content.sections.map((section) => section.title), ['General', 'Interview']);
+  assert.deepEqual(content.sections.map((section) => section.title), ['Home']);
+  assert.equal(content.sections[0].topics.length, 10);
   assert.equal(content.sections[0].topics[0].title, 'Talk about anything');
+  assert.equal(content.sections[0].topics[0].category, 'General');
+  assert.equal(content.sections[0].topics[6].category, 'Interview');
   assert.equal(content.sections[0].topics[0].starterPrompt, "Let's have an open and friendly conversation about anything on your mind!");
 });
 
@@ -24,7 +27,7 @@ test('home content rejects duplicate IDs and topics without titles or prompts', 
   assert.equal(normalizeHomeContent(missingPrompt), null);
 });
 
-test('published home content omits hidden sections and cards', () => {
+test('published home cards omit hidden sections and cards', () => {
   const content = {
     sections: [
       {
@@ -42,4 +45,5 @@ test('published home content omits hidden sections and cards', () => {
   const published = publishedHomeContent(content);
   assert.equal(published.sections.length, 1);
   assert.deepEqual(published.sections[0].topics.map((topic) => topic.id), ['shown']);
+  assert.equal(published.sections[0].topics[0].category, 'Visible');
 });

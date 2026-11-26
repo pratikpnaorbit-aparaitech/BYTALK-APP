@@ -1058,68 +1058,27 @@ function App() {
   };
 
   const handleStartRandomMatch = async (filters = {}) => {
-    if (!hasAudioEntitlement()) {
-      setSubscriptionError('Your first 5 minutes free trial has ended. Please purchase a subscription to continue speaking practice.');
+    if (!isPaidSubscriber()) {
+      setSubscriptionError('An active subscription is required to call other co-learners.');
       await openSubscription();
       return;
     }
 
-    // Only PRO subscribers can choose specific gender (Female/Male) for calls
-    if (!isPaidSubscriber()) {
-      filters = { ...filters, gender: 'all' };
-    }
-
     setIsMatchingCall(true);
     try {
-      let chosenPartner = null;
-
-      // 1. First query backend for real online registered users currently connected
-      try {
-        const queryParams = `?gender=${encodeURIComponent(filters.gender || 'all')}&level=${encodeURIComponent(filters.level || 'all')}`;
-        const onlineRes = await request(`practice/random-online${queryParams}`);
-        if (onlineRes?.ok && onlineRes.user && !onlineRes.user.id?.startsWith('partner_')) {
-          chosenPartner = onlineRes.user;
-        }
-      } catch (e) {
-        console.warn('[random-online query]', e.message);
-      }
-
-      // 2. If not returned from endpoint, check active online human users from state (excluding any demo data)
-      if (!chosenPartner) {
-        let onlineHumans = (partners || []).filter((p) =>
-          String(p.id) !== String(userId) &&
-          p.online &&
-          !String(p.id).startsWith('partner_') &&
-          !p.isAi
-        );
-        if (filters.gender && filters.gender !== 'all') {
-          const targetGender = filters.gender.toLowerCase().trim();
-          onlineHumans = onlineHumans.filter((p) => (p.gender || '').toLowerCase().trim() === targetGender);
-        }
-        if (filters.level && filters.level !== 'all') {
-          const byLevel = onlineHumans.filter((p) => (p.level || '').toLowerCase().includes(filters.level.toLowerCase()));
-          if (byLevel.length > 0) onlineHumans = byLevel;
-        }
-
-        const recentHistory = recentPartnerHistoryRef.current || [];
-        const freshHumans = onlineHumans.filter((p) => !recentHistory.includes(p.id));
-        const eligibleHumans = freshHumans.length > 0 ? freshHumans : onlineHumans.filter((p) => p.id !== lastCalledPartnerIdRef.current);
-
-        if (eligibleHumans.length > 0) {
-          chosenPartner = eligibleHumans[Math.floor(Math.random() * eligibleHumans.length)];
-        }
-      }
-
-      // 3. Connect strictly to real online registered co-learners (NO bot or demo fallback)
-      if (!chosenPartner) {
+      const recentIds = recentPartnerHistoryRef.current || [];
+      const queryParams = `?gender=${encodeURIComponent(filters.gender || 'all')}&level=${encodeURIComponent(filters.level || 'all')}&exclude=${encodeURIComponent(recentIds.join(','))}&lastCalled=${encodeURIComponent(lastCalledPartnerIdRef.current || '')}`;
+      const onlineRes = await request(`practice/random-online${queryParams}`);
+      if (!onlineRes?.ok || !onlineRes.user || onlineRes.user.id?.startsWith('partner_')) {
         setIsMatchingCall(false);
         Alert.alert(
-          'No Co-learners Online',
-          'There are no other co-learners online at this moment. You can browse registered learners in the Discover tab or invite friends to practice!'
+          'No Available Subscribers',
+          onlineRes?.message || 'There are no subscribed co-learners matching your selection online and available right now.'
         );
         return;
       }
 
+      const chosenPartner = onlineRes.user;
       lastCalledPartnerIdRef.current = chosenPartner.id;
       recentPartnerHistoryRef.current = [
         chosenPartner.id,
@@ -1145,6 +1104,8 @@ function App() {
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [country, setCountry] = useState('');
+  const [profileGender, setProfileGender] = useState('');
+  const [preferredCallGender, setPreferredCallGender] = useState('any');
   const [nativeLanguage, setNativeLanguage] = useState('');
   const [learningLanguage, setLearningLanguage] = useState('English');
   const [level, setLevel] = useState('Beginner');
@@ -1319,6 +1280,10 @@ function App() {
 
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
+  const [regProfileGender, setRegProfileGender] = useState('');
+  const [regProfileGenderDropdownOpen, setRegProfileGenderDropdownOpen] = useState(false);
+  const [regPreferredCallGender, setRegPreferredCallGender] = useState('any');
+  const [regGenderDropdownOpen, setRegGenderDropdownOpen] = useState(false);
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
@@ -2274,13 +2239,13 @@ function App() {
       Alert.alert('Sign in required', 'Sign in before starting a private call.');
       return;
     }
+    if (!isPaidSubscriber()) {
+      setSubscriptionError('An active subscription is required to call other co-learners.');
+      await openSubscription();
+      return;
+    }
     const isFriend = checkIsFriend(partner);
     if (!isFriend) {
-      if (type === 'audio' && !hasAudioEntitlement()) {
-        setSubscriptionError('Your daily 10 minutes free trial has ended. Please purchase a subscription to continue speaking practice.');
-        await openSubscription();
-        return;
-      }
       if (type === 'video' && !hasVideoEntitlement()) {
         setSubscriptionError('BYTALK Plus or Pro is required for one-to-one video-call practice.');
         await openSubscription();
@@ -2361,6 +2326,9 @@ function App() {
       if (error.code === 'video_plan_required' || error.code === 'subscription_required') {
         setSubscriptionError(error.message);
         setScreen('premium');
+      } else if (error.code === 'recipient_subscription_required') {
+        setScreen(activeBottomTab === 'pro' ? 'call-tab' : (activeBottomTab || 'call-tab'));
+        Alert.alert('Call Unavailable', error.message);
       } else {
         setScreen(activeBottomTab === 'pro' ? 'call-tab' : (activeBottomTab || 'call-tab'));
         Alert.alert(
@@ -2467,6 +2435,10 @@ function App() {
               if (cachedUser.name || cachedUser.displayName) setName(cachedUser.displayName || cachedUser.name);
               if (cachedUser.email) setEmail(cachedUser.email);
               if (cachedUser.profilePhotoUrl) setAvatarUrl(cachedUser.profilePhotoUrl);
+              if (['male', 'female'].includes(cachedUser.gender)) setProfileGender(cachedUser.gender);
+              if (['male', 'female', 'any'].includes(cachedUser.preferredCallGender)) {
+                setPreferredCallGender(cachedUser.preferredCallGender);
+              }
             }
           } catch {}
         }
@@ -2483,6 +2455,10 @@ function App() {
           if (resolvedName) setName(resolvedName);
           if (meRes.user.email) setEmail(meRes.user.email);
           if (meRes.user.profilePhotoUrl !== undefined) setAvatarUrl(meRes.user.profilePhotoUrl);
+          setProfileGender(['male', 'female'].includes(meRes.user.gender) ? meRes.user.gender : '');
+          setPreferredCallGender(['male', 'female', 'any'].includes(meRes.user.preferredCallGender)
+            ? meRes.user.preferredCallGender
+            : 'any');
           if (meRes.user.country) setCountry(meRes.user.country);
           if (meRes.user.nativeLanguage) setNativeLanguage(meRes.user.nativeLanguage);
           if (meRes.user.learningLanguage) setLearningLanguage(meRes.user.learningLanguage);
@@ -3082,6 +3058,10 @@ function App() {
         if (res.user.name) setName(res.user.name);
         if (res.user.email) setEmail(res.user.email);
         if (res.user.profilePhotoUrl) setAvatarUrl(res.user.profilePhotoUrl);
+        setProfileGender(['male', 'female'].includes(res.user.gender) ? res.user.gender : '');
+        setPreferredCallGender(['male', 'female', 'any'].includes(res.user.preferredCallGender)
+          ? res.user.preferredCallGender
+          : 'any');
         if (res.user.country) setCountry(res.user.country);
         if (res.user.nativeLanguage) setNativeLanguage(res.user.nativeLanguage);
         if (res.user.learningLanguage) setLearningLanguage(res.user.learningLanguage);
@@ -3123,6 +3103,10 @@ function App() {
       setRegError('Full name is required.');
       return;
     }
+    if (!['male', 'female'].includes(regProfileGender)) {
+      setRegError('Please select your profile gender so others can find you when matching.');
+      return;
+    }
     if (!emailTrimmed) {
       setRegError('Email address is required.');
       return;
@@ -3157,6 +3141,8 @@ function App() {
           name: nameTrimmed,
           email: emailTrimmed.toLowerCase(),
           password: regPassword,
+          gender: regProfileGender,
+          preferredCallGender: regPreferredCallGender,
         }),
       });
 
@@ -3167,6 +3153,8 @@ function App() {
         if (res.user.id) setUserId(res.user.id);
         setName(nameTrimmed);
         setEmail(emailTrimmed);
+        setProfileGender(res.user.gender || regProfileGender);
+        setPreferredCallGender(res.user.preferredCallGender || regPreferredCallGender);
         if (res.subscription) {
           setSubscription(res.subscription);
         }
@@ -3206,6 +3194,8 @@ function App() {
       setEmail('');
       setAvatarUrl(null);
       setCountry('');
+      setProfileGender('');
+      setPreferredCallGender('any');
       setNativeLanguage('');
       setLearningLanguage('English');
       setLevel('Beginner');
@@ -3220,6 +3210,10 @@ function App() {
       setLoginError('');
       setRegName('');
       setRegEmail('');
+      setRegProfileGender('');
+      setRegProfileGenderDropdownOpen(false);
+      setRegPreferredCallGender('any');
+      setRegGenderDropdownOpen(false);
       setRegPassword('');
       setRegConfirmPassword('');
       setRegError('');
@@ -4214,6 +4208,7 @@ function App() {
               onStartRandomMatch={handleStartRandomMatch}
               isMatching={isMatchingCall}
               isSubscribed={isPaidSubscriber()}
+              preferredCallGender={preferredCallGender}
               freeTrialSecondsRemaining={getFreeTrialSecondsRemaining()}
               dailyFreeSecondsLimit={FREE_TRIAL_TOTAL_SECONDS}
               onPressUpgrade={openSubscription}
@@ -4249,6 +4244,7 @@ function App() {
                 name,
                 email: email || 'pratikumeshpawar@gmail.com',
                 profilePhotoUrl: avatarUrl,
+                gender: profileGender,
               }}
               onBack={() => {
                 setActiveBottomTab('home');
@@ -4263,6 +4259,7 @@ function App() {
                 const newAvatar = updates.profilePhotoUrl !== undefined ? updates.profilePhotoUrl : updates.avatarUrl;
                 if (newName) setName(newName);
                 if (newAvatar !== undefined) setAvatarUrl(newAvatar);
+                if (updates.gender) setProfileGender(updates.gender);
                 if (updates.country) setCountry(updates.country);
                 if (updates.nativeLanguage) setNativeLanguage(updates.nativeLanguage);
                 if (updates.learningLanguage) setLearningLanguage(updates.learningLanguage);
@@ -4275,6 +4272,7 @@ function App() {
                     payload.displayName = newName;
                   }
                   if (newAvatar !== undefined) payload.profilePhotoUrl = newAvatar;
+                  if (updates.gender) payload.gender = updates.gender;
                   if (updates.country) payload.country = updates.country;
                   if (updates.nativeLanguage) payload.nativeLanguage = updates.nativeLanguage;
                   if (updates.learningLanguage) payload.learningLanguage = updates.learningLanguage;
@@ -4289,14 +4287,19 @@ function App() {
                     const resolved = u.displayName || u.name;
                     if (resolved) setName(resolved);
                     if (u.profilePhotoUrl !== undefined) setAvatarUrl(u.profilePhotoUrl);
+                    if (u.gender) setProfileGender(u.gender);
                     if (u.country) setCountry(u.country);
                     if (u.nativeLanguage) setNativeLanguage(u.nativeLanguage);
                     if (u.learningLanguage) setLearningLanguage(u.learningLanguage);
                     if (u.level) setLevel(u.level);
                     await authStorage.setItem(SESSION_USER_KEY, JSON.stringify(u));
+                    return true;
                   }
+                  throw new Error('The server did not confirm the profile update.');
                 } catch (e) {
                   console.warn('[Profile update error]', e.message);
+                  Alert.alert('Profile Update Failed', e.message || 'Could not save your profile changes.');
+                  return false;
                 }
               }}
               onLogout={handleLogout}
@@ -4680,6 +4683,94 @@ function App() {
                       style={styles.authInput}
                     />
                   </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Your Profile Gender</Text>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={`Your profile gender: ${regProfileGender || 'not selected'}`}
+                    accessibilityState={{ expanded: regProfileGenderDropdownOpen }}
+                    onPress={() => setRegProfileGenderDropdownOpen((open) => !open)}
+                    style={[
+                      styles.inputFieldBox,
+                      regProfileGenderDropdownOpen && styles.inputFieldBoxFocused,
+                    ]}
+                  >
+                    <Ionicons
+                      name="person-outline"
+                      size={20}
+                      color={regProfileGenderDropdownOpen ? COLORS.primary : COLORS.textSecondary}
+                    />
+                    <Text style={{ flex: 1, marginLeft: 10, color: regProfileGender ? COLORS.textPrimary : '#9CA3AF', fontSize: 15 }}>
+                      {regProfileGender ? regProfileGender.charAt(0).toUpperCase() + regProfileGender.slice(1) : 'Select your gender'}
+                    </Text>
+                    <Ionicons name={regProfileGenderDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.textSecondary} />
+                  </TouchableOpacity>
+                  {regProfileGenderDropdownOpen && (
+                    <View style={{ marginTop: 6, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, overflow: 'hidden' }}>
+                      {['male', 'female'].map((gender) => (
+                        <TouchableOpacity
+                          key={gender}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: regProfileGender === gender }}
+                          onPress={() => {
+                            setRegProfileGender(gender);
+                            setRegProfileGenderDropdownOpen(false);
+                          }}
+                          style={{ paddingHorizontal: 14, paddingVertical: 11, backgroundColor: regProfileGender === gender ? '#FFF3EF' : '#FFFFFF' }}
+                        >
+                          <Text style={{ color: COLORS.textPrimary, fontSize: 14 }}>
+                            {gender.charAt(0).toUpperCase() + gender.slice(1)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Preferred Call Partner</Text>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={`Preferred call partner gender: ${regPreferredCallGender}`}
+                    accessibilityState={{ expanded: regGenderDropdownOpen }}
+                    onPress={() => setRegGenderDropdownOpen((open) => !open)}
+                    style={[
+                      styles.inputFieldBox,
+                      regGenderDropdownOpen && styles.inputFieldBoxFocused,
+                    ]}
+                  >
+                    <Ionicons
+                      name="people-outline"
+                      size={20}
+                      color={regGenderDropdownOpen ? COLORS.primary : COLORS.textSecondary}
+                    />
+                    <Text style={{ flex: 1, marginLeft: 10, color: COLORS.textPrimary, fontSize: 15 }}>
+                      {regPreferredCallGender.charAt(0).toUpperCase() + regPreferredCallGender.slice(1)}
+                    </Text>
+                    <Ionicons name={regGenderDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.textSecondary} />
+                  </TouchableOpacity>
+                  {regGenderDropdownOpen && (
+                    <View style={{ marginTop: 6, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, overflow: 'hidden' }}>
+                      {['male', 'female', 'any'].map((gender) => (
+                        <TouchableOpacity
+                          key={gender}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: regPreferredCallGender === gender }}
+                          onPress={() => {
+                            setRegPreferredCallGender(gender);
+                            setRegGenderDropdownOpen(false);
+                          }}
+                          style={{ paddingHorizontal: 14, paddingVertical: 11, backgroundColor: regPreferredCallGender === gender ? '#FFF3EF' : '#FFFFFF' }}
+                        >
+                          <Text style={{ color: COLORS.textPrimary, fontSize: 14 }}>
+                            {gender.charAt(0).toUpperCase() + gender.slice(1)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </View>
 
                 {/* Password */}
