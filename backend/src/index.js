@@ -19,7 +19,7 @@ import { getOnlineObjectIds } from './onlineUserIds.js';
 import { SubscriptionEvent } from './models/SubscriptionEvent.js';
 import { Plan } from './models/Plan.js';
 import { decodePdfAttachment } from './attachments.js';
-import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, isPaidSubscriber, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded, getFreeTrialSecondsRemaining } from './subscriptions.js';
+import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, isPaidSubscriber, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded, resetDailyFreeVoiceIfNeeded, getFreeTrialSecondsRemaining, FREE_TRIAL_VOICE_SECONDS, FREE_TRIAL_RESET_DELAY_MS } from './subscriptions.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { generateAiResponse } from './aiService.js';
 
@@ -706,6 +706,79 @@ async function persistCallHistory(call) {
   );
 }
 
+async function initializeUserProgressStats(userId, existingUser = null) {
+  const user = existingUser || await User.findById(userId);
+  if (!user) throw new Error(`Call participant ${userId} was not found`);
+
+  const needsCallCount = user.completedCallCount == null;
+  const needsRatingStats = user.receivedRatingTotal == null
+    || user.receivedRatingCount == null
+    || user.receivedPoliteFeedbackCount == null;
+  if (!needsCallCount && !needsRatingStats) return user;
+
+  const userIdString = String(userId);
+  const [completedCalls, ratingStats] = await Promise.all([
+    needsCallCount
+      ? CallHistory.countDocuments({
+        $or: [{ callerId: userIdString }, { calleeId: userIdString }],
+        status: 'completed',
+        connectedAt: { $ne: null },
+      })
+      : Promise.resolve(null),
+    needsRatingStats
+      ? CallHistory.aggregate([
+        { $match: { $or: [{ callerId: userIdString }, { calleeId: userIdString }] } },
+        { $unwind: '$feedback' },
+        { $match: { 'feedback.userId': { $ne: userIdString } } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$feedback.rating' },
+            count: { $sum: 1 },
+            politeCount: {
+              $sum: {
+                $cond: [
+                  { $in: ['Polite', { $ifNull: ['$feedback.tags', []] }] },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ])
+      : Promise.resolve([]),
+  ]);
+
+  if (needsCallCount) user.completedCallCount = Number(completedCalls) || 0;
+  if (user.receivedRatingTotal == null) user.receivedRatingTotal = ratingStats[0]?.total || 0;
+  if (user.receivedRatingCount == null) user.receivedRatingCount = ratingStats[0]?.count || 0;
+  if (user.receivedPoliteFeedbackCount == null) user.receivedPoliteFeedbackCount = ratingStats[0]?.politeCount || 0;
+  await user.save();
+  return user;
+}
+
+async function recordConnectedCallForUser(userId, durationSeconds, completedAt) {
+  let user = await User.findById(userId);
+  if (!user) throw new Error(`Call participant ${userId} was not found`);
+  user = await initializeUserProgressStats(userId, user);
+  resetDailyFreeVoiceIfNeeded(user, new Date(completedAt));
+  resetUsageIfNeeded(user);
+
+  const duration = Math.max(0, Number(durationSeconds) || 0);
+  user.completedCallCount = (user.completedCallCount || 0) + 1;
+  user.voiceSecondsUsed = (user.voiceSecondsUsed || 0) + duration;
+  user.voiceMinutesUsed = (user.voiceMinutesUsed || 0) + Math.ceil(duration / 60);
+  if (
+    !isPaidSubscriber(user)
+    && user.voiceSecondsUsed >= FREE_TRIAL_VOICE_SECONDS
+    && !user.freeVoiceLimitReachedAt
+  ) {
+    user.freeVoiceLimitReachedAt = new Date(completedAt);
+  }
+  await user.save();
+}
+
 function finishCall(call, status, endedBy) {
   const timer = callTimers.get(call.id);
   if (timer) clearTimeout(timer);
@@ -721,13 +794,6 @@ function finishCall(call, status, endedBy) {
   call.endedBy = endedBy || null;
   if (call.connectedAt) {
     call.durationSeconds = Math.max(0, Math.floor((Date.parse(call.endedAt) - Date.parse(call.connectedAt)) / 1000));
-    if (call.durationSeconds > 0) {
-      const durSec = call.durationSeconds;
-      Promise.all([
-        User.findByIdAndUpdate(call.callerId, { $inc: { voiceSecondsUsed: durSec, voiceMinutesUsed: Math.ceil(durSec / 60) } }),
-        User.findByIdAndUpdate(call.calleeId, { $inc: { voiceSecondsUsed: durSec, voiceMinutesUsed: Math.ceil(durSec / 60) } }),
-      ]).catch(() => {});
-    }
   } else {
     call.durationSeconds = 0;
   }
@@ -740,10 +806,19 @@ function finishCall(call, status, endedBy) {
   }
   userCalls.delete(call.callerId);
   userCalls.delete(call.calleeId);
-  return persistCallHistory(call).catch((error) => {
+  const statsUpdate = call.connectedAt && !call.progressStatsRecorded
+    ? Promise.all([...new Set([call.callerId, call.calleeId])].map((userId) => (
+      recordConnectedCallForUser(userId, call.durationSeconds, call.endedAt)
+    ))).catch((error) => {
+      console.error(`Call progress update failed for ${call.id}: ${error.message}`);
+    })
+    : Promise.resolve();
+  call.progressStatsRecorded = true;
+  const callHistoryUpdate = persistCallHistory(call).catch((error) => {
     console.error(`Call history persistence failed for ${call.id}: ${error.message}`);
     throw error;
   });
+  return Promise.all([statsUpdate, callHistoryUpdate]).then(() => undefined);
 }
 
 function armCallTimeout(call, status, durationMs, onTimeout) {
@@ -1342,16 +1417,30 @@ app.get('/api/subscription/plans', async (req, res) => {
   }
 });
 
+async function getPersistedEntitlementPayload(user) {
+  const payload = entitlementPayload(user);
+  const resetFields = [
+    'freeVoiceDay',
+    'freeVoiceLimitReachedAt',
+    'voiceSecondsUsed',
+    'usageMonth',
+    'voiceMinutesUsed',
+    'videoCallsUsed',
+  ];
+  if (resetFields.some((field) => user.isModified(field))) await user.save();
+  return payload;
+}
+
 app.get('/api/subscription', requireAuth, async (req, res) => {
   const user = await User.findById(req.authenticatedUser.id);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  res.json({ ...entitlementPayload(user), testMode: TEST_ENTITLEMENTS_ENABLED });
+  res.json({ ...await getPersistedEntitlementPayload(user), testMode: TEST_ENTITLEMENTS_ENABLED });
 });
 
 app.get('/api/subscription/status', requireAuth, async (req, res) => {
   const user = await User.findById(req.authenticatedUser.id);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  res.json({ ...entitlementPayload(user), testMode: TEST_ENTITLEMENTS_ENABLED });
+  res.json({ ...await getPersistedEntitlementPayload(user), testMode: TEST_ENTITLEMENTS_ENABLED });
 });
 
 // RAZORPAY SUBSCRIPTION INTEGRATION
@@ -3477,6 +3566,25 @@ app.get('/api/messages/unread', requireAuth, async (req, res) => {
   res.json(Object.fromEntries(unread.map((entry) => [entry._id, entry.count])));
 });
 
+app.get('/api/profile/progress', requireAuth, async (req, res) => {
+  let user = await User.findById(req.authenticatedUser.id);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+
+  user = await initializeUserProgressStats(user.id, user);
+  const entitlement = await getPersistedEntitlementPayload(user);
+  const ratingCount = Number(user.receivedRatingCount) || 0;
+  const ratingTotal = Number(user.receivedRatingTotal) || 0;
+
+  return res.json({
+    streak: Math.max(0, Number(user.streak) || 0),
+    completedCalls: Number(user.completedCallCount) || 0,
+    averageRating: ratingCount > 0 ? ratingTotal / ratingCount : null,
+    ratingsReceived: ratingCount,
+    politeFeedbackCount: Number(user.receivedPoliteFeedbackCount) || 0,
+    freeTrial: entitlement.freeTrial,
+  });
+});
+
 app.get('/api/calls', requireAuth, async (req, res) => {
   const currentUserId = String(req.authenticatedUser.id);
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -3539,14 +3647,23 @@ app.post('/api/calls/:callId/feedback', requireAuth, async (req, res) => {
     callId: req.params.callId,
     $or: [{ callerId: currentUserId }, { calleeId: currentUserId }],
     createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-  }).select('_id feedback');
+  }).select('_id feedback callerId calleeId');
   if (!call) return res.status(404).json({ error: 'Call history record not found.' });
+
+  const ratedUserId = call.callerId === currentUserId ? call.calleeId : call.callerId;
+  const ratedUser = await User.findById(ratedUserId);
+  if (!ratedUser) return res.status(404).json({ error: 'Co-learner account was not found.' });
+  await initializeUserProgressStats(ratedUserId, ratedUser);
 
   const result = await CallHistory.updateOne(
     { _id: call._id, 'feedback.userId': { $ne: currentUserId } },
     { $push: { feedback: { userId: currentUserId, rating, tags, comment } } }
   );
   if (!result.modifiedCount) return res.status(409).json({ error: 'Feedback has already been submitted for this call.' });
+
+  const ratingUpdate = { receivedRatingTotal: rating, receivedRatingCount: 1 };
+  if (tags.includes('Polite')) ratingUpdate.receivedPoliteFeedbackCount = 1;
+  await User.updateOne({ _id: ratedUserId }, { $inc: ratingUpdate });
   return res.status(201).json({ ok: true });
 });
 

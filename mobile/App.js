@@ -1017,7 +1017,9 @@ function App() {
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [friendNotification, setFriendNotification] = useState(null);
   const [userStars, setUserStars] = useState(40);
-  const [streak, setStreak] = useState(1);
+  const [streak, setStreak] = useState(0);
+  const [callProgressStats, setCallProgressStats] = useState(null);
+  const [callProgressError, setCallProgressError] = useState('');
   const [isMatchingCall, setIsMatchingCall] = useState(false);
   const [showEarlyDisconnectModal, setShowEarlyDisconnectModal] = useState(false);
   const [disconnectReason, setDisconnectReason] = useState('');
@@ -1069,7 +1071,7 @@ function App() {
 
   const handleStartRandomMatch = async (filters = {}) => {
     if (!hasAudioEntitlement()) {
-      setSubscriptionError('Your first 5 minutes free trial has ended. Please purchase a subscription to continue speaking practice.');
+      setSubscriptionError('Your daily 10-minute free calling limit has been reached. Please purchase a subscription to continue speaking practice.');
       await openSubscription();
       return;
     }
@@ -1320,6 +1322,7 @@ function App() {
     const createdAt = Date.parse(item.createdAt);
     return Number.isFinite(createdAt) && Date.now() - createdAt <= 86400000;
   });
+  const connectedCallsCount = recentCallHistory.filter((item) => Boolean(item.connectedAt)).length;
 
   // Auth form states
   const [loginEmail, setLoginEmail] = useState('');
@@ -1383,7 +1386,7 @@ function App() {
       if (current) {
         setSubscription(current);
         if (current.freeTrial?.remainingSeconds !== undefined && current.freeTrial?.remainingSeconds !== null) {
-          const backendUsed = Math.max(0, 300 - Number(current.freeTrial.remainingSeconds));
+          const backendUsed = Math.max(0, FREE_TRIAL_TOTAL_SECONDS - Number(current.freeTrial.remainingSeconds));
           setUsedFreeSeconds((prev) => {
             const next = Math.max(prev, backendUsed);
             saveUsedFreeSeconds(next);
@@ -1397,6 +1400,19 @@ function App() {
       setSubscriptionLoading(false);
     }
 
+  }
+
+  async function loadPracticeProgress() {
+    try {
+      const progress = await request('profile/progress');
+      setCallProgressStats(progress);
+      setCallProgressError('');
+      if (Number.isFinite(Number(progress.streak))) {
+        setStreak(Math.max(0, Number(progress.streak)));
+      }
+    } catch (error) {
+      setCallProgressError(error.message || 'Practice progress is unavailable.');
+    }
   }
 
   function isPaidSubscriber() {
@@ -2360,6 +2376,8 @@ function App() {
       request('calls').then((history) => setCallHistory(history.filter((item) => Date.now() - Date.parse(item.createdAt) <= 86400000))).catch((error) => {
         setCallHistoryError(error.message || 'Call ended, but call history could not be refreshed.');
       });
+      loadSubscription().catch(() => {});
+      loadPracticeProgress();
     }, 300);
   }
 
@@ -2388,6 +2406,7 @@ function App() {
         }),
       });
       setFeedbackSubmitted(true);
+      await loadPracticeProgress();
       request('calls').then((history) => setCallHistory(history.filter((item) => Date.now() - Date.parse(item.createdAt) <= 86400000))).catch(() => {});
     } catch (error) {
       setFeedbackError(error.message || 'Feedback could not be submitted.');
@@ -3197,6 +3216,12 @@ function App() {
       setConversations((previous) => previous.map((conversation) =>
         conversation.user.id === selected.id ? { ...conversation, unreadCount: 0 } : conversation
       ));
+    }
+  }, [screen, sessionVersion]);
+
+  useEffect(() => {
+    if (screen === 'call-tab' && activeAuthToken) {
+      loadPracticeProgress();
     }
   }, [screen, sessionVersion]);
 
@@ -4406,6 +4431,10 @@ function App() {
               isSubscribed={isPaidSubscriber()}
               freeTrialSecondsRemaining={getFreeTrialSecondsRemaining()}
               dailyFreeSecondsLimit={FREE_TRIAL_TOTAL_SECONDS}
+              connectedCallsCount={connectedCallsCount}
+              freeTrialResetAt={subscription?.freeTrial?.resetAt}
+              progressStats={callProgressStats}
+              progressError={callProgressError}
               onPressUpgrade={openSubscription}
               onBack={() => {
                 setActiveBottomTab('home');
@@ -6032,6 +6061,31 @@ function App() {
                 <View style={styles.postCallStarLabels}>
                   <Text style={styles.postCallSubLabel}>Bad</Text>
                   <Text style={styles.postCallSubLabel}>Very Good</Text>
+                </View>
+              </View>
+
+              <View style={styles.postCallCard}>
+                <Text style={styles.postCallCardTitle}>What stood out about your co-learner?</Text>
+                <View style={styles.feedbackTags}>
+                  {['Polite', 'Helpful', 'Encouraging', 'Good listener'].map((tag) => {
+                    const selected = feedbackTags.includes(tag);
+                    return (
+                      <TouchableOpacity
+                        key={tag}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected, disabled: feedbackSubmitted }}
+                        disabled={feedbackSubmitted}
+                        onPress={() => setFeedbackTags((current) => (
+                          selected ? current.filter((value) => value !== tag) : [...current, tag]
+                        ))}
+                        style={[styles.feedbackTag, selected && styles.feedbackTagSelected]}
+                      >
+                        <Text style={{ color: selected ? orange : navy, fontSize: 12, fontWeight: '700' }}>
+                          {tag}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
 
