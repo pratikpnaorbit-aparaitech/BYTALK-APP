@@ -23,10 +23,26 @@ import {
   ToggleRight,
   Check,
   ArrowRight,
+  House,
 } from 'lucide-react';
 import './style.css';
 
 const API = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
+
+const EMPTY_HOME_CARD_FORM = {
+  title: '',
+  category: 'General',
+  level: 'Easy',
+  graphic: '',
+  icon: 'chatbubbles',
+  color: '#8B5CF6',
+  bgColor: '#F5F3FF',
+  starterPrompt: '',
+};
+
+function newHomeContentId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function App() {
   const [tab, setTab] = useState('Overview');
@@ -37,6 +53,11 @@ function App() {
   const [rooms, setRooms] = useState([]);
   const [reports, setReports] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [homeContent, setHomeContent] = useState({ sections: [] });
+  const [homeContentSubmitting, setHomeContentSubmitting] = useState(false);
+  const [showHomeCardModal, setShowHomeCardModal] = useState(false);
+  const [editingHomeTopicId, setEditingHomeTopicId] = useState(null);
+  const [homeCardForm, setHomeCardForm] = useState({ ...EMPTY_HOME_CARD_FORM });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -77,7 +98,7 @@ function App() {
   async function load() {
     setLoading(true);
     try {
-      const [sRes, uRes, subRes, pRes, rRes, repRes, audRes] = await Promise.all([
+      const [sRes, uRes, subRes, pRes, rRes, repRes, audRes, homeRes] = await Promise.all([
         fetch(`${API}/api/stats`).then((r) => r.json()),
         fetch(`${API}/api/admin/users`).then((r) => r.json()).catch(() => fetch(`${API}/api/users`).then((r) => r.json())),
         fetch(`${API}/api/admin/subscriptions`).then((r) => r.json()).catch(() => ({ subscriptions: [] })),
@@ -85,6 +106,7 @@ function App() {
         fetch(`${API}/api/rooms`).then((r) => r.json()),
         fetch(`${API}/api/reports`).then((r) => r.json()),
         fetch(`${API}/api/admin/audit`).then((r) => r.json()).catch(() => ({ auditLogs: [] })),
+        fetch(`${API}/api/admin/home-content`).then((r) => r.json()).catch(() => ({ sections: [] })),
       ]);
 
       setStats(sRes || {});
@@ -94,11 +116,123 @@ function App() {
       setRooms(Array.isArray(rRes) ? rRes : []);
       setReports(Array.isArray(repRes) ? repRes : []);
       setAuditLogs(audRes.auditLogs || []);
+      setHomeContent({ sections: Array.isArray(homeRes.sections) ? homeRes.sections : [] });
       setError('');
     } catch {
       setError('Backend unreachable. Ensure backend is running on port 4000.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  function updateHomeTopic(topicId, changes) {
+    setHomeContent((current) => ({
+      ...current,
+      sections: current.sections.map((section) => ({
+        ...section,
+        topics: section.topics.map((topic) => topic.id === topicId ? { ...topic, ...changes } : topic),
+      })),
+    }));
+  }
+
+  function moveHomeItem(items, index, offset) {
+    const targetIndex = index + offset;
+    if (targetIndex < 0 || targetIndex >= items.length) return items;
+    const updated = [...items];
+    [updated[index], updated[targetIndex]] = [updated[targetIndex], updated[index]];
+    return updated;
+  }
+
+  function moveHomeTopic(index, offset) {
+    setHomeContent((current) => {
+      const topics = current.sections.flatMap((section) => section.topics);
+      return {
+        sections: [{ id: 'home-cards', title: 'Home', enabled: true, topics: moveHomeItem(topics, index, offset) }],
+      };
+    });
+  }
+
+  function openAddHomeCard() {
+    setEditingHomeTopicId(null);
+    setHomeCardForm({ ...EMPTY_HOME_CARD_FORM });
+    setShowHomeCardModal(true);
+  }
+
+  function openEditHomeCard(topic) {
+    setEditingHomeTopicId(topic.id);
+    setHomeCardForm({
+      title: topic.title || '',
+      category: topic.category || 'General',
+      level: topic.level || 'Easy',
+      graphic: topic.graphic || '',
+      icon: topic.icon || 'chatbubbles',
+      color: topic.color || '#8B5CF6',
+      bgColor: topic.bgColor || '#F5F3FF',
+      starterPrompt: topic.starterPrompt || '',
+    });
+    setShowHomeCardModal(true);
+  }
+
+  function saveHomeCard(event) {
+    event.preventDefault();
+    const card = {
+      ...homeCardForm,
+      title: homeCardForm.title.trim(),
+      category: homeCardForm.category.trim() || 'General',
+      starterPrompt: homeCardForm.starterPrompt.trim(),
+    };
+    if (!card.title || !card.starterPrompt) {
+      alert('Card title and conversation starter are required.');
+      return;
+    }
+
+    if (editingHomeTopicId) {
+      updateHomeTopic(editingHomeTopicId, card);
+    } else {
+      const id = newHomeContentId('topic');
+      setHomeContent((current) => {
+        const section = current.sections[0] || { id: 'home-cards', title: 'Home', enabled: true, topics: [] };
+        return {
+          sections: [{
+            ...section,
+            topics: [...(section.topics || []), { id, ...card, enabled: true }],
+          }],
+        };
+      });
+    }
+
+    setShowHomeCardModal(false);
+  }
+
+  function removeHomeTopic(topicId) {
+    setHomeContent((current) => ({
+      sections: current.sections.map((section) => ({
+        ...section,
+        topics: section.topics.filter((topic) => topic.id !== topicId),
+      })),
+    }));
+  }
+
+  async function publishHomeContent() {
+    setHomeContentSubmitting(true);
+    try {
+      const response = await fetch(`${API}/api/admin/home-content`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(homeContent),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setError(result.error || 'Failed to publish home content.');
+        return;
+      }
+      setHomeContent(result.homeContent);
+      setError('');
+      alert('Home page cards published.');
+    } catch {
+      setError('Network error while publishing home content.');
+    } finally {
+      setHomeContentSubmitting(false);
     }
   }
 
@@ -355,6 +489,7 @@ function App() {
 
   const menu = [
     ['Overview', LayoutDashboard],
+    ['Home Cards', House],
     ['Users', Users],
     ['Subscriptions', CreditCard],
     ['Plans & Pricing', Sparkles],
@@ -362,6 +497,7 @@ function App() {
     ['Reports', ShieldAlert],
     ['Audit Logs', History],
   ];
+  const homeCards = homeContent.sections.flatMap((section) => section.topics);
 
   return (
     <div className="shell">
@@ -944,6 +1080,66 @@ function App() {
           </div>
         )}
 
+        {tab === 'Home Cards' && (
+          <div className="panel home-content-panel">
+            <div className="toolbar">
+              <div>
+                <h3 style={{ margin: '0 0 4px' }}>Home page cards</h3>
+                <p className="muted" style={{ margin: 0 }}>
+                  Add, edit, hide, delete, or reorder the cards shown to learners. Publish to make changes live.
+                </p>
+              </div>
+              <div className="home-content-actions">
+                <button type="button" className="action" onClick={openAddHomeCard}>+ Add card</button>
+                <button type="button" className="action" onClick={publishHomeContent} disabled={homeContentSubmitting}>
+                  {homeContentSubmitting ? 'Publishing…' : 'Publish changes'}
+                </button>
+              </div>
+            </div>
+
+            {homeCards.length === 0 && (
+              <p className="muted">No home page cards yet. Add a card to get started.</p>
+            )}
+
+            <ol className="home-card-list">
+              {homeCards.map((topic, topicIndex) => (
+                <li className="home-card-row" key={topic.id}>
+                  <span className="home-card-number">{String(topicIndex + 1).padStart(2, '0')}</span>
+                  <div className="home-card-summary">
+                    <strong>{topic.title || 'Untitled card'}</strong>
+                    <div className="home-card-meta">
+                      <span>{topic.category || 'General'}</span>
+                      <span>{topic.level || 'Easy'}</span>
+                      <span className={`home-card-status ${topic.enabled === false ? 'is-hidden' : ''}`}>
+                        {topic.enabled === false ? 'Hidden' : 'Published'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="home-card-row-actions">
+                    <button type="button" className="home-move" disabled={topicIndex === 0} onClick={() => moveHomeTopic(topicIndex, -1)} aria-label="Move card up">↑</button>
+                    <button type="button" className="home-move" disabled={topicIndex === homeCards.length - 1} onClick={() => moveHomeTopic(topicIndex, 1)} aria-label="Move card down">↓</button>
+                    <button
+                      type="button"
+                      className="home-status-toggle"
+                      onClick={() => updateHomeTopic(topic.id, { enabled: topic.enabled === false })}
+                    >
+                      {topic.enabled === false ? 'Publish' : 'Hide'}
+                    </button>
+                    <button type="button" className="home-card-icon-button" onClick={() => openEditHomeCard(topic)} aria-label={`Edit ${topic.title}`}>
+                      <Edit2 size={15} />
+                      <span>Edit</span>
+                    </button>
+                    <button type="button" className="home-card-icon-button is-delete" onClick={() => removeHomeTopic(topic.id)} aria-label={`Remove ${topic.title}`}>
+                      <Trash2 size={15} />
+                      <span>Remove</span>
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
         {/* 5. ROOMS TAB */}
         {tab === 'Rooms' && (
           <div className="panel">
@@ -1443,6 +1639,128 @@ function App() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {showHomeCardModal && (
+          <div
+            className="modal-backdrop"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setShowHomeCardModal(false);
+            }}
+          >
+            <form className="modal-box home-card-modal" onSubmit={saveHomeCard} role="dialog" aria-modal="true" aria-labelledby="home-card-modal-title">
+              <div className="home-card-modal-heading">
+                <div>
+                  <small>HOME PAGE</small>
+                  <h4 id="home-card-modal-title">{editingHomeTopicId ? 'Edit card' : 'Add a new card'}</h4>
+                </div>
+                <button type="button" className="home-card-close" onClick={() => setShowHomeCardModal(false)} aria-label="Close form">
+                  ×
+                </button>
+              </div>
+
+              <div className="home-card-form-grid">
+                <label className="home-card-form-field">
+                  Card title
+                  <input
+                    className="home-content-input"
+                    maxLength={80}
+                    required
+                    autoFocus
+                    value={homeCardForm.title}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, title: event.target.value })}
+                    placeholder="e.g. Talk about your favorite food"
+                  />
+                </label>
+                <label className="home-card-form-field">
+                  Category
+                  <input
+                    className="home-content-input"
+                    maxLength={60}
+                    required
+                    value={homeCardForm.category}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, category: event.target.value })}
+                    placeholder="e.g. General"
+                  />
+                </label>
+                <label className="home-card-form-field">
+                  Difficulty level
+                  <select
+                    className="home-content-input"
+                    value={homeCardForm.level}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, level: event.target.value })}
+                  >
+                    <option>Easy</option>
+                    <option>Medium</option>
+                    <option>Hard</option>
+                  </select>
+                </label>
+                <label className="home-card-form-field">
+                  Card illustration
+                  <select
+                    className="home-content-input"
+                    value={homeCardForm.graphic}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, graphic: event.target.value })}
+                  >
+                    <option value="">Use icon</option>
+                    <option value="people_chatting">People chatting</option>
+                    <option value="person_walking">Person walking</option>
+                    <option value="classroom_board">Classroom board</option>
+                    <option value="child_balloon">Childhood memory</option>
+                    <option value="travel_world">Travel</option>
+                    <option value="headphones_music">Music</option>
+                    <option value="interview_handshake">Interview</option>
+                    <option value="job_interview">Job interview</option>
+                    <option value="strengths_weaknesses">Strengths and weaknesses</option>
+                    <option value="career_aspirations">Career aspirations</option>
+                  </select>
+                </label>
+                <label className="home-card-form-field">
+                  Icon name
+                  <input
+                    className="home-content-input"
+                    maxLength={40}
+                    value={homeCardForm.icon}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, icon: event.target.value })}
+                    placeholder="chatbubbles"
+                  />
+                </label>
+                <label className="home-card-form-field home-card-color-field">
+                  Card color
+                  <input
+                    type="color"
+                    value={homeCardForm.color}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, color: event.target.value })}
+                  />
+                </label>
+                <label className="home-card-form-field home-card-color-field">
+                  Background color
+                  <input
+                    type="color"
+                    value={homeCardForm.bgColor}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, bgColor: event.target.value })}
+                  />
+                </label>
+                <label className="home-card-form-field is-wide">
+                  Conversation starter
+                  <textarea
+                    className="home-content-input"
+                    maxLength={500}
+                    rows={4}
+                    required
+                    value={homeCardForm.starterPrompt}
+                    onChange={(event) => setHomeCardForm({ ...homeCardForm, starterPrompt: event.target.value })}
+                    placeholder="What should the AI ask the learner?"
+                  />
+                </label>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="home-card-cancel" onClick={() => setShowHomeCardModal(false)}>Cancel</button>
+                <button type="submit" className="action">{editingHomeTopicId ? 'Save changes' : 'Add card'}</button>
+              </div>
+            </form>
           </div>
         )}
       </main>

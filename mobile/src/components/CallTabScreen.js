@@ -30,6 +30,7 @@ export default function CallTabScreen({
   onStartRandomMatch,
   isMatching = false,
   isSubscribed = false,
+  preferredCallGender = 'any',
   freeTrialSecondsRemaining = 600,
   dailyFreeSecondsLimit = 600,
   connectedCallsCount = 0,
@@ -75,9 +76,14 @@ export default function CallTabScreen({
     setPendingFriendRemoval(String(friend.id || friend._id || friend.name || ''));
   };
   const [activeTopTab, setActiveTopTab] = useState('practice'); // 'practice' | 'friends' | 'progress'
-  const [selectedGender, setSelectedGender] = useState(isSubscribed ? 'female' : 'any');
+  const initialCallGender = ['male', 'female', 'any'].includes(preferredCallGender) ? preferredCallGender : 'any';
+  const [selectedGender, setSelectedGender] = useState(initialCallGender);
   const [searchFriendText, setSearchFriendText] = useState('');
   const [sentMap, setSentMap] = useState({});
+
+  useEffect(() => {
+    setSelectedGender(['male', 'female', 'any'].includes(preferredCallGender) ? preferredCallGender : 'any');
+  }, [preferredCallGender]);
 
   // Animated pulse for radar matching (Image 4)
   const pulseAnim1 = useRef(new Animated.Value(1)).current;
@@ -627,7 +633,26 @@ export default function CallTabScreen({
                 </Text>
               </TouchableOpacity>
             </View>
-          )}
+            <Text style={{ color: '#64748B', fontSize: 12, marginTop: 8 }}>
+              Choose a gender, then tap Try your 1st Call to start matching.
+            </Text>
+
+            {/* Big CTA Button: Try your 1st Call */}
+            <TouchableOpacity
+              onPress={handleStartTalk}
+              disabled={isMatching}
+              style={[
+                styles.tryCallBtn,
+                isMatching && { opacity: 0.7 },
+              ]}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Try your 1st Call"
+            >
+              <Ionicons name="call" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.tryCallBtnText}>Try your 1st Call</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 

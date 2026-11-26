@@ -19,9 +19,10 @@ import { getOnlineObjectIds } from './onlineUserIds.js';
 import { SubscriptionEvent } from './models/SubscriptionEvent.js';
 import { Plan } from './models/Plan.js';
 import { decodePdfAttachment } from './attachments.js';
-import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, isPaidSubscriber, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded, resetDailyFreeVoiceIfNeeded, getFreeTrialSecondsRemaining, FREE_TRIAL_VOICE_SECONDS, FREE_TRIAL_RESET_DELAY_MS } from './subscriptions.js';
+import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, isPaidSubscriber, canStartSubscribedCall, canUseAudio, canUseVideo, entitlementPayload, resetUsageIfNeeded, getFreeTrialSecondsRemaining } from './subscriptions.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { generateAiResponse } from './aiService.js';
+import { DEFAULT_HOME_CONTENT, normalizeHomeContent, publishedHomeContent } from './homeContent.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const attachmentsDir = path.join(root, 'data', 'attachments');
@@ -417,8 +418,11 @@ try {
 
 if (!Array.isArray(store.messages)) store.messages = [];
 if (!Array.isArray(store.calls)) store.calls = [];
+const hadHomeContent = Boolean(store.homeContent);
+store.homeContent = normalizeHomeContent(store.homeContent) || DEFAULT_HOME_CONTENT;
 
 const save = () => fs.writeFileSync(dbFile, JSON.stringify(store, null, 2));
+if (!hadHomeContent) save();
 
 const auditLogs = [
   { id: 'aud-1', timestamp: new Date(Date.now() - 3600000).toISOString(), actor: 'System', eventType: 'SYSTEM_BOOT', target: 'BYTALK Server Online' },
@@ -839,9 +843,15 @@ app.get('/health', (req, res) => res.json({ ok: true, service: 'BYTALK API', tim
 
 // AUTHENTICATION: REGISTER
 app.post('/api/register', async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, gender = '', preferredCallGender = 'any' } = req.body;
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'Full name is required' });
+  }
+  if (typeof gender !== 'string' || (gender && !['male', 'female'].includes(gender.trim().toLowerCase()))) {
+    return res.status(400).json({ error: 'Profile gender must be male or female.' });
+  }
+  if (typeof preferredCallGender !== 'string' || !['male', 'female', 'any'].includes(preferredCallGender.trim().toLowerCase())) {
+    return res.status(400).json({ error: 'Preferred call partner gender must be male, female, or any.' });
   }
   if (!email || typeof email !== 'string' || !email.trim()) {
     return res.status(400).json({ error: 'Email address is required' });
@@ -866,6 +876,8 @@ app.post('/api/register', async (req, res) => {
       name: name.trim().slice(0, 80),
       email: cleanEmail,
       passwordHash: hashPassword(password),
+      gender: gender.trim().toLowerCase(),
+      preferredCallGender: preferredCallGender.trim().toLowerCase(),
       country: '',
       nativeLanguage: '',
       learningLanguage: 'English',
@@ -1002,7 +1014,12 @@ app.patch('/api/profile', requireAuth, async (req, res) => {
     }
     if (typeof bio === 'string') updates.bio = bio.trim();
     if (typeof country === 'string') updates.country = country.trim();
-    if (typeof req.body?.gender === 'string') updates.gender = req.body.gender.toLowerCase().trim();
+    if (gender !== undefined) {
+      if (typeof gender !== 'string' || !['male', 'female'].includes(gender.trim().toLowerCase())) {
+        return res.status(400).json({ error: 'Profile gender must be male or female.' });
+      }
+      updates.gender = gender.trim().toLowerCase();
+    }
     if (typeof nativeLanguage === 'string') updates.nativeLanguage = nativeLanguage.trim();
     if (typeof learningLanguage === 'string') updates.learningLanguage = learningLanguage.trim();
     if (typeof level === 'string') updates.level = level.trim();
@@ -2324,25 +2341,86 @@ app.get('/api/practice/partners', requireAuth, (req, res) => {
 app.get('/api/practice/random-online', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
-    const { gender } = req.query;
+    const gender = String(req.query.gender || 'all').toLowerCase();
+    if (!['all', 'male', 'female'].includes(gender)) {
+      return res.status(400).json({ ok: false, error: 'Invalid gender filter.' });
+    }
 
-    const onlineUserIds = getOnlineObjectIds(userSockets, currentUserId);
+    const currentUser = await User.findById(currentUserId).lean();
+    if (!isPaidSubscriber(currentUser)) {
+      return res.json({
+        ok: false,
+        code: 'subscription_required',
+        message: 'An active subscription is required to find calling partners.',
+      });
+    }
+    if (userCalls.has(currentUserId)) {
+      return res.json({ ok: false, message: 'You are already on a call.' });
+    }
+    const excludedIds = new Set(
+      String(req.query.exclude || '')
+        .split(',')
+        .filter((id) => mongoose.isValidObjectId(id))
+        .map(String)
+    );
+    const lastCalledId = mongoose.isValidObjectId(req.query.lastCalled) ? String(req.query.lastCalled) : null;
+
+    const onlineUserIds = [];
+    for (const [uId, sockets] of userSockets.entries()) {
+      if (String(uId) !== currentUserId && mongoose.isValidObjectId(uId) && sockets && sockets.size > 0) {
+        onlineUserIds.push(uId);
+      }
+    }
 
     if (onlineUserIds.length === 0) {
       return res.json({ ok: false, message: 'No other registered co-learners are currently online.' });
     }
 
     const query = { _id: { $in: onlineUserIds } };
-    if (gender && gender !== 'all') {
-      query.gender = new RegExp(`^${gender}$`, 'i');
+    if (gender !== 'all') {
+      query.gender = new RegExp(`^\\s*${gender}\\s*$`, 'i');
     }
 
     const onlineUsers = await User.find(query).lean();
     if (onlineUsers.length === 0) {
-      return res.json({ ok: false, message: 'No online co-learners match your filter.' });
+      const selectedGender = gender === 'all' ? 'matching' : gender;
+      return res.json({
+        ok: false,
+        code: 'no_gender_match',
+        message: gender === 'all'
+          ? 'No other online co-learners are available.'
+          : `No online ${selectedGender} profiles were found. Make sure the other account has set its profile gender to ${selectedGender} in Profile > Edit Profile. Preferred Call Partner is a separate setting.`,
+      });
     }
 
-    const picked = onlineUsers[Math.floor(Math.random() * onlineUsers.length)];
+    const subscribedUsers = onlineUsers.filter((user) => canStartSubscribedCall(currentUser, user));
+    if (subscribedUsers.length === 0) {
+      return res.json({
+        ok: false,
+        code: 'recipient_subscription_required',
+        message: `Online ${gender === 'all' ? 'co-learners' : gender} profiles were found, but none have an active subscription.`,
+      });
+    }
+
+    const blockedUsers = new Set((currentUser?.blockedUsers || []).map(String));
+    const eligibleUsers = subscribedUsers.filter((user) =>
+      !userCalls.has(String(user._id))
+      && !blockedUsers.has(String(user._id))
+      && !(user.blockedUsers || []).some((blockedId) => String(blockedId) === currentUserId)
+    );
+    const freshUsers = eligibleUsers.filter((user) => !excludedIds.has(String(user._id)));
+    const matchCandidates = freshUsers.length > 0
+      ? freshUsers
+      : eligibleUsers.filter((user) => String(user._id) !== lastCalledId);
+    if (matchCandidates.length === 0) {
+      return res.json({
+        ok: false,
+        code: 'no_available_match',
+        message: `Subscribed ${gender === 'all' ? 'co-learners' : gender} profiles are online, but are already on a call, blocked, or were just called.`,
+      });
+    }
+
+    const picked = matchCandidates[Math.floor(Math.random() * matchCandidates.length)];
     return res.json({
       ok: true,
       user: {
@@ -3762,6 +3840,31 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ADMIN API ENDPOINTS
+app.get('/api/home-content', (req, res) => {
+  res.json(publishedHomeContent(store.homeContent));
+});
+
+app.get('/api/admin/home-content', (req, res) => {
+  res.json(store.homeContent);
+});
+
+app.put('/api/admin/home-content', (req, res) => {
+  const content = normalizeHomeContent(req.body);
+  if (!content) {
+    return res.status(400).json({ error: 'Invalid home cards. Check card titles, categories, and conversation starters.' });
+  }
+  store.homeContent = content;
+  save();
+  auditLogs.unshift({
+    id: `aud-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    actor: 'Admin',
+    eventType: 'HOME_CONTENT_PUBLISHED',
+    target: `${content.sections[0].topics.length} home cards`,
+  });
+  res.json({ ok: true, homeContent: content });
+});
+
 app.get('/api/admin/users', async (req, res) => {
   try {
     const users = await User.find().sort({ createdAt: -1 }).lean();
@@ -4328,40 +4431,24 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const callerCallId = canonicalCallUserId(callerDoc, userId);
-    const calleeCallId = canonicalCallUserId(calleeDoc || targetUser, to);
-    if (!callerCallId || !calleeCallId) {
-      acknowledge({ error: 'Calling requires a valid registered account.' });
-      return;
-    }
-    if (callerCallId === calleeCallId) {
-      acknowledge({ error: 'You cannot call yourself.' });
+    if (!callerDoc || !calleeDoc) {
+      acknowledge({ error: 'User not found' });
       return;
     }
 
-    const callerIds = Array.from(new Set([
-      callerCallId,
-      userId,
-      socket.data.altUserId,
-      callerDoc?._id ? String(callerDoc._id) : null,
-      callerDoc?.id ? String(callerDoc.id) : null,
-      callerDoc?.name,
-      callerDoc?.email,
-      socket.data.username,
-      socket.data.displayName,
-    ].filter(Boolean).map(String)));
+    if (!canStartSubscribedCall(callerDoc, calleeDoc)) {
+      const callerHasSubscription = isPaidSubscriber(callerDoc);
+      acknowledge({
+        error: callerHasSubscription
+          ? 'This co-learner needs an active subscription before you can call them.'
+          : 'An active subscription is required to make calls.',
+        code: callerHasSubscription ? 'recipient_subscription_required' : 'subscription_required',
+      });
+      return;
+    }
 
-    const calleeIds = Array.from(new Set([
-      calleeCallId,
-      to,
-      calleeDoc?._id ? String(calleeDoc._id) : null,
-      calleeDoc?.id ? String(calleeDoc.id) : null,
-      calleeDoc?.name,
-      calleeDoc?.email,
-      targetUser?.id ? String(targetUser.id) : null,
-      targetUser?._id ? String(targetUser._id) : null,
-      targetUser?.name,
-    ].filter(Boolean).map(String)));
+    const callerIds = Array.from(new Set([userId, socket.data.altUserId, callerDoc?._id ? String(callerDoc._id) : null, callerDoc?.name].filter(Boolean)));
+    const calleeIds = Array.from(new Set([to, calleeDoc?._id ? String(calleeDoc._id) : null, calleeDoc?.id ? String(calleeDoc.id) : null, calleeDoc?.name].filter(Boolean)));
 
     // Check blocks
     if (callerDoc?.blockedUsers?.some((b) => calleeIds.includes(String(b))) || calleeDoc?.blockedUsers?.some((b) => callerIds.includes(String(b)))) {

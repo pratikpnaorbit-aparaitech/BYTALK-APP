@@ -1,14 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  canUseAudio,
-  canUseVideo,
-  entitlementPayload,
-  activeSubscription,
-  getFreeTrialSecondsRemaining,
-  FREE_TRIAL_RESET_DELAY_MS,
-  dayKey,
-} from '../src/subscriptions.js';
+import { canUseAudio, canUseVideo, canStartSubscribedCall, entitlementPayload, activeSubscription } from '../src/subscriptions.js';
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -60,6 +52,23 @@ test('only active Plus and Pro subscriptions can use video', () => {
   assert.equal(canUseVideo(pendingPlus), false);
   assert.equal(canUseVideo({ subscriptionPlan: 'free', subscriptionStatus: 'inactive' }), false);
   assert.equal(entitlementPayload({ subscriptionPlan: 'free' }).plan.id, 'free');
+});
+
+test('calls require both participants to have an active subscription', () => {
+  const activeSubscriber = {
+    subscriptionPlan: 'basic',
+    subscriptionStatus: 'active',
+    subscriptionExpiresAt: new Date(Date.now() + 86400000),
+  };
+  const expiredSubscriber = {
+    ...activeSubscriber,
+    subscriptionExpiresAt: new Date(Date.now() - 1),
+  };
+
+  assert.equal(canStartSubscribedCall(activeSubscriber, activeSubscriber), true);
+  assert.equal(canStartSubscribedCall(activeSubscriber, { subscriptionPlan: 'free' }), false);
+  assert.equal(canStartSubscribedCall({ subscriptionPlan: 'free' }, activeSubscriber), false);
+  assert.equal(canStartSubscribedCall(activeSubscriber, expiredSubscriber), false);
 });
 
 test('entitlementPayload accurately reflects admin PRO grant and expiry', () => {

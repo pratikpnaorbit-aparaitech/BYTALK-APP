@@ -139,7 +139,7 @@ export const INTERVIEW_TOPICS = [
 ];
 
 // Rich, multi-layered professional illustrations matching reference Image 1
-function CardIllustration({ type, color }) {
+function CardIllustration({ type, color, icon }) {
   switch (type) {
     case 'people_chatting':
       return (
@@ -365,7 +365,7 @@ function CardIllustration({ type, color }) {
     default:
       return (
         <View style={styles.illustrationBox}>
-          <Ionicons name="chatbubbles" size={34} color={color || '#8B5CF6'} />
+          <Ionicons name={icon || 'chatbubbles'} size={34} color={color || '#8B5CF6'} />
         </View>
       );
   }
@@ -378,8 +378,9 @@ export default function AryaHomeScreen({
   onPressHistory,
   isPro = false,
   freeCreditsRemaining = 5,
+  request,
 }) {
-  const [activeCategory, setActiveCategory] = useState('General'); // 'General' | 'Interview'
+  const [publishedSections, setPublishedSections] = useState(null);
   const [selectedTopic, setSelectedTopic] = useState(null);
 
   // Live countdown timer state (hours, minutes, seconds)
@@ -401,8 +402,30 @@ export default function AryaHomeScreen({
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!request) return undefined;
+    request('home-content')
+      .then((content) => {
+        if (!cancelled && Array.isArray(content.sections)) setPublishedSections(content.sections);
+      })
+      .catch((error) => {
+        console.warn('[Home content] Could not load published sections:', error.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [request]);
+
   const format2 = (n) => String(n).padStart(2, '0');
-  const topics = activeCategory === 'General' ? GENERAL_TOPICS : INTERVIEW_TOPICS;
+  const sections = publishedSections || [
+    { id: 'general', title: 'General', topics: GENERAL_TOPICS },
+    { id: 'interview', title: 'Interview', topics: INTERVIEW_TOPICS },
+  ];
+  const topics = sections.flatMap((section) => section.topics.map((topic) => ({
+    ...topic,
+    category: topic.category || section.title,
+  })));
   const selectPracticeMode = (mode) => {
     if (!selectedTopic) return;
     const topic = selectedTopic;
@@ -436,44 +459,19 @@ export default function AryaHomeScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Tab Switcher: General | Interview */}
-        <View style={styles.tabSwitcherContainer}>
-          <TouchableOpacity
-            onPress={() => setActiveCategory('General')}
-            style={[styles.switcherTab, activeCategory === 'General' && styles.switcherTabActive]}
-            activeOpacity={0.8}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeCategory === 'General' }}
-          >
-            <Text style={[styles.switcherTabText, activeCategory === 'General' && styles.switcherTabTextActive]}>
-              General
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => setActiveCategory('Interview')}
-            style={[styles.switcherTab, activeCategory === 'Interview' && styles.switcherTabActive]}
-            activeOpacity={0.8}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeCategory === 'Interview' }}
-          >
-            <Text style={[styles.switcherTabText, activeCategory === 'Interview' && styles.switcherTabTextActive]}>
-              Interview
-            </Text>
-          </TouchableOpacity>
-        </View>
-
         {/* 2-Column Cards Grid with Floating Crown Badges */}
         <View style={styles.cardsGrid}>
-          {topics.map((topic) => (
-            <TouchableOpacity
-              key={topic.id}
-              onPress={() => setSelectedTopic(topic)}
-              style={styles.cardItem}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel={`Practice ${topic.title}`}
-            >
+          {topics.map((topic) => {
+            const levelBars = topic.bars || (topic.level === 'Hard' ? 3 : topic.level === 'Medium' ? 2 : 1);
+            return (
+              <TouchableOpacity
+                key={topic.id}
+                onPress={() => setSelectedTopic(topic)}
+                style={styles.cardItem}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Practice ${topic.title}`}
+              >
               {/* Crown Badge floating on top center border */}
               <View style={styles.crownBadgeFloating}>
                 <Text style={styles.crownBadgeEmoji}>👑</Text>
@@ -483,9 +481,9 @@ export default function AryaHomeScreen({
               <View style={styles.cardTopRow}>
                 <View style={styles.levelSignalContainer}>
                   <View style={styles.signalBarGroup}>
-                    <View style={[styles.signalBar, topic.bars >= 1 && styles.signalBarFilled]} />
-                    <View style={[styles.signalBar, topic.bars >= 2 && styles.signalBarFilled]} />
-                    <View style={[styles.signalBar, topic.bars >= 3 && styles.signalBarFilled]} />
+                    <View style={[styles.signalBar, levelBars >= 1 && styles.signalBarFilled]} />
+                    <View style={[styles.signalBar, levelBars >= 2 && styles.signalBarFilled]} />
+                    <View style={[styles.signalBar, levelBars >= 3 && styles.signalBarFilled]} />
                   </View>
                   <Text style={styles.levelText}>{topic.level}</Text>
                 </View>
@@ -493,7 +491,7 @@ export default function AryaHomeScreen({
 
               {/* Graphic Illustration with soft pastel background pill */}
               <View style={[styles.graphicArea, { backgroundColor: topic.bgColor || '#F8FAFC' }]}>
-                <CardIllustration type={topic.graphic} color={topic.color} />
+                <CardIllustration type={topic.graphic} color={topic.color} icon={topic.icon} />
               </View>
 
               {/* Card Title Box: Fixed height for uniform alignment */}
@@ -502,8 +500,9 @@ export default function AryaHomeScreen({
                   {topic.title}
                 </Text>
               </View>
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Bottom padding to leave room for the floating banner */}
@@ -886,38 +885,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 13,
     fontWeight: '700',
-  },
-  tabSwitcherContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F0FB',
-    borderRadius: 14,
-    padding: 4,
-    marginTop: 6,
-    marginBottom: 20,
-  },
-  switcherTab: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 11,
-  },
-  switcherTabActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#5843E8',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  switcherTabText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#718096',
-  },
-  switcherTabTextActive: {
-    fontWeight: '800',
-    color: '#5843E8',
   },
   cardsGrid: {
     flexDirection: 'row',
