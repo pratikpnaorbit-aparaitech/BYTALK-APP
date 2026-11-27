@@ -12,6 +12,7 @@ import {
   Alert,
   TextInput,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 
@@ -57,6 +58,9 @@ export default function CallTabScreen({
   onCancelMatch,
   onRefreshFriends,
 }) {
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const isWideLayout = viewportWidth >= 768;
+  const isCompactHeight = viewportHeight < 600;
   const [friendsRefreshing, setFriendsRefreshing] = useState(false);
   const [pendingFriendRemoval, setPendingFriendRemoval] = useState(null);
   const [bottomCardMinimized, setBottomCardMinimized] = useState(false);
@@ -322,7 +326,7 @@ export default function CallTabScreen({
   return (
     <View style={styles.screenContainer}>
       {/* ================= HEADER (IMAGE 5) ================= */}
-      <View style={styles.topHeader}>
+      <View style={[styles.topHeader, isWideLayout && styles.wideHeader]}>
         {/* Left: User Avatar + Overlapping Menu Badge */}
         <View style={styles.userProfileWrapper}>
           <Image source={{ uri: userAvatar }} style={styles.userAvatarImg} />
@@ -386,7 +390,7 @@ export default function CallTabScreen({
       </View>
 
       {/* ================= 3 TOP TABS: Practice, Friends, Progress ================= */}
-      <View style={styles.topTabBar}>
+      <View style={[styles.topTabBar, isWideLayout && styles.wideTabBar]}>
         <TouchableOpacity
           onPress={() => setActiveTopTab('practice')}
           style={[styles.topTabItem, activeTopTab === 'practice' && styles.topTabItemActive]}
@@ -435,7 +439,11 @@ export default function CallTabScreen({
       {activeTopTab === 'practice' && (
         <View style={{ flex: 1 }}>
           <ScrollView
-            contentContainerStyle={styles.practiceContentScroll}
+            contentContainerStyle={[
+              styles.practiceContentScroll,
+              isWideLayout && styles.wideContent,
+              isCompactHeight && styles.compactPracticeContent,
+            ]}
             showsVerticalScrollIndicator
             persistentScrollbar
           >
@@ -477,7 +485,11 @@ export default function CallTabScreen({
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.bottomCardSheet}>
+            <View style={[
+              styles.bottomCardSheet,
+              isWideLayout && styles.wideBottomCard,
+              isCompactHeight && styles.compactBottomCard,
+            ]}>
               <View style={styles.freeCallingHeaderRow}>
                 <Text style={styles.freeCallingTitle}>
                   Daily free voice limit: 10 minutes
@@ -634,7 +646,10 @@ export default function CallTabScreen({
       {/* ================= TAB 2: FRIENDS VIEW ================= */}
       {activeTopTab === 'friends' && (
         <ScrollView
-          contentContainerStyle={styles.friendsContentScroll}
+          contentContainerStyle={[
+            styles.friendsContentScroll,
+            isWideLayout && styles.wideContent,
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -962,7 +977,10 @@ export default function CallTabScreen({
       {/* ================= TAB 3: PROGRESS VIEW ================= */}
       {activeTopTab === 'progress' && (
         <ScrollView
-          contentContainerStyle={styles.progressContentScroll}
+          contentContainerStyle={[
+            styles.progressContentScroll,
+            isWideLayout && styles.wideContent,
+          ]}
           showsVerticalScrollIndicator
           persistentScrollbar
         >
@@ -1160,6 +1178,11 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     backgroundColor: '#FFFFFF',
   },
+  wideHeader: {
+    width: '100%',
+    maxWidth: 1040,
+    alignSelf: 'center',
+  },
   userProfileWrapper: {
     position: 'relative',
   },
@@ -1272,6 +1295,11 @@ const styles = StyleSheet.create({
     borderBottomColor: '#EEF2F6',
     paddingHorizontal: 10,
   },
+  wideTabBar: {
+    width: '100%',
+    maxWidth: 1040,
+    alignSelf: 'center',
+  },
   topTabItem: {
     flex: 1,
     alignItems: 'center',
@@ -1319,6 +1347,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 240,
+  },
+  wideContent: {
+    width: '100%',
+    maxWidth: 820,
+    alignSelf: 'center',
+  },
+  compactPracticeContent: {
+    paddingBottom: 270,
   },
   guidelinesList: {
     gap: 16,
@@ -1372,6 +1408,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 12,
+  },
+  wideBottomCard: {
+    width: '100%',
+    maxWidth: 820,
+    alignSelf: 'center',
+  },
+  compactBottomCard: {
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 12 : 8,
   },
   minimizedBottomCard: {
     position: 'absolute',

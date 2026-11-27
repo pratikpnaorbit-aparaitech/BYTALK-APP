@@ -983,7 +983,7 @@ const Section = ({ title, children }) => (
 );
 
 function App() {
-  const { height: viewportHeight } = useWindowDimensions();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const isShortViewport = viewportHeight < 560;
   const welcomeIllustrationHeight = Math.max(110, Math.min(180, viewportHeight * 0.34));
   const [screen, setScreen] = useState('welcome');
@@ -6251,14 +6251,29 @@ function App() {
 
               {/* INCOMING CALL SCREEN: Displays prominent Accept & Disconnect options */}
               {call.direction === 'incoming' && (call.status === 'Ringing' || call.status === 'Calling') ? (
-                <View style={styles.incomingCallFullContainer}>
-                  <View style={styles.incomingCallerCard}>
-                    <View style={styles.incomingAvatarWrapper}>
+                <View style={[
+                  styles.incomingCallFullContainer,
+                  {
+                    paddingVertical: Math.max(20, Math.min(60, viewportHeight * 0.08)),
+                    paddingHorizontal: Math.max(20, Math.min(40, viewportWidth * 0.08)),
+                  },
+                ]}>
+                  <View style={[
+                    styles.incomingCallerCard,
+                    { marginTop: viewportHeight < 600 ? 0 : 40 },
+                  ]}>
+                    <View style={[
+                      styles.incomingAvatarWrapper,
+                      viewportHeight < 420 && styles.compactIncomingAvatar,
+                    ]}>
                       <Image
                         source={{
                           uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (call.peer?.name || 'Learner'),
                         }}
-                        style={styles.incomingAvatarImage}
+                        style={[
+                          styles.incomingAvatarImage,
+                          viewportHeight < 420 && styles.compactIncomingAvatarImage,
+                        ]}
                       />
                     </View>
                     <Text style={styles.incomingCallerTitle}>
@@ -6273,7 +6288,10 @@ function App() {
                   </View>
 
                   {/* Prominent Action Buttons: Disconnect & Accept */}
-                  <View style={styles.incomingCallActionRow}>
+                  <View style={[
+                    styles.incomingCallActionRow,
+                    { maxWidth: 460, paddingHorizontal: viewportWidth < 380 ? 10 : 30 },
+                  ]}>
                     {/* Disconnect Button (Red) */}
                     <TouchableOpacity
                       onPress={rejectCall}
@@ -6357,7 +6375,14 @@ function App() {
                     </View>
 
                     {/* Floating Local Video PiP (Picture-in-Picture) */}
-                    <View style={styles.videoLocalPipWrapper}>
+                    <View style={[
+                      styles.videoLocalPipWrapper,
+                      {
+                        width: viewportWidth < 360 ? 88 : viewportWidth >= 768 ? 150 : 105,
+                        height: viewportWidth < 360 ? 122 : viewportWidth >= 768 ? 206 : 145,
+                        right: viewportWidth < 360 ? 10 : 14,
+                      },
+                    ]}>
                       {cameraEnabled && localStream && localStream.getVideoTracks().length > 0 ? (
                         <CallVideo
                           stream={localStream}
@@ -6395,7 +6420,14 @@ function App() {
                   </View>
 
                   {/* Bottom Video Floating Toolbar */}
-                  <View style={styles.videoControlBar}>
+                  <View style={[
+                    styles.videoControlBar,
+                    {
+                      left: viewportWidth < 768 ? 12 : 0,
+                      right: viewportWidth < 768 ? 12 : 0,
+                      bottom: Math.max(12, Math.min(24, viewportHeight * 0.04)),
+                    },
+                  ]}>
                     {/* 1. Mute/Unmute Mic */}
                     <TouchableOpacity
                       accessibilityRole="button"
@@ -6511,15 +6543,19 @@ function App() {
                 </View>
 
               {/* ================= ACTIVE CALL HEADER (EXACT MATCH TO REFERENCE IMAGE) ================= */}
-              <View style={styles.refCallHeaderContainer}>
+              <View style={[
+                styles.refCallHeaderContainer,
+                viewportWidth < 370 && styles.compactRefCallHeader,
+                viewportWidth >= 768 && styles.wideRefCallHeader,
+              ]}>
                 {/* Left: User Profile (Oliver style from reference image) */}
-                <View style={styles.refUserCol}>
-                  <View style={styles.refAvatarWrapper}>
+                <View style={[styles.refUserCol, viewportWidth < 370 && styles.compactRefUserCol]}>
+                  <View style={[styles.refAvatarWrapper, viewportWidth < 370 && styles.compactRefAvatarWrapper]}>
                     <Image
                       source={{
                         uri: avatarUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Oliver&top=shortFlat&clothingColor=blue01',
                       }}
-                      style={styles.refAvatarImg}
+                      style={[styles.refAvatarImg, viewportWidth < 370 && styles.compactRefAvatarImg]}
                     />
                   </View>
                   <Text style={styles.refUserName} numberOfLines={1}>{name || 'Oliver'}</Text>
@@ -6594,13 +6630,17 @@ function App() {
                 </View>
 
                 {/* Right: Partner Profile (sarah style from reference image) */}
-                <View style={styles.refUserCol}>
-                  <View style={[styles.refAvatarWrapper, call.peer?.isPro && { borderColor: '#F59E0B', borderWidth: 2 }]}>
+                <View style={[styles.refUserCol, viewportWidth < 370 && styles.compactRefUserCol]}>
+                  <View style={[
+                    styles.refAvatarWrapper,
+                    viewportWidth < 370 && styles.compactRefAvatarWrapper,
+                    call.peer?.isPro && { borderColor: '#F59E0B', borderWidth: 2 },
+                  ]}>
                     <Image
                       source={{
                         uri: call.peer?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=' + (call.peer?.name || 'sarah') + '&clothingColor=yellow',
                       }}
-                      style={styles.refAvatarImg}
+                      style={[styles.refAvatarImg, viewportWidth < 370 && styles.compactRefAvatarImg]}
                     />
                   </View>
                   <Text style={styles.refUserName} numberOfLines={1}>
@@ -8266,6 +8306,8 @@ const styles = StyleSheet.create({
   incomingCallerCard: {
     alignItems: 'center',
     marginTop: 40,
+    width: '100%',
+    maxWidth: 520,
   },
   incomingAvatarWrapper: {
     width: 136,
@@ -8283,10 +8325,21 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 10,
   },
+  compactIncomingAvatar: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    marginBottom: 12,
+  },
   incomingAvatarImage: {
     width: 126,
     height: 126,
     borderRadius: 63,
+  },
+  compactIncomingAvatarImage: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
   },
   incomingCallerTitle: {
     fontSize: 26,
@@ -8312,6 +8365,7 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 30,
     marginBottom: 30,
+    alignSelf: 'center',
   },
   incomingActionBtnItem: {
     alignItems: 'center',
@@ -11361,10 +11415,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 14,
     elevation: 12,
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   videoControlBtn: {
     alignItems: 'center',
     justifyContent: 'center',
+    flex: 1,
   },
   videoControlCircle: {
     width: 46,
@@ -11405,9 +11462,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
+  compactRefCallHeader: {
+    paddingHorizontal: 6,
+    paddingVertical: 12,
+  },
+  wideRefCallHeader: {
+    width: '100%',
+    maxWidth: 1000,
+    alignSelf: 'center',
+  },
   refUserCol: {
     alignItems: 'center',
     width: 85,
+  },
+  compactRefUserCol: {
+    width: 62,
   },
   refAvatarWrapper: {
     width: 68,
@@ -11425,10 +11494,20 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
+  compactRefAvatarWrapper: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+  },
   refAvatarImg: {
     width: 64,
     height: 64,
     borderRadius: 32,
+  },
+  compactRefAvatarImg: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
   },
   refUserName: {
     fontSize: 15,
