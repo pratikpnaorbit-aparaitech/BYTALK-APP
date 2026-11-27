@@ -75,8 +75,8 @@ export default function ProfileScreen({
   onPressGetPro,
   onUpdateProfile,
   onLogout,
-  aryaSettings,
-  onUpdateAryaSettings,
+  aiSettings,
+  onUpdateAiSettings,
   isPro = false,
   subscription = null,
 }) {
@@ -140,15 +140,15 @@ export default function ProfileScreen({
     }
   };
 
-  // ARYA Voice Settings
-  const voice = aryaSettings?.voice || 'FEMALE';
-  const voiceSpeed = aryaSettings?.speed || '1x';
-  const nativeLang = aryaSettings?.nativeLanguage || user?.nativeLanguage || 'Other (English)';
+  // AI voice settings
+  const voice = aiSettings?.voice || 'FEMALE';
+  const voiceSpeed = aiSettings?.speed || '1x';
+  const nativeLang = aiSettings?.nativeLanguage || user?.nativeLanguage || 'Other (English)';
 
   const toggleVoice = () => {
     const nextVoice = voice === 'FEMALE' ? 'MALE' : 'FEMALE';
-    if (onUpdateAryaSettings) {
-      onUpdateAryaSettings({ ...aryaSettings, voice: nextVoice });
+    if (onUpdateAiSettings) {
+      onUpdateAiSettings({ ...aiSettings, voice: nextVoice });
     }
   };
 
@@ -156,8 +156,8 @@ export default function ProfileScreen({
     const speeds = ['0.75x', '1x', '1.25x'];
     const idx = speeds.indexOf(voiceSpeed);
     const nextSpeed = speeds[(idx + 1) % speeds.length];
-    if (onUpdateAryaSettings) {
-      onUpdateAryaSettings({ ...aryaSettings, speed: nextSpeed });
+    if (onUpdateAiSettings) {
+      onUpdateAiSettings({ ...aiSettings, speed: nextSpeed });
     }
   };
 
@@ -352,8 +352,8 @@ export default function ProfileScreen({
             <View style={styles.activeSubFooter}>
               <Text style={styles.activeSubFeatures}>
                 {isBasicOnly
-                  ? '✓ 1-on-1 Voice Calling • Unlimited ARYA AI'
-                  : '✓ Unlimited ARYA AI • HD Video Calling • Priority Match'}
+                  ? '✓ 1-on-1 Voice Calling • Unlimited AI practice'
+                  : '✓ Unlimited AI practice • HD Video Calling • Priority Match'}
               </Text>
               <TouchableOpacity
                 onPress={onPressGetPro}
@@ -370,7 +370,7 @@ export default function ProfileScreen({
             <View>
               <Text style={styles.proBannerTitle}>BYTALK Pro</Text>
               <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
-                Unlimited Calls & ARYA AI Practice
+                Unlimited Calls & AI Practice
               </Text>
             </View>
             <TouchableOpacity
@@ -391,12 +391,12 @@ export default function ProfileScreen({
           </View>
         )}
 
-        {/* ARYA Settings Header */}
-        <Text style={styles.sectionHeader}>ARYA Settings</Text>
+        {/* AI Settings Header */}
+        <Text style={styles.sectionHeader}>AI Settings</Text>
 
-        {/* ARYA Settings White Box */}
+        {/* AI Settings White Box */}
         <View style={styles.settingsBox}>
-          {/* Row 1: ARYA Voice */}
+          {/* Row 1: AI Voice */}
           <TouchableOpacity
             onPress={toggleVoice}
             style={styles.settingRow}
@@ -404,7 +404,7 @@ export default function ProfileScreen({
           >
             <View style={styles.settingLeft}>
               <Ionicons name="volume-medium-outline" size={22} color="#6C5CE7" />
-              <Text style={styles.settingLabel}>ARYA Voice</Text>
+              <Text style={styles.settingLabel}>AI Voice</Text>
             </View>
             <View style={styles.settingRight}>
               <Text style={styles.settingValue}>{voice}</Text>
@@ -414,7 +414,7 @@ export default function ProfileScreen({
 
           <View style={styles.settingDivider} />
 
-          {/* Row 2: ARYA Voice Speed */}
+          {/* Row 2: AI Voice Speed */}
           <TouchableOpacity
             onPress={cycleVoiceSpeed}
             style={styles.settingRow}
@@ -422,7 +422,7 @@ export default function ProfileScreen({
           >
             <View style={styles.settingLeft}>
               <Ionicons name="speedometer-outline" size={22} color="#6C5CE7" />
-              <Text style={styles.settingLabel}>ARYA Voice Speed</Text>
+              <Text style={styles.settingLabel}>AI Voice Speed</Text>
             </View>
             <View style={styles.settingRight}>
               <Text style={styles.settingValue}>{voiceSpeed}</Text>
@@ -808,8 +808,8 @@ export default function ProfileScreen({
                 <TouchableOpacity
                   key={lang}
                   onPress={() => {
-                    if (onUpdateAryaSettings) {
-                      onUpdateAryaSettings({ ...aryaSettings, nativeLanguage: lang });
+                    if (onUpdateAiSettings) {
+                      onUpdateAiSettings({ ...aiSettings, nativeLanguage: lang });
                     }
                     setShowLanguageModal(false);
                   }}

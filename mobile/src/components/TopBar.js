@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80';
 
-export default function AryaTopBar({
+export default function TopBar({
   user,
   userStats,
   currentScreen = 'home',

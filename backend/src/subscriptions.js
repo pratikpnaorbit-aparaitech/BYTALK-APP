@@ -13,7 +13,7 @@ export const SUBSCRIPTION_PLANS = {
     priceInr: 199,
     billingInterval: 'month',
     limits: { monthlyVoiceMinutes: null, monthlyVideoCalls: 0 },
-    features: ['Active 1-on-1 normal voice calling', 'Random partner matching', 'Unlimited ARYA AI speaking practice', 'Community discovery'],
+    features: ['Active 1-on-1 normal voice calling', 'Random partner matching', 'Unlimited AI speaking practice', 'Community discovery'],
   },
   plus: {
     id: 'plus',
@@ -52,7 +52,7 @@ export const DEFAULT_PRO_PLANS = [
       'Active 1-on-1 normal voice calling',
       'Instant partner audio calls',
       'Live random speaker matching',
-      'Unlimited ARYA AI conversations',
+      'Unlimited AI conversations',
     ],
   },
   {
@@ -71,7 +71,7 @@ export const DEFAULT_PRO_PLANS = [
     active: true,
     features: [
       'Unlimited normal voice calls & HD video calls',
-      'Unlimited ARYA AI conversations',
+      'Unlimited AI conversations',
       'All topics unlocked',
       'One-time payment',
     ],
@@ -92,7 +92,7 @@ export const DEFAULT_PRO_PLANS = [
     active: true,
     features: [
       'Unlimited normal voice calls & HD video calls',
-      'Unlimited ARYA AI conversations',
+      'Unlimited AI conversations',
       'All daily & business topics',
       'One-time payment, no autopay',
       'Priority matching',
@@ -114,7 +114,7 @@ export const DEFAULT_PRO_PLANS = [
     active: true,
     features: [
       'Unlimited normal voice calls & HD video calls',
-      'Unlimited ARYA AI conversations',
+      'Unlimited AI conversations',
       'All interview preparation topics',
       'No autopay, 1-year full access',
       'Priority matching & zero wait time',

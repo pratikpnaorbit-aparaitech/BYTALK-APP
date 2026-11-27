@@ -19,7 +19,6 @@ export default function CallTabScreen({
   onStartRandomMatch,
   isMatching = false,
   isSubscribed = false,
-  preferredCallGender = 'any',
   freeTrialSecondsRemaining = 600,
   dailyFreeSecondsLimit = 600,
   onPressUpgrade,
@@ -54,14 +53,8 @@ export default function CallTabScreen({
     }
   };
   const [activeTopTab, setActiveTopTab] = useState('practice'); // 'practice' | 'friends' | 'progress'
-  const initialCallGender = ['male', 'female', 'any'].includes(preferredCallGender) ? preferredCallGender : 'any';
-  const [selectedGender, setSelectedGender] = useState(initialCallGender);
   const [searchFriendText, setSearchFriendText] = useState('');
   const [sentMap, setSentMap] = useState({});
-
-  useEffect(() => {
-    setSelectedGender(['male', 'female', 'any'].includes(preferredCallGender) ? preferredCallGender : 'any');
-  }, [preferredCallGender]);
 
   // Animated pulse for radar matching (Image 4)
   const pulseAnim1 = useRef(new Animated.Value(1)).current;
@@ -102,23 +95,9 @@ export default function CallTabScreen({
     }
   }, [isMatching]);
 
-  const handleSelectGender = (gender) => {
-    if (gender !== 'any' && !isSubscribed) {
-      if (onPressUpgrade) {
-        onPressUpgrade();
-      }
-      return;
-    }
-    setSelectedGender(gender);
-  };
-
   const handleStartTalk = () => {
     if (onStartRandomMatch) {
-      onStartRandomMatch({
-        gender: isSubscribed ? (selectedGender === 'any' ? 'all' : selectedGender) : 'all',
-        level: 'beginner',
-        region: 'all',
-      });
+      onStartRandomMatch();
     }
   };
 
@@ -446,7 +425,7 @@ export default function CallTabScreen({
                 onPress={() =>
                   Alert.alert(
                     '10 Minutes Free Everyday! 🎁',
-                    'Every user receives 10 minutes of free voice practice every single day! It automatically resets every day at midnight. Upgrade to PRO for unlimited 24/7 speaking practice and exclusive Male/Female filters.'
+                      'Every user receives 10 minutes of free voice practice every single day! It automatically resets every day at midnight. Upgrade to PRO for unlimited calling and faster partner matching.'
                   )
                 }
                 style={styles.infoIconBtn}
@@ -478,70 +457,11 @@ export default function CallTabScreen({
               </View>
             </View>
 
-            {/* Gender Selector Label */}
-            <Text style={styles.selectGenderLabel}>Select Co-learner's gender</Text>
-
-            {/* 3 Gender Pill Buttons: Male 👑 | Female 👑 | Any */}
-            <View style={styles.genderPillsRow}>
-              <TouchableOpacity
-                onPress={() => handleSelectGender('male')}
-                style={[
-                  styles.genderPill,
-                  selectedGender === 'male' && styles.genderPillActive,
-                ]}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.genderPillText,
-                    selectedGender === 'male' && styles.genderPillTextActive,
-                  ]}
-                >
-                  Male 👑
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => handleSelectGender('female')}
-                style={[
-                  styles.genderPill,
-                  selectedGender === 'female' && styles.genderPillActive,
-                ]}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.genderPillText,
-                    selectedGender === 'female' && styles.genderPillTextActive,
-                  ]}
-                >
-                  Female 👑
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => handleSelectGender('any')}
-                style={[
-                  styles.genderPill,
-                  selectedGender === 'any' && styles.genderPillActive,
-                ]}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.genderPillText,
-                    selectedGender === 'any' && styles.genderPillTextActive,
-                  ]}
-                >
-                  Any
-                </Text>
-              </TouchableOpacity>
-            </View>
             <Text style={{ color: '#64748B', fontSize: 12, marginTop: 8 }}>
-              Choose a gender, then tap Try your 1st Call to start matching.
+              Connect with an available co-learner for a voice practice call.
             </Text>
 
-            {/* Big CTA Button: Try your 1st Call */}
+            {/* Connect to an available online co-learner */}
             <TouchableOpacity
               onPress={handleStartTalk}
               disabled={isMatching}
@@ -551,10 +471,10 @@ export default function CallTabScreen({
               ]}
               activeOpacity={0.88}
               accessibilityRole="button"
-              accessibilityLabel="Try your 1st Call"
+              accessibilityLabel="Connect with an available learner"
             >
               <Ionicons name="call" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.tryCallBtnText}>Try your 1st Call</Text>
+              <Text style={styles.tryCallBtnText}>{isMatching ? 'Finding an available learner…' : 'Connect'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1267,40 +1187,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#64748B',
-  },
-  selectGenderLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginTop: 16,
-    marginBottom: 10,
-  },
-  genderPillsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  genderPill: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 22,
-    borderWidth: 1.2,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  genderPillActive: {
-    backgroundColor: '#EEF2FF',
-    borderColor: '#6366F1',
-  },
-  genderPillText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  genderPillTextActive: {
-    color: '#4F46E5',
-    fontWeight: '800',
   },
   tryCallBtn: {
     flexDirection: 'row',

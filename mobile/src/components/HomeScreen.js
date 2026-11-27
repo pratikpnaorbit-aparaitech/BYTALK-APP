@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -371,7 +372,7 @@ function CardIllustration({ type, color, icon }) {
   }
 }
 
-export default function AryaHomeScreen({
+export default function HomeScreen({
   user,
   onSelectTopic,
   onPressGetPro,
@@ -379,6 +380,7 @@ export default function AryaHomeScreen({
   isPro = false,
   freeCreditsRemaining = 5,
   request,
+  apiBaseUrl = '',
 }) {
   const [publishedSections, setPublishedSections] = useState(null);
   const [selectedTopic, setSelectedTopic] = useState(null);
@@ -405,16 +407,27 @@ export default function AryaHomeScreen({
 
   useEffect(() => {
     let cancelled = false;
+    let loading = false;
     if (!request) return undefined;
-    request('home-content')
-      .then((content) => {
+
+    const loadPublishedSections = async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        const content = await request('home-content');
         if (!cancelled && Array.isArray(content.sections)) setPublishedSections(content.sections);
-      })
-      .catch((error) => {
-        console.warn('[Home content] Could not load published sections:', error.message);
-      });
+      } catch (error) {
+        if (!cancelled) console.warn('[Home content] Could not load published sections:', error.message);
+      } finally {
+        loading = false;
+      }
+    };
+
+    loadPublishedSections();
+    const refreshTimer = setInterval(loadPublishedSections, 10000);
     return () => {
       cancelled = true;
+      clearInterval(refreshTimer);
     };
   }, [request]);
 
@@ -450,7 +463,7 @@ export default function AryaHomeScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Top Header with History Button (ARYA AI banner removed) */}
+        {/* Top Header with History Button */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
           <View style={styles.creditBadge}>
             <Ionicons name={isPro ? 'infinite' : 'sparkles'} size={14} color={isPro ? '#047857' : '#7C3AED'} />
@@ -524,7 +537,15 @@ export default function AryaHomeScreen({
 
                   {/* Graphic Illustration with soft pastel background pill */}
                   <View style={[styles.graphicArea, { backgroundColor: topic.bgColor || '#F8FAFC' }]}>
-                    <CardIllustration type={topic.graphic} color={topic.color} icon={topic.icon} />
+                    {topic.imageUrl ? (
+                      <Image
+                        source={{ uri: topic.imageUrl.startsWith('http') ? topic.imageUrl : `${apiBaseUrl}${topic.imageUrl}` }}
+                        style={styles.cardUploadedImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <CardIllustration type={topic.graphic} color={topic.color} icon={topic.icon} />
+                    )}
                   </View>
 
                   {/* Card Title Box: Fixed height for uniform alignment */}
@@ -721,13 +742,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
   },
-  aryaHeaderRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 10,
   },
-  aryaTitleGroup: {
+  titleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -783,7 +804,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#38BDF8',
     marginTop: 2,
   },
-  aryaTitleText: {
+  titleText: {
     fontSize: 22,
     fontWeight: '800',
     color: '#1A1D2E',
@@ -1034,6 +1055,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     marginVertical: 4,
+  },
+  cardUploadedImage: {
+    width: '100%',
+    height: '100%',
   },
   illustrationBox: {
     width: '100%',

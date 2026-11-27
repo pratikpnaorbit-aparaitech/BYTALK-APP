@@ -21,9 +21,11 @@ import { SUBSCRIPTION_PLANS, DEFAULT_PRO_PLANS, activeSubscription, isPaidSubscr
 import { AccessToken } from 'livekit-server-sdk';
 import { generateAiResponse } from './aiService.js';
 import { DEFAULT_HOME_CONTENT, normalizeHomeContent, publishedHomeContent } from './homeContent.js';
+import { decodeHomeCardImage } from './homeCardImages.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const attachmentsDir = path.join(root, 'data', 'attachments');
+const homeCardImagesDir = path.join(root, 'data', 'home-card-images');
 const ATTACHMENT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const dbFile = process.env.BYTALK_DATA_FILE
   ? path.resolve(process.env.BYTALK_DATA_FILE)
@@ -570,9 +572,12 @@ app.post('/api/webhooks/revenuecat', express.raw({ type: 'application/json', lim
 });
 const defaultJsonParser = express.json({ limit: '128kb' });
 const messageJsonParser = express.json({ limit: '12mb' });
+const homeCardImageJsonParser = express.json({ limit: '7mb' });
 app.use((req, res, next) => {
   const parser = req.method === 'POST' && req.path === '/api/messages'
     ? messageJsonParser
+    : req.method === 'POST' && req.path === '/api/admin/home-card-images'
+      ? homeCardImageJsonParser
     : defaultJsonParser;
   parser(req, res, next);
 });
@@ -726,15 +731,12 @@ app.get('/health', (req, res) => res.json({ ok: true, service: 'BYTALK API', tim
 
 // AUTHENTICATION: REGISTER
 app.post('/api/register', async (req, res) => {
-  const { name, email, password, gender = '', preferredCallGender = 'any' } = req.body;
+  const { name, email, password, gender = '' } = req.body;
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'Full name is required' });
   }
   if (typeof gender !== 'string' || (gender && !['male', 'female'].includes(gender.trim().toLowerCase()))) {
     return res.status(400).json({ error: 'Profile gender must be male or female.' });
-  }
-  if (typeof preferredCallGender !== 'string' || !['male', 'female', 'any'].includes(preferredCallGender.trim().toLowerCase())) {
-    return res.status(400).json({ error: 'Preferred call partner gender must be male, female, or any.' });
   }
   if (!email || typeof email !== 'string' || !email.trim()) {
     return res.status(400).json({ error: 'Email address is required' });
@@ -760,7 +762,6 @@ app.post('/api/register', async (req, res) => {
       email: cleanEmail,
       passwordHash: hashPassword(password),
       gender: gender.trim().toLowerCase(),
-      preferredCallGender: preferredCallGender.trim().toLowerCase(),
       country: '',
       nativeLanguage: '',
       learningLanguage: 'English',
@@ -1747,7 +1748,7 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
   <div class="card">
     <div class="icon">🎉</div>
     <h2>Payment Successful!</h2>
-    <p>Your <strong>${duration}</strong> subscription is active. All premium features, voice calling, and ARYA AI are unlocked.</p>
+    <p>Your <strong>${duration}</strong> subscription is active. All premium features, voice calling, and AI practice are unlocked.</p>
     <a href="bytalk://payment-success" class="btn">Return to BYTALK App</a>
   </div>
   <script>
@@ -1881,7 +1882,7 @@ app.get('/api/subscription/razorpay/checkout-page', async (req, res) => {
   <div class="card">
     <div class="badge">👑 FESTIVE PRO OFFER</div>
     <h2 style="margin: 0 0 6px 0;">BYTALK PRO</h2>
-    <div style="color: #9CA3AF; font-size: 14px;">Unlock Unlimited ARYA AI & Video Calls</div>
+    <div style="color: #9CA3AF; font-size: 14px;">Unlock Unlimited AI & Video Calls</div>
     <div class="price">₹${(Number(amount) / 100).toFixed(2)}</div>
     <button id="pay-btn" class="btn">Pay Securely with Razorpay</button>
     <div class="footer">🔒 100% Secure • Powered by Razorpay</div>
@@ -2099,10 +2100,6 @@ app.get('/api/practice/partners', requireAuth, (req, res) => {
 app.get('/api/practice/random-online', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
-    const gender = String(req.query.gender || 'all').toLowerCase();
-    if (!['all', 'male', 'female'].includes(gender)) {
-      return res.status(400).json({ ok: false, error: 'Invalid gender filter.' });
-    }
 
     const currentUser = await User.findById(currentUserId).lean();
     if (!isPaidSubscriber(currentUser)) {
@@ -2135,19 +2132,12 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
     }
 
     const query = { _id: { $in: onlineUserIds } };
-    if (gender !== 'all') {
-      query.gender = new RegExp(`^\\s*${gender}\\s*$`, 'i');
-    }
-
     const onlineUsers = await User.find(query).lean();
     if (onlineUsers.length === 0) {
-      const selectedGender = gender === 'all' ? 'matching' : gender;
       return res.json({
         ok: false,
-        code: 'no_gender_match',
-        message: gender === 'all'
-          ? 'No other online co-learners are available.'
-          : `No online ${selectedGender} profiles were found. Make sure the other account has set its profile gender to ${selectedGender} in Profile > Edit Profile. Preferred Call Partner is a separate setting.`,
+        code: 'no_available_learners',
+        message: 'No other registered co-learners are currently online.',
       });
     }
 
@@ -2156,7 +2146,7 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
       return res.json({
         ok: false,
         code: 'recipient_subscription_required',
-        message: `Online ${gender === 'all' ? 'co-learners' : gender} profiles were found, but none have an active subscription.`,
+        message: 'Online co-learners were found, but none have an active calling subscription.',
       });
     }
 
@@ -2174,7 +2164,7 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
       return res.json({
         ok: false,
         code: 'no_available_match',
-        message: `Subscribed ${gender === 'all' ? 'co-learners' : gender} profiles are online, but are already on a call, blocked, or were just called.`,
+        message: 'Online co-learners are currently busy, blocked, or were just called. Please try again shortly.',
       });
     }
 
@@ -3459,6 +3449,40 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ADMIN API ENDPOINTS
+app.post('/api/admin/home-card-images', async (req, res) => {
+  let image;
+  try {
+    image = decodeHomeCardImage(req.body?.image);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+
+  const imageId = crypto.randomUUID();
+  const fileName = `${imageId}.${image.extension}`;
+  try {
+    await fs.promises.mkdir(homeCardImagesDir, { recursive: true });
+    await fs.promises.writeFile(path.join(homeCardImagesDir, fileName), image.buffer, { flag: 'wx' });
+  } catch (error) {
+    console.error('[POST /api/admin/home-card-images error]', error.message);
+    return res.status(500).json({ error: 'The home card image could not be stored.' });
+  }
+
+  res.status(201).json({ imageUrl: `/api/home-card-images/${fileName}` });
+});
+
+app.get('/api/home-card-images/:imageId', (req, res) => {
+  if (!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(req.params.imageId)) {
+    return res.status(404).json({ error: 'Image not found.' });
+  }
+
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.sendFile(path.join(homeCardImagesDir, req.params.imageId), { maxAge: '1d', immutable: true }, (error) => {
+    if (error && !res.headersSent) {
+      res.status(error.code === 'ENOENT' ? 404 : 500).json({ error: 'Image not found.' });
+    }
+  });
+});
+
 app.get('/api/home-content', (req, res) => {
   res.json(publishedHomeContent(store.homeContent));
 });
@@ -3725,7 +3749,7 @@ app.post('/api/admin/plans', async (req, res) => {
       badgeBg: badgeBg || '#FFEDD5',
       unitText: unitText ? String(unitText).trim() : `/${durationLabel}`,
       features: Array.isArray(features) && features.length > 0 ? features : [
-        'Unlimited ARYA AI practice conversations',
+        'Unlimited AI practice conversations',
         'HD 1-on-1 Video Calling',
         'All interview & daily conversation topics',
         'Priority matching with global speakers',

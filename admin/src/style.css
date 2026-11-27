@@ -596,6 +596,20 @@ th {
 .home-card-form-field textarea {
   resize: vertical;
 }
+.home-card-image-preview-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.home-card-image-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  object-fit: cover;
+}
 .home-card-form-field.is-wide {
   grid-column: 1 / -1;
 }

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-export default function AryaBottomNav({
+export default function BottomNav({
   activeTab,
   onTabPress,
   unreadCount = 0,
