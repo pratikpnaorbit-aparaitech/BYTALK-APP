@@ -27,11 +27,7 @@ import {
 } from 'lucide-react';
 import './style.css';
 
-const configuredApiUrl = import.meta.env.VITE_API_URL;
-const isLocalAdminHost = typeof window !== 'undefined'
-  && /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(window.location.hostname);
-const API = (configuredApiUrl || (isLocalAdminHost ? 'http://localhost:4000' : 'https://bytalk-app.onrender.com'))
-  .replace(/\/+$/, '');
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 const EMPTY_HOME_CARD_FORM = {
   title: '',

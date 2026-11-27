@@ -2,6 +2,7 @@ node_modules/
 .env
 .expo/
 dist/
+!admin/dist/
 *.log
 .DS_Store
 backend/data/store.json

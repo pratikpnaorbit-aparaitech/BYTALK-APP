@@ -41,6 +41,7 @@ const userSchema = new mongoose.Schema(
     },
     tokenVersion: { type: Number, default: 0 },
     streak: { type: Number, default: 1 },
+    lastPracticeDate: { type: String, default: null },
     minutes: { type: Number, default: 0 },
     words: { type: Number, default: 0 },
     status: { type: String, enum: ['active', 'suspended', 'banned'], default: 'active' },
@@ -59,7 +60,13 @@ const userSchema = new mongoose.Schema(
     usageMonth: { type: String, default: null },
     voiceMinutesUsed: { type: Number, default: 0 },
     voiceSecondsUsed: { type: Number, default: 0 },
+    freeVoiceDay: { type: String, default: null },
+    freeVoiceLimitReachedAt: { type: Date, default: null },
     videoCallsUsed: { type: Number, default: 0 },
+    completedCallCount: { type: Number, default: null, min: 0 },
+    receivedRatingTotal: { type: Number, default: null, min: 0 },
+    receivedRatingCount: { type: Number, default: null, min: 0 },
+    receivedPoliteFeedbackCount: { type: Number, default: null, min: 0 },
   },
   { timestamps: true, versionKey: false }
 );
@@ -86,7 +93,15 @@ export function publicUser(user) {
     subscriptionDuration,
     usageMonth,
     voiceMinutesUsed,
+    voiceSecondsUsed,
+    freeVoiceDay,
+    freeVoiceLimitReachedAt,
     videoCallsUsed,
+    completedCallCount,
+    receivedRatingTotal,
+    receivedRatingCount,
+    receivedPoliteFeedbackCount,
+    lastPracticeDate,
     ...safe
   } = value;
   const resolvedName = value.displayName || value.name || '';

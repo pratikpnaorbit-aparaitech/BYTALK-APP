@@ -239,6 +239,14 @@ function getApiUrl() {
     console.warn('[BYTALK] EXPO_PUBLIC_API_URL uses localhost on a native target; resolving the Expo host instead.');
   }
 
+  if (
+    Platform.OS === 'web' &&
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location?.hostname)
+  ) {
+    return `http://${window.location.hostname}:4000`;
+  }
+
   // 2. Web browser runtime
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.location?.hostname) {
@@ -1009,13 +1017,17 @@ function App() {
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [friendNotification, setFriendNotification] = useState(null);
   const [userStars, setUserStars] = useState(40);
-  const [streak, setStreak] = useState(1);
+  const [streak, setStreak] = useState(0);
+  const [callProgressStats, setCallProgressStats] = useState(null);
+  const [callProgressError, setCallProgressError] = useState('');
   const [isMatchingCall, setIsMatchingCall] = useState(false);
   const [showEarlyDisconnectModal, setShowEarlyDisconnectModal] = useState(false);
   const [disconnectReason, setDisconnectReason] = useState('');
   const [audioQualityRating, setAudioQualityRating] = useState(5);
   const [friendRequestSentInCall, setFriendRequestSentInCall] = useState(false);
+  const [pendingCallFriendRemoval, setPendingCallFriendRemoval] = useState(null);
   const [friendsList, setFriendsList] = useState([]);
+  const [pendingDiscoverRemoval, setPendingDiscoverRemoval] = useState(null);
   const [pendingFriendRequests, setPendingFriendRequests] = useState([]);
   const [sentFriendRequests, setSentFriendRequests] = useState([]);
   const [recentCoLearnersList, setRecentCoLearnersList] = useState([]);
@@ -1270,6 +1282,7 @@ function App() {
     const createdAt = Date.parse(item.createdAt);
     return Number.isFinite(createdAt) && Date.now() - createdAt <= 86400000;
   });
+  const connectedCallsCount = recentCallHistory.filter((item) => Boolean(item.connectedAt)).length;
 
   // Auth form states
   const [loginEmail, setLoginEmail] = useState('');
@@ -1335,7 +1348,7 @@ function App() {
       if (current) {
         setSubscription(current);
         if (current.freeTrial?.remainingSeconds !== undefined && current.freeTrial?.remainingSeconds !== null) {
-          const backendUsed = Math.max(0, 300 - Number(current.freeTrial.remainingSeconds));
+          const backendUsed = Math.max(0, FREE_TRIAL_TOTAL_SECONDS - Number(current.freeTrial.remainingSeconds));
           setUsedFreeSeconds((prev) => {
             const next = Math.max(prev, backendUsed);
             saveUsedFreeSeconds(next);
@@ -1349,6 +1362,19 @@ function App() {
       setSubscriptionLoading(false);
     }
 
+  }
+
+  async function loadPracticeProgress() {
+    try {
+      const progress = await request('profile/progress');
+      setCallProgressStats(progress);
+      setCallProgressError('');
+      if (Number.isFinite(Number(progress.streak))) {
+        setStreak(Math.max(0, Number(progress.streak)));
+      }
+    } catch (error) {
+      setCallProgressError(error.message || 'Practice progress is unavailable.');
+    }
   }
 
   function isPaidSubscriber() {
@@ -1465,6 +1491,12 @@ function App() {
 
     if (String(targetId) === String(userId)) {
       Alert.alert('Notice', 'You cannot send a friend request to yourself.');
+      return false;
+    }
+
+    if (checkIsFriend(targetUser)) return false;
+    if (findSentFriendRequest(targetUser)) {
+      setFriendRequestSentInCall(true);
       return false;
     }
 
@@ -1640,6 +1672,119 @@ function App() {
     } catch (err) {
       console.warn('[cancelFriendRequest error]', err.message);
     }
+  };
+
+  const handleRemoveFriend = async (friend) => {
+    const friendUserId = friend?.id || friend?._id || friend?.userId;
+    try {
+      await request('friends/remove', {
+        method: 'POST',
+        body: { friendUserId },
+      });
+      setFriendsList((prev) => prev.filter((item) =>
+        String(item.id || item._id || item.userId || '') !== String(friendUserId || '')
+      ));
+      loadFriends();
+    } catch (err) {
+      const message = err.message || 'Please try again.';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert(`Could not remove friend\n\n${message}`);
+      } else {
+        Alert.alert('Could not remove friend', message);
+      }
+    }
+  };
+
+  const confirmRemoveFriend = (friend) => {
+    setPendingDiscoverRemoval(String(friend?.id || friend?._id || friend?.userId || friend?.name || ''));
+  };
+
+  const renderInCallFriendAction = (peer, compact = false) => {
+    const peerKey = String(peer?.id || peer?._id || peer?.userId || peer?.name || '');
+    const buttonStyle = compact ? styles.videoFriendBtn : styles.inCallAddFriendBtn;
+    const buttonTextStyle = compact ? styles.videoFriendBtnText : styles.inCallAddFriendText;
+    const isFriend = checkIsFriend(peer);
+    const incomingRequest = findIncomingFriendRequest(peer);
+    const isRequestSent = friendRequestSentInCall || Boolean(findSentFriendRequest(peer));
+
+    if (isFriend && pendingCallFriendRemoval === peerKey) {
+      return (
+        <View style={[styles.callRemoveFriendConfirm, compact && styles.callRemoveFriendConfirmCompact]}>
+          <Text style={styles.callRemoveFriendConfirmText}>Remove friend?</Text>
+          <TouchableOpacity
+            onPress={() => setPendingCallFriendRemoval(null)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel removing friend"
+          >
+            <Text style={styles.callRemoveFriendCancelText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setPendingCallFriendRemoval(null);
+              handleRemoveFriend(peer);
+            }}
+            style={styles.callRemoveFriendConfirmBtn}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Confirm removing ${peer?.displayName || peer?.name || 'friend'}`}
+          >
+            <Text style={styles.callRemoveFriendConfirmBtnText}>Remove</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (isFriend) {
+      return (
+        <TouchableOpacity
+          onPress={() => setPendingCallFriendRemoval(peerKey)}
+          style={[buttonStyle, styles.callRemoveFriendAction]}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${peer?.displayName || peer?.name || 'friend'} from friends`}
+        >
+          <Ionicons name="person-remove-outline" size={compact ? 14 : 15} color="#B91C1C" style={{ marginRight: 6 }} />
+          <Text style={[buttonTextStyle, styles.callRemoveFriendActionText]}>Remove friend</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    if (incomingRequest) {
+      return (
+        <TouchableOpacity
+          onPress={() => handleAcceptFriendRequest(incomingRequest)}
+          style={[buttonStyle, styles.callAcceptFriendRequest]}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Accept friend request"
+        >
+          <Ionicons name="checkmark-circle" size={15} color="#166534" style={{ marginRight: 6 }} />
+          <Text style={[buttonTextStyle, styles.callAcceptFriendRequestText]}>Accept Request</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        onPress={() => handleSendFriendRequest(peer)}
+        disabled={isRequestSent}
+        style={[buttonStyle, isRequestSent && (compact ? styles.videoFriendBtnSent : styles.inCallAddFriendBtnSent)]}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={isRequestSent ? 'Friend request sent' : `Add ${peer?.displayName || peer?.name || 'friend'}`}
+      >
+        <Ionicons
+          name={isRequestSent ? 'checkmark-circle' : 'person-add'}
+          size={compact ? 14 : 15}
+          color={isRequestSent ? (compact ? '#FFFFFF' : '#166534') : (compact ? '#FFFFFF' : '#6366F1')}
+          style={{ marginRight: 6 }}
+        />
+        <Text style={[buttonTextStyle, isRequestSent && !compact && { color: '#166534' }]}>
+          {isRequestSent ? (compact ? 'Sent' : 'Friend Request Sent') : 'Add Friend'}
+        </Text>
+      </TouchableOpacity>
+    );
   };
 
   const handleStartDirectCall = (friend) => {
@@ -2040,6 +2185,13 @@ function App() {
       }
     };
 
+    connection.onaddstream = (event) => {
+      if (event?.stream) {
+        console.log('[BYTALK call] onaddstream event received', { callId: peerRef.current?.callId });
+        setRemoteStream(event.stream);
+      }
+    };
+
     const updateConnectionState = () => {
       const state = connection.connectionState;
       const iceState = connection.iceConnectionState;
@@ -2075,9 +2227,14 @@ function App() {
       });
       await connection.setLocalDescription(offer);
       console.log('[BYTALK call] signaling offer', { callId });
-      socketRef.current?.emit('call:signal', { callId, kind: 'offer', signal: connection.localDescription || offer });
+      socketRef.current?.emit('call:signal', { callId, kind: 'offer', signal: connection.localDescription || offer }, (res) => {
+        if (res?.error) {
+          console.warn('[BYTALK call] offer signal response error:', res.error);
+        }
+      });
       updateCall((previous) => previous ? { ...previous, status: 'Connecting' } : previous);
     } catch (error) {
+      console.warn('[BYTALK call] createCallOffer error:', error?.message || error);
       setCallNotice(error.message || 'Could not start the media connection.');
     }
   }
@@ -2097,7 +2254,9 @@ function App() {
     try {
       if (kind === 'offer') {
         await connection.setRemoteDescription(makeSessionDescription(signal));
-        for (const candidate of pendingIceRef.current.splice(0)) {
+        const pendingForCall = (pendingIceByCallRef.current[callId] || []).splice(0);
+        const queuedIce = [...pendingIceRef.current.splice(0), ...pendingForCall];
+        for (const candidate of queuedIce) {
           try {
             await connection.addIceCandidate(makeIceCandidate(candidate));
           } catch (e) {}
@@ -2109,11 +2268,17 @@ function App() {
         });
         await connection.setLocalDescription(answer);
         console.log('[BYTALK call] signaling answer', { callId });
-        socketRef.current?.emit('call:signal', { callId, kind: 'answer', signal: connection.localDescription || answer });
+        socketRef.current?.emit('call:signal', { callId, kind: 'answer', signal: connection.localDescription || answer }, (res) => {
+          if (res?.error) {
+            console.warn('[BYTALK call] answer signal response error:', res.error);
+          }
+        });
         updateCall((previous) => previous ? { ...previous, status: 'Connecting' } : previous);
       } else if (kind === 'answer') {
         await connection.setRemoteDescription(makeSessionDescription(signal));
-        for (const candidate of pendingIceRef.current.splice(0)) {
+        const pendingForCall = (pendingIceByCallRef.current[callId] || []).splice(0);
+        const queuedIce = [...pendingIceRef.current.splice(0), ...pendingForCall];
+        for (const candidate of queuedIce) {
           try {
             await connection.addIceCandidate(makeIceCandidate(candidate));
           } catch (e) {}
@@ -2130,6 +2295,7 @@ function App() {
         }
       }
     } catch (error) {
+      console.warn('[BYTALK call] processCallSignal error:', error?.message || error);
       setCallNotice(error.message || 'Could not negotiate the media connection.');
     }
   }
@@ -2143,6 +2309,7 @@ function App() {
   function finishCallLocally(status, notice = '', details = {}) {
     stopSpeech();
     ringtoneManager.stopRinging();
+    setPendingCallFriendRemoval(null);
     const currentCall = callRef.current;
     if (!currentCall || callCompletion) return;
     if (callExitTimerRef.current) clearTimeout(callExitTimerRef.current);
@@ -2171,6 +2338,8 @@ function App() {
       request('calls').then((history) => setCallHistory(history.filter((item) => Date.now() - Date.parse(item.createdAt) <= 86400000))).catch((error) => {
         setCallHistoryError(error.message || 'Call ended, but call history could not be refreshed.');
       });
+      loadSubscription().catch(() => {});
+      loadPracticeProgress();
     }, 300);
   }
 
@@ -2199,6 +2368,7 @@ function App() {
         }),
       });
       setFeedbackSubmitted(true);
+      await loadPracticeProgress();
       request('calls').then((history) => setCallHistory(history.filter((item) => Date.now() - Date.parse(item.createdAt) <= 86400000))).catch(() => {});
     } catch (error) {
       setFeedbackError(error.message || 'Feedback could not be submitted.');
@@ -2231,6 +2401,7 @@ function App() {
   async function startCall(partner, type) {
     console.log('[BYTALK call] button pressed', { partnerId: partner?.id, type });
     setFriendRequestSentInCall(false);
+    setPendingCallFriendRemoval(null);
     ringtoneManager.unlockAudio();
     if (!activeAuthToken) {
       Alert.alert('Sign in required', 'Sign in before starting a private call.');
@@ -2299,6 +2470,18 @@ function App() {
         return;
       }
       peerRef.current.callId = result.callId;
+      if (pendingIceByCallRef.current[result.callId]) {
+        const earlyCandidates = pendingIceByCallRef.current[result.callId].splice(0);
+        for (const candidate of earlyCandidates) {
+          if (peerRef.current?.connection?.remoteDescription) {
+            try {
+              peerRef.current.connection.addIceCandidate(makeIceCandidate(candidate));
+            } catch (e) {}
+          } else {
+            pendingIceRef.current.push(candidate);
+          }
+        }
+      }
       const ringingCall = { ...(callRef.current || initialCall), id: result.callId, status: 'Ringing' };
       callRef.current = ringingCall;
       updateCall(ringingCall);
@@ -2604,6 +2787,7 @@ function App() {
       socket.on('call:incoming', (incoming) => {
         console.log('[BYTALK call] incoming call received', { callId: incoming.callId, type: incoming.type });
         setFriendRequestSentInCall(false);
+        setPendingCallFriendRemoval(null);
         ringtoneManager.stopRinging();
         if (callRef.current?.id === incoming.callId && callRef.current?.status === 'Connected') return;
         const peer = partnersRef.current.find((partner) => String(partner.id) === String(incoming.caller?.id)) || incoming.caller;
@@ -2625,6 +2809,18 @@ function App() {
         console.log('[BYTALK call] call accepted', { callId, userId });
         ringtoneManager.stopRinging();
         if (peerRef.current) peerRef.current.callId = callId;
+        if (pendingIceByCallRef.current[callId]) {
+          const earlyCandidates = pendingIceByCallRef.current[callId].splice(0);
+          for (const candidate of earlyCandidates) {
+            if (peerRef.current?.connection?.remoteDescription) {
+              try {
+                peerRef.current.connection.addIceCandidate(makeIceCandidate(candidate));
+              } catch (e) {}
+            } else {
+              pendingIceRef.current.push(candidate);
+            }
+          }
+        }
         const current = callRef.current;
         if (!current?.id || current.id === callId) {
           const connectingCall = { ...(current || {}), id: callId, status: 'Connecting' };
@@ -2646,14 +2842,8 @@ function App() {
           ringtoneManager.stopRinging();
         }
         if (callRef.current?.id !== callId) return;
-        const connection = peerRef.current?.connection;
-        const locallyConnected = connection?.connectionState === 'connected'
-          || connection?.iceConnectionState === 'connected'
-          || connection?.iceConnectionState === 'completed';
-        console.log('[BYTALK call] server call state', { callId, status, locallyConnected });
-        if (status === 'connected' && !locallyConnected) return;
         const title = status === 'connected' ? 'Connected' : 'Reconnecting';
-        updateCall((previous) => previous ? { ...previous, status: title, connectedAt: connectedAt || previous.connectedAt } : previous);
+        updateCall((previous) => previous ? { ...previous, status: title, connectedAt: connectedAt || previous.connectedAt || new Date().toISOString() } : previous);
       });
       socket.on('call:missed', ({ callId, endedAt, durationSeconds }) => {
         ringtoneManager.stopRinging();
@@ -2766,6 +2956,9 @@ function App() {
           setSentFriendRequests((prev) => prev.filter((r) => String(r.to?.id) !== String(payload.userId)));
         }
       });
+      socket.on('friend:removed', () => {
+        loadFriends();
+      });
       socket.on('subscription:plans_updated', (payload) => {
         console.log('[BYTALK socket] subscription:plans_updated received', payload);
         if (Array.isArray(payload?.plans) && payload.plans.length > 0) {
@@ -2828,8 +3021,25 @@ function App() {
       if (url) handleDeepLink({ url });
     });
 
+    let onMsg = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (window.location?.href && (window.location.href.includes('payment-success') || window.location.href.includes('payment_id'))) {
+        handleDeepLink({ url: window.location.href });
+      }
+      onMsg = (e) => {
+        if (e.data?.type === 'BYTALK_PAYMENT_SUCCESS' || e.data?.type === 'PAYMENT_SUCCESS') {
+          loadSubscription().catch(() => {});
+          Alert.alert('🎉 PRO Activated!', 'Your payment was confirmed. All features are now unlocked!');
+        }
+      };
+      window.addEventListener('message', onMsg);
+    }
+
     return () => {
       sub.remove();
+      if (onMsg && typeof window !== 'undefined') {
+        window.removeEventListener('message', onMsg);
+      }
     };
   }, []);
 
@@ -2973,6 +3183,12 @@ function App() {
       setConversations((previous) => previous.map((conversation) =>
         conversation.user.id === selected.id ? { ...conversation, unreadCount: 0 } : conversation
       ));
+    }
+  }, [screen, sessionVersion]);
+
+  useEffect(() => {
+    if (screen === 'call-tab' && activeAuthToken) {
+      loadPracticeProgress();
     }
   }, [screen, sessionVersion]);
 
@@ -4194,6 +4410,10 @@ function App() {
               isSubscribed={isPaidSubscriber()}
               freeTrialSecondsRemaining={getFreeTrialSecondsRemaining()}
               dailyFreeSecondsLimit={FREE_TRIAL_TOTAL_SECONDS}
+              connectedCallsCount={connectedCallsCount}
+              freeTrialResetAt={subscription?.freeTrial?.resetAt}
+              progressStats={callProgressStats}
+              progressError={callProgressError}
               onPressUpgrade={openSubscription}
               onBack={() => {
                 setActiveBottomTab('home');
@@ -4214,6 +4434,7 @@ function App() {
               onAcceptFriendRequest={handleAcceptFriendRequest}
               onDeclineFriendRequest={handleDeclineFriendRequest}
               onCancelFriendRequest={handleCancelFriendRequest}
+              onRemoveFriend={handleRemoveFriend}
               onCancelMatch={() => setIsMatchingCall(false)}
               onRefreshFriends={loadFriends}
             />
@@ -5155,96 +5376,140 @@ function App() {
                             const isLast = idx === filteredConvs.length - 1;
 
                             return (
-                              <TouchableOpacity
+                              <View
                                 key={`disc-conv-${partner.id || partner._id || partner.name || idx}`}
-                                onPress={() => openConversation(partner)}
-                                style={[styles.convItemRow, isLast && { borderBottomWidth: 0 }]}
-                                activeOpacity={0.7}
+                                style={[styles.discoverFriendItem, isLast && { borderBottomWidth: 0 }]}
                               >
-                                {/* Profile Photo / Avatar with Online Dot */}
-                                <View style={styles.convAvatarContainer}>
-                                  {partner.avatarUrl || partner.profilePhotoUrl ? (
-                                    <Image
-                                      source={{ uri: partner.avatarUrl || partner.profilePhotoUrl }}
-                                      style={styles.convAvatarImg}
-                                    />
-                                  ) : (
-                                    <View style={[styles.convAvatarImg, styles.convAvatarFallback]}>
-                                      <Text style={styles.convAvatarInitial}>
-                                        {(partner.displayName || partner.name || 'F').trim().charAt(0).toUpperCase()}
-                                      </Text>
-                                    </View>
-                                  )}
-                                  {/* Online/Offline Status Indicator */}
-                                  <View style={[styles.convStatusDot, partner.online ? styles.convStatusOnline : styles.convStatusOffline]} />
-                                </View>
-
-                                {/* Details */}
-                                <View style={styles.convDetailsCol}>
-                                  <View style={styles.convTopLine}>
-                                    <Text style={styles.convNameText} numberOfLines={1}>
-                                      {partner.displayName || partner.name}
-                                    </Text>
-                                    <Text style={[styles.convTimeText, hasUnread && styles.convTimeTextUnread]}>
-                                      {timeDisplay}
-                                    </Text>
-                                  </View>
-
-                                  <View style={styles.convBottomLine}>
-                                    <View style={styles.convPreviewBox}>
-                                      {!latest || !latest.text ? (
-                                        <Text style={styles.convConnectedText} numberOfLines={1}>
-                                          You are now connected. Say hello! 👋
-                                        </Text>
+                                <View style={[styles.convItemRow, { borderBottomWidth: 0, paddingBottom: 8 }]}>
+                                  <TouchableOpacity
+                                    onPress={() => openConversation(partner)}
+                                    style={styles.discoverFriendMain}
+                                    activeOpacity={0.7}
+                                  >
+                                    {/* Profile Photo / Avatar with Online Dot */}
+                                    <View style={styles.convAvatarContainer}>
+                                      {partner.avatarUrl || partner.profilePhotoUrl ? (
+                                        <Image
+                                          source={{ uri: partner.avatarUrl || partner.profilePhotoUrl }}
+                                          style={styles.convAvatarImg}
+                                        />
                                       ) : (
-                                        <>
-                                          {isMe && (
-                                            <Ionicons
-                                              name="checkmark-done"
-                                              size={14}
-                                              color={latest?.readAt ? '#2563EB' : '#94A3B8'}
-                                              style={{ marginRight: 4 }}
-                                            />
-                                          )}
-                                          <Text
-                                            style={[
-                                              styles.convSnippetText,
-                                              hasUnread && styles.convSnippetTextUnread,
-                                            ]}
-                                            numberOfLines={1}
-                                          >
-                                            {latest.text}
+                                        <View style={[styles.convAvatarImg, styles.convAvatarFallback]}>
+                                          <Text style={styles.convAvatarInitial}>
+                                            {(partner.displayName || partner.name || 'F').trim().charAt(0).toUpperCase()}
                                           </Text>
-                                        </>
+                                        </View>
                                       )}
+                                      {/* Online/Offline Status Indicator */}
+                                      <View style={[styles.convStatusDot, partner.online ? styles.convStatusOnline : styles.convStatusOffline]} />
                                     </View>
 
-                                    {hasUnread ? (
-                                      <View style={styles.convUnreadPill}>
-                                        <Text style={styles.convUnreadCountText}>{conv.unreadCount}</Text>
+                                    {/* Details */}
+                                    <View style={styles.convDetailsCol}>
+                                      <View style={styles.convTopLine}>
+                                        <Text style={styles.convNameText} numberOfLines={1}>
+                                          {partner.displayName || partner.name}
+                                        </Text>
+                                        <Text style={[styles.convTimeText, hasUnread && styles.convTimeTextUnread]}>
+                                          {timeDisplay}
+                                        </Text>
                                       </View>
-                                    ) : null}
+
+                                      <View style={styles.convBottomLine}>
+                                        <View style={styles.convPreviewBox}>
+                                          {!latest || !latest.text ? (
+                                            <Text style={styles.convConnectedText} numberOfLines={1}>
+                                              You are now connected. Say hello! 👋
+                                            </Text>
+                                          ) : (
+                                            <>
+                                              {isMe && (
+                                                <Ionicons
+                                                  name="checkmark-done"
+                                                  size={14}
+                                                  color={latest?.readAt ? '#2563EB' : '#94A3B8'}
+                                                  style={{ marginRight: 4 }}
+                                                />
+                                              )}
+                                              <Text
+                                                style={[
+                                                  styles.convSnippetText,
+                                                  hasUnread && styles.convSnippetTextUnread,
+                                                ]}
+                                                numberOfLines={1}
+                                              >
+                                                {latest.text}
+                                              </Text>
+                                            </>
+                                          )}
+                                        </View>
+
+                                        {hasUnread ? (
+                                          <View style={styles.convUnreadPill}>
+                                            <Text style={styles.convUnreadCountText}>{conv.unreadCount}</Text>
+                                          </View>
+                                        ) : null}
+                                      </View>
+                                    </View>
+                                  </TouchableOpacity>
+
+                                  {/* Direct Call Quick Buttons */}
+                                  <View style={styles.convQuickActions}>
+                                    <TouchableOpacity
+                                      onPress={() => startCall(partner, 'audio')}
+                                      style={styles.convQuickBtn}
+                                      accessibilityLabel="Voice call"
+                                    >
+                                      <Ionicons name="call-outline" size={17} color="#10B981" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      onPress={() => startCall(partner, 'video')}
+                                      style={styles.convQuickBtn}
+                                      accessibilityLabel="Video call"
+                                    >
+                                      <Ionicons name="videocam-outline" size={18} color="#6366F1" />
+                                    </TouchableOpacity>
                                   </View>
                                 </View>
 
-                                {/* Direct Call Quick Buttons */}
-                                <View style={styles.convQuickActions}>
+                                {pendingDiscoverRemoval === String(partner.id || partner._id || partner.userId || partner.name || '') ? (
+                                  <View style={styles.discoverRemoveFriendConfirm}>
+                                    <Text style={styles.discoverRemoveFriendConfirmText}>Remove friend?</Text>
+                                    <TouchableOpacity
+                                      onPress={() => setPendingDiscoverRemoval(null)}
+                                      style={styles.discoverRemoveFriendCancelBtn}
+                                      activeOpacity={0.8}
+                                      accessibilityRole="button"
+                                      accessibilityLabel="Cancel removing friend"
+                                    >
+                                      <Text style={styles.discoverRemoveFriendCancelText}>Cancel</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      onPress={() => {
+                                        setPendingDiscoverRemoval(null);
+                                        handleRemoveFriend(partner);
+                                      }}
+                                      style={styles.discoverRemoveFriendConfirmBtn}
+                                      activeOpacity={0.8}
+                                      accessibilityRole="button"
+                                      accessibilityLabel={`Confirm removing ${partner.displayName || partner.name || 'friend'}`}
+                                    >
+                                      <Text style={styles.discoverRemoveFriendConfirmBtnText}>Remove</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                ) : (
                                   <TouchableOpacity
-                                    onPress={() => startCall(partner, 'audio')}
-                                    style={styles.convQuickBtn}
-                                    accessibilityLabel="Voice call"
+                                    onPress={() => confirmRemoveFriend(partner)}
+                                    style={styles.discoverRemoveFriendAction}
+                                    activeOpacity={0.8}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`Remove ${partner.displayName || partner.name || 'friend'} from friends`}
                                   >
-                                    <Ionicons name="call-outline" size={17} color="#10B981" />
+                                    <Ionicons name="person-remove-outline" size={14} color="#B91C1C" />
+                                    <Text style={styles.discoverRemoveFriendActionText}>Remove friend</Text>
                                   </TouchableOpacity>
-                                  <TouchableOpacity
-                                    onPress={() => startCall(partner, 'video')}
-                                    style={styles.convQuickBtn}
-                                    accessibilityLabel="Video call"
-                                  >
-                                    <Ionicons name="videocam-outline" size={18} color="#6366F1" />
-                                  </TouchableOpacity>
-                                </View>
-                              </TouchableOpacity>
+                                )}
+                              </View>
                             );
                           })
                         )}
@@ -5830,6 +6095,31 @@ function App() {
                 </View>
               </View>
 
+              <View style={styles.postCallCard}>
+                <Text style={styles.postCallCardTitle}>What stood out about your co-learner?</Text>
+                <View style={styles.feedbackTags}>
+                  {['Polite', 'Helpful', 'Encouraging', 'Good listener'].map((tag) => {
+                    const selected = feedbackTags.includes(tag);
+                    return (
+                      <TouchableOpacity
+                        key={tag}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected, disabled: feedbackSubmitted }}
+                        disabled={feedbackSubmitted}
+                        onPress={() => setFeedbackTags((current) => (
+                          selected ? current.filter((value) => value !== tag) : [...current, tag]
+                        ))}
+                        style={[styles.feedbackTag, selected && styles.feedbackTagSelected]}
+                      >
+                        <Text style={{ color: selected ? orange : navy, fontSize: 12, fontWeight: '700' }}>
+                          {tag}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
               {/* Section 2: Add detailed review */}
               <View style={styles.postCallCard}>
                 <Text style={styles.postCallCardTitle}>Add detailed review</Text>
@@ -6094,22 +6384,7 @@ function App() {
                         </View>
                       </View>
 
-                      <TouchableOpacity
-                        onPress={() => handleSendFriendRequest(call.peer)}
-                        disabled={friendRequestSentInCall}
-                        style={[styles.videoFriendBtn, friendRequestSentInCall && styles.videoFriendBtnSent]}
-                        activeOpacity={0.8}
-                      >
-                        <Ionicons
-                          name={friendRequestSentInCall ? 'checkmark-circle' : 'person-add'}
-                          size={14}
-                          color="#FFFFFF"
-                          style={{ marginRight: 4 }}
-                        />
-                        <Text style={styles.videoFriendBtnText}>
-                          {friendRequestSentInCall ? 'Sent' : 'Add Friend'}
-                        </Text>
-                      </TouchableOpacity>
+                      {renderInCallFriendAction(call.peer, true)}
                     </View>
 
                     {/* Floating Local Video PiP (Picture-in-Picture) */}
@@ -6402,23 +6677,8 @@ function App() {
                 </View>
               </View>
 
-              {/* Quick Action: Send Friend Request during Call */}
-              <TouchableOpacity
-                onPress={() => handleSendFriendRequest(call.peer)}
-                disabled={friendRequestSentInCall}
-                style={[styles.inCallAddFriendBtn, friendRequestSentInCall && styles.inCallAddFriendBtnSent]}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={friendRequestSentInCall ? 'checkmark-circle' : 'person-add'}
-                  size={15}
-                  color={friendRequestSentInCall ? '#166534' : '#6366F1'}
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={[styles.inCallAddFriendText, friendRequestSentInCall && { color: '#166534' }]}>
-                  {friendRequestSentInCall ? 'Friend Request Sent' : `Send Friend Request to ${call.peer?.name || 'Co-learner'}`}
-                </Text>
-              </TouchableOpacity>
+              {/* Friend action for the current call partner */}
+              {renderInCallFriendAction(call.peer)}
 
               {/* Scrollable Conversation Activities */}
               <ScrollView
@@ -11486,6 +11746,62 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  callRemoveFriendAction: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  callRemoveFriendActionText: {
+    color: '#B91C1C',
+  },
+  callAcceptFriendRequest: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  callAcceptFriendRequestText: {
+    color: '#166534',
+  },
+  callRemoveFriendConfirm: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 30,
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 18,
+    backgroundColor: '#FFF7F7',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  callRemoveFriendConfirmCompact: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  callRemoveFriendConfirmText: {
+    color: '#7F1D1D',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  callRemoveFriendCancelText: {
+    color: '#475569',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  callRemoveFriendConfirmBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#B91C1C',
+  },
+  callRemoveFriendConfirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   curvedCallBottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -11828,6 +12144,76 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 8,
     elevation: 2,
+  },
+  discoverFriendItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  discoverFriendMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+  },
+  discoverRemoveFriendAction: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginRight: 16,
+    marginTop: -4,
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 15,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  discoverRemoveFriendActionText: {
+    color: '#B91C1C',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  discoverRemoveFriendConfirm: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginRight: 16,
+    marginTop: -4,
+    marginBottom: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#FFF7F7',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  discoverRemoveFriendConfirmText: {
+    color: '#7F1D1D',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  discoverRemoveFriendCancelBtn: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  discoverRemoveFriendCancelText: {
+    color: '#475569',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  discoverRemoveFriendConfirmBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#B91C1C',
+  },
+  discoverRemoveFriendConfirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
   convItemRow: {
     flexDirection: 'row',

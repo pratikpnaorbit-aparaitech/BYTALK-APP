@@ -14,6 +14,8 @@ import { Message, publicMessage } from './models/Message.js';
 import { CallHistory } from './models/CallHistory.js';
 import { PracticeSession } from './models/PracticeSession.js';
 import { messageCutoff } from './messageRetention.js';
+import { canonicalCallUserId } from './callIdentity.js';
+import { getOnlineObjectIds } from './onlineUserIds.js';
 import { SubscriptionEvent } from './models/SubscriptionEvent.js';
 import { Plan } from './models/Plan.js';
 import { decodePdfAttachment } from './attachments.js';
@@ -522,6 +524,27 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
+// Serve BYTALK Admin Dashboard
+const __currentDir = path.dirname(fileURLToPath(import.meta.url));
+const adminCandidates = [
+  path.resolve(__currentDir, '../../admin/dist'),
+  path.resolve(process.cwd(), 'admin/dist'),
+  path.resolve(process.cwd(), '../admin/dist'),
+  path.resolve(process.cwd(), 'BYTALK/admin/dist'),
+];
+const adminDistPath = adminCandidates.find((p) => fs.existsSync(p));
+if (adminDistPath) {
+  console.log('[Admin Panel] Serving static assets from:', adminDistPath);
+  app.use('/admin', express.static(adminDistPath));
+  app.get('/admin', (req, res) => {
+    res.sendFile(path.join(adminDistPath, 'index.html'));
+  });
+  app.get('/admin/*', (req, res, next) => {
+    if (req.path.includes('.')) return next();
+    res.sendFile(path.join(adminDistPath, 'index.html'));
+  });
+}
+
 app.post('/api/webhooks/revenuecat', express.raw({ type: 'application/json', limit: '128kb' }), async (req, res) => {
   const authorization = req.headers.authorization || '';
   if (!REVENUECAT_WEBHOOK_AUTH || authorization !== `Bearer ${REVENUECAT_WEBHOOK_AUTH}`) {
@@ -613,6 +636,16 @@ function emitToUser(userId, event, payload) {
   io.to(`user:${String(userId)}`).emit(event, payload);
 }
 
+function emitToUserRooms(userIds, event, payload) {
+  const ids = Array.from(new Set((Array.isArray(userIds) ? userIds : [userIds]).filter(Boolean).map(String)));
+  if (ids.length === 0) return;
+  let target = io;
+  for (const id of ids) {
+    target = target.to(`user:${id}`);
+  }
+  target.emit(event, payload);
+}
+
 async function requireAuth(req, res, next) {
   let user = store.users.find((item) => String(item.id) === String(req.user?.userId));
   if (!user && req.user?.userId) {
@@ -631,9 +664,18 @@ async function requireAuth(req, res, next) {
 
 function participantForCall(call, userId, altUserId = null) {
   if (!call) return null;
-  const ids = [userId, altUserId].filter(Boolean).map(String);
-  if (ids.includes(String(call.callerId))) return call.calleeId;
-  if (ids.includes(String(call.calleeId))) return call.callerId;
+  const ids = [
+    userId,
+    altUserId,
+    String(userId || '').toLowerCase(),
+    altUserId ? String(altUserId).toLowerCase() : null,
+  ].filter(Boolean).map(String);
+  const callerIds = (call.callerIds || [call.callerId]).filter(Boolean).map(String);
+  const calleeIds = (call.calleeIds || [call.calleeId]).filter(Boolean).map(String);
+  const isCaller = ids.some((id) => callerIds.includes(id) || callerIds.map((c) => c.toLowerCase()).includes(id.toLowerCase()));
+  if (isCaller) return call.calleeId;
+  const isCallee = ids.some((id) => calleeIds.includes(id) || calleeIds.map((c) => c.toLowerCase()).includes(id.toLowerCase()));
+  if (isCallee) return call.callerId;
   return null;
 }
 
@@ -673,6 +715,79 @@ async function persistCallHistory(call) {
   );
 }
 
+async function initializeUserProgressStats(userId, existingUser = null) {
+  const user = existingUser || await User.findById(userId);
+  if (!user) throw new Error(`Call participant ${userId} was not found`);
+
+  const needsCallCount = user.completedCallCount == null;
+  const needsRatingStats = user.receivedRatingTotal == null
+    || user.receivedRatingCount == null
+    || user.receivedPoliteFeedbackCount == null;
+  if (!needsCallCount && !needsRatingStats) return user;
+
+  const userIdString = String(userId);
+  const [completedCalls, ratingStats] = await Promise.all([
+    needsCallCount
+      ? CallHistory.countDocuments({
+        $or: [{ callerId: userIdString }, { calleeId: userIdString }],
+        status: 'completed',
+        connectedAt: { $ne: null },
+      })
+      : Promise.resolve(null),
+    needsRatingStats
+      ? CallHistory.aggregate([
+        { $match: { $or: [{ callerId: userIdString }, { calleeId: userIdString }] } },
+        { $unwind: '$feedback' },
+        { $match: { 'feedback.userId': { $ne: userIdString } } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$feedback.rating' },
+            count: { $sum: 1 },
+            politeCount: {
+              $sum: {
+                $cond: [
+                  { $in: ['Polite', { $ifNull: ['$feedback.tags', []] }] },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ])
+      : Promise.resolve([]),
+  ]);
+
+  if (needsCallCount) user.completedCallCount = Number(completedCalls) || 0;
+  if (user.receivedRatingTotal == null) user.receivedRatingTotal = ratingStats[0]?.total || 0;
+  if (user.receivedRatingCount == null) user.receivedRatingCount = ratingStats[0]?.count || 0;
+  if (user.receivedPoliteFeedbackCount == null) user.receivedPoliteFeedbackCount = ratingStats[0]?.politeCount || 0;
+  await user.save();
+  return user;
+}
+
+async function recordConnectedCallForUser(userId, durationSeconds, completedAt) {
+  let user = await User.findById(userId);
+  if (!user) throw new Error(`Call participant ${userId} was not found`);
+  user = await initializeUserProgressStats(userId, user);
+  resetDailyFreeVoiceIfNeeded(user, new Date(completedAt));
+  resetUsageIfNeeded(user);
+
+  const duration = Math.max(0, Number(durationSeconds) || 0);
+  user.completedCallCount = (user.completedCallCount || 0) + 1;
+  user.voiceSecondsUsed = (user.voiceSecondsUsed || 0) + duration;
+  user.voiceMinutesUsed = (user.voiceMinutesUsed || 0) + Math.ceil(duration / 60);
+  if (
+    !isPaidSubscriber(user)
+    && user.voiceSecondsUsed >= FREE_TRIAL_VOICE_SECONDS
+    && !user.freeVoiceLimitReachedAt
+  ) {
+    user.freeVoiceLimitReachedAt = new Date(completedAt);
+  }
+  await user.save();
+}
+
 function finishCall(call, status, endedBy) {
   const timer = callTimers.get(call.id);
   if (timer) clearTimeout(timer);
@@ -688,13 +803,6 @@ function finishCall(call, status, endedBy) {
   call.endedBy = endedBy || null;
   if (call.connectedAt) {
     call.durationSeconds = Math.max(0, Math.floor((Date.parse(call.endedAt) - Date.parse(call.connectedAt)) / 1000));
-    if (call.durationSeconds > 0) {
-      const durSec = call.durationSeconds;
-      Promise.all([
-        User.findByIdAndUpdate(call.callerId, { $inc: { voiceSecondsUsed: durSec, voiceMinutesUsed: Math.ceil(durSec / 60) } }),
-        User.findByIdAndUpdate(call.calleeId, { $inc: { voiceSecondsUsed: durSec, voiceMinutesUsed: Math.ceil(durSec / 60) } }),
-      ]).catch(() => {});
-    }
   } else {
     call.durationSeconds = 0;
   }
@@ -707,10 +815,19 @@ function finishCall(call, status, endedBy) {
   }
   userCalls.delete(call.callerId);
   userCalls.delete(call.calleeId);
-  return persistCallHistory(call).catch((error) => {
+  const statsUpdate = call.connectedAt && !call.progressStatsRecorded
+    ? Promise.all([...new Set([call.callerId, call.calleeId])].map((userId) => (
+      recordConnectedCallForUser(userId, call.durationSeconds, call.endedAt)
+    ))).catch((error) => {
+      console.error(`Call progress update failed for ${call.id}: ${error.message}`);
+    })
+    : Promise.resolve();
+  call.progressStatsRecorded = true;
+  const callHistoryUpdate = persistCallHistory(call).catch((error) => {
     console.error(`Call history persistence failed for ${call.id}: ${error.message}`);
     throw error;
   });
+  return Promise.all([statsUpdate, callHistoryUpdate]).then(() => undefined);
 }
 
 function armCallTimeout(call, status, durationMs, onTimeout) {
@@ -1318,16 +1435,30 @@ app.get('/api/subscription/plans', async (req, res) => {
   }
 });
 
+async function getPersistedEntitlementPayload(user) {
+  const payload = entitlementPayload(user);
+  const resetFields = [
+    'freeVoiceDay',
+    'freeVoiceLimitReachedAt',
+    'voiceSecondsUsed',
+    'usageMonth',
+    'voiceMinutesUsed',
+    'videoCallsUsed',
+  ];
+  if (resetFields.some((field) => user.isModified(field))) await user.save();
+  return payload;
+}
+
 app.get('/api/subscription', requireAuth, async (req, res) => {
   const user = await User.findById(req.authenticatedUser.id);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  res.json({ ...entitlementPayload(user), testMode: TEST_ENTITLEMENTS_ENABLED });
+  res.json({ ...await getPersistedEntitlementPayload(user), testMode: TEST_ENTITLEMENTS_ENABLED });
 });
 
 app.get('/api/subscription/status', requireAuth, async (req, res) => {
   const user = await User.findById(req.authenticatedUser.id);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  res.json({ ...entitlementPayload(user), testMode: TEST_ENTITLEMENTS_ENABLED });
+  res.json({ ...await getPersistedEntitlementPayload(user), testMode: TEST_ENTITLEMENTS_ENABLED });
 });
 
 // RAZORPAY SUBSCRIPTION INTEGRATION
@@ -1432,10 +1563,14 @@ app.post('/api/subscription/razorpay/create-order', requireAuth, async (req, res
         customer.contact = cleanPhone.slice(-10);
       }
 
-      const host = req.get('host') || 'k-app.onrender.com';
+      const clientOrigin = req.body?.returnUrl
+        || req.headers.origin
+        || (req.headers.referer ? new URL(req.headers.referer).origin : null)
+        || '';
+      const host = req.get('host') || 'bytalk-app.onrender.com';
       const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
       const scheme = isLocal ? req.protocol : 'https';
-      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}`;
+      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${user._id}&planId=${planId}&duration=${encodeURIComponent(duration)}${clientOrigin ? `&returnUrl=${encodeURIComponent(clientOrigin)}` : ''}`;
 
       const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
         method: 'POST',
@@ -1699,6 +1834,7 @@ app.post('/api/subscription/razorpay/check-payment-status', requireAuth, async (
 app.get('/api/subscription/razorpay/callback', async (req, res) => {
   const { userId, planId, duration = 'PRO' } = req.query;
   const paymentId = req.query.razorpay_payment_id || req.query.razorpay_payment_link_id;
+  const returnUrl = req.query.returnUrl || req.query.clientOrigin || '';
 
   if (userId) {
     try {
@@ -1719,6 +1855,21 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
         user.subscriptionExpiresAt = expiresAt;
         user.subscriptionRenewalStatus = 'not_renewing';
         await user.save();
+
+        const cachedUser = store.users.find((u) => String(u.id) === String(user._id) || String(u._id) === String(user._id));
+        if (cachedUser) {
+          cachedUser.subscriptionPlan = user.subscriptionPlan;
+          cachedUser.subscriptionStatus = user.subscriptionStatus;
+          cachedUser.subscriptionExpiresAt = user.subscriptionExpiresAt;
+        }
+
+        emitToUserRooms([String(user._id), user.id, user.name], 'subscription:updated', {
+          plan: { id: user.subscriptionPlan, name: duration },
+          status: 'active',
+          expiresAt: expiresAt.toISOString(),
+          subscription: entitlementPayload(user),
+          message: `🎉 Payment confirmed! Your BYTALK subscription (${duration}) is now active.`,
+        });
       }
     } catch (e) {
       console.warn('[Callback User Update Error]', e.message);
@@ -1728,33 +1879,118 @@ app.get('/api/subscription/razorpay/callback', async (req, res) => {
   const html = `<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Payment Successful - BYTALK</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0; padding: 24px; background: #0B0F19; color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 85vh; text-align: center;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; text-align: center;
     }
-    .card { background: #1A1D2E; border: 1px solid #10B981; border-radius: 20px; padding: 32px 24px; max-width: 380px; width: 100%; box-shadow: 0 10px 30px rgba(16,185,129,0.2); }
+    .card {
+      background: #1A1D2E; border: 1px solid #10B981; border-radius: 20px;
+      padding: 36px 28px; max-width: 420px; width: 100%;
+      box-shadow: 0 10px 40px rgba(16,185,129,0.25);
+    }
     .icon { font-size: 58px; margin-bottom: 12px; }
-    h2 { color: #10B981; margin: 0 0 8px 0; font-size: 24px; }
-    p { color: #9CA3AF; font-size: 14px; line-height: 1.5; margin: 0 0 24px 0; }
-    .btn { background: #5843E8; color: white; display: block; padding: 14px 20px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 16px; transition: background 0.2s; }
-    .btn:hover { background: #4732D6; }
+    h2 { color: #10B981; margin: 0 0 10px 0; font-size: 26px; font-weight: 800; }
+    p { color: #9CA3AF; font-size: 15px; line-height: 1.5; margin: 0 0 28px 0; }
+    .btn {
+      background: #5843E8; color: white; display: block; width: 100%;
+      padding: 15px 20px; border-radius: 12px; border: none; cursor: pointer;
+      text-decoration: none; font-weight: 700; font-size: 16px; transition: all 0.2s;
+    }
+    .btn:hover { background: #4732D6; transform: translateY(-1px); }
+    .sub-link {
+      display: inline-block; margin-top: 16px; color: #818CF8; font-size: 14px;
+      text-decoration: none; font-weight: 600; cursor: pointer;
+    }
+    .sub-link:hover { text-decoration: underline; color: #A5B4FC; }
+    .hint { margin-top: 14px; font-size: 12px; color: #6B7280; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="icon">🎉</div>
     <h2>Payment Successful!</h2>
-    <p>Your <strong>${duration}</strong> subscription is active. All premium features, voice calling, and AI practice are unlocked.</p>
+    <p>Your <strong>${duration}</strong> subscription is active. All premium features, voice calling, and ARYA AI are unlocked.</p>
     <a href="bytalk://payment-success" class="btn">Return to BYTALK App</a>
   </div>
+
   <script>
+    var returnUrl = ${JSON.stringify(returnUrl || '')};
+    var planId = ${JSON.stringify(planId || 'pro')};
+    var duration = ${JSON.stringify(duration || 'PRO')};
+
+    function getWebDestination() {
+      if (returnUrl && returnUrl.startsWith('http')) {
+        var sep = returnUrl.indexOf('?') !== -1 ? '&' : '?';
+        return returnUrl + sep + 'payment-success=true&planId=' + encodeURIComponent(planId) + '&duration=' + encodeURIComponent(duration);
+      }
+      return null;
+    }
+
+    var webDest = getWebDestination();
+    if (webDest) {
+      var fallbackEl = document.getElementById('webFallbackLink');
+      if (fallbackEl) fallbackEl.style.display = 'inline-block';
+    }
+
+    function returnToApp() {
+      // 1. If window was opened by the app in a popup / new window
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'BYTALK_PAYMENT_SUCCESS', planId: planId, duration: duration }, '*');
+          window.close();
+          return;
+        } catch (e) {}
+      }
+
+      // 2. If we know the web app URL
+      if (webDest) {
+        window.location.href = webDest;
+        return;
+      }
+
+      // 3. Mobile devices (Android / iOS)
+      var ua = navigator.userAgent || '';
+      var isAndroid = /Android/i.test(ua);
+      var isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+      if (isAndroid) {
+        window.location.href = 'intent://payment-success#Intent;scheme=bytalk;package=com.bytalk.languageapp;end';
+        setTimeout(function() {
+          try { window.location.href = 'bytalk://payment-success'; } catch(e) {}
+        }, 500);
+        return;
+      }
+
+      if (isIOS) {
+        window.location.href = 'bytalk://payment-success';
+        return;
+      }
+
+      // 4. Desktop browser fallback:
+      if (window.history.length > 2) {
+        window.history.go(-2);
+        return;
+      } else if (window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+
+      // 5. Final fallback
+      window.location.href = '/';
+    }
+
+    // Auto-return after 1.5 seconds
     setTimeout(function() {
-      try { window.location.href = 'bytalk://payment-success'; } catch(e) {}
-    }, 1200);
+      try {
+        returnToApp();
+      } catch(e) {}
+    }, 1500);
   </script>
 </body>
 </html>`;
@@ -1780,10 +2016,14 @@ app.get('/api/subscription/razorpay/checkout-page', async (req, res) => {
       if (cleanPhone.length >= 10 && !/^(.)\1+$/.test(cleanPhone)) {
         customer.contact = cleanPhone.slice(-10);
       }
-      const host = req.get('host') || 'k-app.onrender.com';
+      const clientOrigin = req.query?.returnUrl
+        || req.headers.origin
+        || (req.headers.referer ? new URL(req.headers.referer).origin : null)
+        || '';
+      const host = req.get('host') || 'bytalk-app.onrender.com';
       const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
       const scheme = isLocal ? req.protocol : 'https';
-      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${token || ''}&planId=${planId}&duration=PRO`;
+      const callbackUrl = `${scheme}://${host}/api/subscription/razorpay/callback?userId=${token || ''}&planId=${planId}&duration=PRO${clientOrigin ? `&returnUrl=${encodeURIComponent(clientOrigin)}` : ''}`;
 
       const plinkRes = await fetch('https://api.razorpay.com/v1/payment_links', {
         method: 'POST',
@@ -2194,6 +2434,16 @@ app.get('/api/practice/random-online', requireAuth, async (req, res) => {
 
 // ==================== FRIENDS SYSTEM ====================
 // Persistent Friendships & Friend Requests (MongoDB backed)
+app.get('/api/debug/inspect', async (req, res) => {
+  try {
+    const users = await User.find({}, 'name displayName email subscriptionPlan subscriptionStatus subscriptionExpiresAt').lean();
+    const friendships = await Friendship.find({}).lean();
+    res.json({ users, friendships });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/friends', requireAuth, async (req, res) => {
   try {
     const currentUserId = String(req.authenticatedUser.id);
@@ -2461,8 +2711,27 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Cannot send friend request to yourself' });
     }
 
-    const senderIds = Array.from(new Set([currentUserId, String(sender?._id || ''), String(sender?.id || '')].filter(Boolean)));
-    const targetIds = Array.from(new Set([actualTargetId, String(target?._id || ''), String(target?.id || '')].filter(Boolean)));
+    const senderIds = Array.from(new Set([
+      currentUserId,
+      String(sender?._id || ''),
+      String(sender?.id || ''),
+      sender?.email,
+      sender?.name,
+      sender?.displayName,
+      sender?.email ? String(sender.email).toLowerCase() : null,
+      sender?.name ? String(sender.name).toLowerCase() : null,
+    ].filter(Boolean).map(String)));
+
+    const targetIds = Array.from(new Set([
+      actualTargetId,
+      String(target?._id || ''),
+      String(target?.id || ''),
+      target?.email,
+      target?.name,
+      target?.displayName,
+      target?.email ? String(target.email).toLowerCase() : null,
+      target?.name ? String(target.name).toLowerCase() : null,
+    ].filter(Boolean).map(String)));
 
     // Check if friendship already exists
     const existing = await Friendship.findOne({
@@ -2700,6 +2969,88 @@ app.post('/api/friends/cancel', requireAuth, async (req, res) => {
     res.json({ ok: true, message: 'Friend request cancelled.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to cancel friend request' });
+  }
+});
+
+app.post('/api/friends/remove', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = String(req.authenticatedUser.id);
+    const currentAltId = req.authenticatedUser._id ? String(req.authenticatedUser._id) : currentUserId;
+    const myIds = Array.from(new Set([
+      currentUserId,
+      currentAltId,
+      req.authenticatedUser.name,
+      req.authenticatedUser.displayName,
+      req.authenticatedUser.email,
+    ].filter(Boolean).map((value) => String(value))));
+    const { friendUserId } = req.body || {};
+    const requestedFriendId = String(friendUserId || '').trim();
+
+    if (!requestedFriendId || myIds.some((id) => id.toLowerCase() === requestedFriendId.toLowerCase())) {
+      return res.status(400).json({ error: 'Invalid friend to remove.' });
+    }
+
+    let friendUser = null;
+    if (mongoose.isValidObjectId(requestedFriendId)) {
+      friendUser = await User.findById(requestedFriendId).lean();
+    }
+    if (!friendUser) {
+      friendUser = await User.findOne({
+        $or: [
+          { email: requestedFriendId },
+          { name: requestedFriendId },
+          { displayName: requestedFriendId },
+        ],
+      }).lean();
+    }
+    if (!friendUser) {
+      friendUser = store.users.find((user) =>
+        [user.id, user._id, user.name, user.displayName, user.email]
+          .some((value) => String(value || '').toLowerCase() === requestedFriendId.toLowerCase())
+      );
+    }
+
+    const friendIds = Array.from(new Set([
+      requestedFriendId,
+      friendUser?._id,
+      friendUser?.id,
+      friendUser?.name,
+      friendUser?.displayName,
+      friendUser?.email,
+    ].filter(Boolean).map((value) => String(value))));
+    const friendshipQuery = {
+      status: 'accepted',
+      $or: [
+        { user1: { $in: myIds }, user2: { $in: friendIds } },
+        { user1: { $in: friendIds }, user2: { $in: myIds } },
+      ],
+    };
+    const friendships = await Friendship.find(friendshipQuery).lean();
+
+    if (friendships.length === 0) {
+      return res.status(404).json({ error: 'Friendship not found.' });
+    }
+
+    const otherIds = Array.from(new Set(friendships.map((friendship) =>
+      myIds.some((id) => id.toLowerCase() === String(friendship.user1).toLowerCase())
+        ? String(friendship.user2)
+        : String(friendship.user1)
+    )));
+    const { deletedCount } = await Friendship.deleteMany(friendshipQuery);
+    if (deletedCount === 0) {
+      return res.status(404).json({ error: 'Friendship not found.' });
+    }
+
+    const removedPayloadForFriend = { userId: currentUserId };
+    const removedPayloadForCurrent = { userId: requestedFriendId };
+    otherIds.forEach((id) => emitToUser(id, 'friend:removed', removedPayloadForFriend));
+    friendIds.forEach((id) => emitToUser(id, 'friend:removed', removedPayloadForFriend));
+    myIds.forEach((id) => emitToUser(id, 'friend:removed', removedPayloadForCurrent));
+
+    res.json({ ok: true, message: 'Friend removed.' });
+  } catch (err) {
+    console.warn('[POST /api/friends/remove error]', err.message);
+    res.status(500).json({ error: 'Failed to remove friend.' });
   }
 });
 
@@ -3281,6 +3632,25 @@ app.get('/api/messages/unread', requireAuth, async (req, res) => {
   res.json(Object.fromEntries(unread.map((entry) => [entry._id, entry.count])));
 });
 
+app.get('/api/profile/progress', requireAuth, async (req, res) => {
+  let user = await User.findById(req.authenticatedUser.id);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+
+  user = await initializeUserProgressStats(user.id, user);
+  const entitlement = await getPersistedEntitlementPayload(user);
+  const ratingCount = Number(user.receivedRatingCount) || 0;
+  const ratingTotal = Number(user.receivedRatingTotal) || 0;
+
+  return res.json({
+    streak: Math.max(0, Number(user.streak) || 0),
+    completedCalls: Number(user.completedCallCount) || 0,
+    averageRating: ratingCount > 0 ? ratingTotal / ratingCount : null,
+    ratingsReceived: ratingCount,
+    politeFeedbackCount: Number(user.receivedPoliteFeedbackCount) || 0,
+    freeTrial: entitlement.freeTrial,
+  });
+});
+
 app.get('/api/calls', requireAuth, async (req, res) => {
   const currentUserId = String(req.authenticatedUser.id);
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -3343,14 +3713,23 @@ app.post('/api/calls/:callId/feedback', requireAuth, async (req, res) => {
     callId: req.params.callId,
     $or: [{ callerId: currentUserId }, { calleeId: currentUserId }],
     createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-  }).select('_id feedback');
+  }).select('_id feedback callerId calleeId');
   if (!call) return res.status(404).json({ error: 'Call history record not found.' });
+
+  const ratedUserId = call.callerId === currentUserId ? call.calleeId : call.callerId;
+  const ratedUser = await User.findById(ratedUserId);
+  if (!ratedUser) return res.status(404).json({ error: 'Co-learner account was not found.' });
+  await initializeUserProgressStats(ratedUserId, ratedUser);
 
   const result = await CallHistory.updateOne(
     { _id: call._id, 'feedback.userId': { $ne: currentUserId } },
     { $push: { feedback: { userId: currentUserId, rating, tags, comment } } }
   );
   if (!result.modifiedCount) return res.status(409).json({ error: 'Feedback has already been submitted for this call.' });
+
+  const ratingUpdate = { receivedRatingTotal: rating, receivedRatingCount: 1 };
+  if (tags.includes('Polite')) ratingUpdate.receivedPoliteFeedbackCount = 1;
+  await User.updateOne({ _id: ratedUserId }, { $inc: ratingUpdate });
   return res.status(201).json({ ok: true });
 });
 
@@ -4151,8 +4530,10 @@ io.on('connection', (socket) => {
     const createdAt = new Date().toISOString();
     const call = {
       id: crypto.randomUUID(),
-      callerId: userId,
-      calleeId: to,
+      callerId: callerCallId,
+      calleeId: calleeCallId,
+      callerIds,
+      calleeIds,
       type,
       status: 'ringing',
       createdAt,
@@ -4168,32 +4549,31 @@ io.on('connection', (socket) => {
       store.users.push(caller);
     }
 
-    // Emit to ALL callee rooms to ensure 100% receipt
-    calleeIds.forEach((cId) => {
-      emitToUser(cId, 'call:incoming', {
-        callId: call.id,
-        type,
-        createdAt,
-        restricted: restrictedForRecipient,
-        restrictionReason: restrictedForRecipient ? 'A BYTALK Plus or Pro subscription is required to accept video calls.' : null,
-        caller: sanitizeUser(caller) || { id: userId, name: caller?.name || 'BYTALK User' },
-      });
+    // Emit to ALL callee rooms with deduplication to ensure 100% receipt
+    emitToUserRooms(calleeIds, 'call:incoming', {
+      callId: call.id,
+      type,
+      createdAt,
+      restricted: restrictedForRecipient,
+      restrictionReason: restrictedForRecipient ? 'A BYTALK Plus or Pro subscription is required to accept video calls.' : null,
+      caller: sanitizeUser(caller) || { id: userId, name: caller?.name || 'BYTALK User' },
     });
 
     console.log(`Call ${call.id} is ringing for ${to}.`);
     acknowledge({ callId: call.id, status: 'ringing' });
     armCallTimeout(call, 'ringing', 35000, () => {
       finishCall(call, 'missed', null);
-      callerIds.forEach((id) => emitToUser(id, 'call:missed', { callId: call.id, status: 'missed' }));
-      calleeIds.forEach((id) => emitToUser(id, 'call:ended', { callId: call.id, status: 'missed' }));
+      emitToUserRooms(callerIds, 'call:missed', { callId: call.id, status: 'missed' });
+      emitToUserRooms(calleeIds, 'call:ended', { callId: call.id, status: 'missed' });
     });
   });
 
   socket.on('call:accept', async ({ callId } = {}, acknowledge = () => {}) => {
     console.log(`Call accept received from ${userId} for ${callId}.`);
     const call = activeCalls.get(callId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     if (!call || !isCallee || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
@@ -4204,36 +4584,43 @@ io.on('connection', (socket) => {
     call.status = 'connecting';
     call.acceptedAt = new Date().toISOString();
     saveCall(call);
-    emitToUser(call.callerId, 'call:accepted', { callId: call.id, status: 'connecting' });
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    emitToUserRooms(allCallerIds, 'call:accepted', { callId: call.id, status: 'connecting' });
     acknowledge({ ok: true });
     armCallTimeout(call, 'connecting', 45000, () => {
       finishCall(call, 'failed', null);
-      emitToUser(call.callerId, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
-      emitToUser(call.calleeId, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
+      const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+      emitToUserRooms(allCallerIds, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
+      emitToUserRooms(allCalleeIds, 'call:ended', { callId: call.id, status: 'failed', reason: 'connection-timeout' });
     });
   });
 
   socket.on('call:reject', ({ callId } = {}, acknowledge = () => {}) => {
     console.log(`Call reject received from ${userId} for ${callId}.`);
     const call = activeCalls.get(callId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     if (!call || !isCallee || call.status !== 'ringing') {
       acknowledge({ error: 'This call is no longer available' });
       return;
     }
     finishCall(call, 'rejected', userId);
-    emitToUser(call.callerId, 'call:rejected', { callId: call.id, status: 'rejected' });
-    emitToUser(call.calleeId, 'call:ended', { callId: call.id, status: 'rejected' });
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    emitToUserRooms(allCallerIds, 'call:rejected', { callId: call.id, status: 'rejected' });
+    emitToUserRooms(allCalleeIds, 'call:ended', { callId: call.id, status: 'rejected' });
     acknowledge({ ok: true });
   });
 
   socket.on('call:signal', ({ callId, kind, signal } = {}, acknowledge = () => {}) => {
     const call = activeCalls.get(callId);
     const recipientId = call && participantForCall(call, userId, socket.data.altUserId);
-    const myIds = [userId, socket.data.altUserId, socket.data.username?.toLowerCase()].filter(Boolean).map(String);
-    const isCaller = call && myIds.includes(String(call.callerId));
-    const isCallee = call && myIds.includes(String(call.calleeId));
+    const myIds = [userId, socket.data.altUserId, socket.data.username].filter(Boolean).map(String);
+    const callerIds = (call?.callerIds || [call?.callerId]).filter(Boolean).map(String);
+    const calleeIds = (call?.calleeIds || [call?.calleeId]).filter(Boolean).map(String);
+    const isCaller = call && myIds.some((id) => callerIds.includes(id) || callerIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
+    const isCallee = call && myIds.some((id) => calleeIds.includes(id) || calleeIds.map((x) => x.toLowerCase()).includes(id.toLowerCase()));
     const validKind = ['offer', 'answer', 'ice'].includes(kind);
     const validRole = (kind !== 'offer' || isCaller) && (kind !== 'answer' || isCallee);
     let payloadSize = Infinity;
@@ -4241,11 +4628,13 @@ io.on('connection', (socket) => {
       payloadSize = JSON.stringify(signal).length;
     } catch {}
     if (!call || !['ringing', 'connecting', 'connected'].includes(call.status) || !recipientId || !validKind || !validRole || !signal || payloadSize > 100000) {
+      console.warn(`[call:signal] rejected: callExists=${Boolean(call)}, status=${call?.status}, recipientId=${recipientId}, validKind=${validKind}, validRole=${validRole}, payloadSize=${payloadSize}`);
       acknowledge({ error: 'Invalid or unauthorized call signal' });
       return;
     }
     console.log(`Call signal ${kind} for ${callId} from ${userId} to ${recipientId}.`);
-    emitToUser(recipientId, 'call:signal', { callId, kind, signal });
+    const targetIds = Array.from(new Set(isCaller ? calleeIds : callerIds));
+    emitToUserRooms(targetIds, 'call:signal', { callId, kind, signal });
     acknowledge({ ok: true });
   });
 
@@ -4264,8 +4653,10 @@ io.on('connection', (socket) => {
 
   socket.on('call:connected', ({ callId } = {}) => {
     const call = activeCalls.get(callId);
-    if (!call || !participantForCall(call, userId) || call.status === 'ringing') return;
-    for (const participantId of [call.callerId, call.calleeId]) {
+    if (!call || !participantForCall(call, userId, socket.data.altUserId) || call.status === 'ringing') return;
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    for (const participantId of [...allCallerIds, ...allCalleeIds]) {
       const reconnectTimer = callTimers.get(`disconnect:${call.id}:${participantId}`);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       callTimers.delete(`disconnect:${call.id}:${participantId}`);
@@ -4278,7 +4669,7 @@ io.on('connection', (socket) => {
       call.status = 'connected';
       saveCall(call);
 
-      // Enforce 5-minute free trial limit for unsubscribed users
+      // Enforce free trial limit for unsubscribed users
       Promise.all([
         User.findById(call.callerId),
         User.findById(call.calleeId),
@@ -4299,20 +4690,20 @@ io.on('connection', (socket) => {
               reason: 'free_trial_expired',
               endedAt: current.endedAt,
             };
-            emitToUser(current.callerId, 'call:ended', ended);
-            emitToUser(current.calleeId, 'call:ended', ended);
+            allCallerIds.forEach((id) => emitToUser(id, 'call:ended', ended));
+            allCalleeIds.forEach((id) => emitToUser(id, 'call:ended', ended));
           }, limitSec * 1000);
           callTimers.set(`trial:${call.id}`, trialTimer);
         }
       }).catch(() => {});
     }
-    emitToUser(call.callerId, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
-    emitToUser(call.calleeId, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
+    emitToUserRooms(allCallerIds, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
+    emitToUserRooms(allCalleeIds, 'call:state', { callId, status: 'connected', connectedAt: call.connectedAt });
   });
 
   socket.on('call:end', async ({ callId } = {}, acknowledge = () => {}) => {
     const call = activeCalls.get(callId);
-    if (!call || !participantForCall(call, userId)) {
+    if (!call || !participantForCall(call, userId, socket.data.altUserId)) {
       acknowledge({ error: 'This call is no longer available' });
       return;
     }
@@ -4331,8 +4722,10 @@ io.on('connection', (socket) => {
       durationSeconds: call.durationSeconds,
       type: call.type,
     };
-    emitToUser(call.callerId, 'call:ended', ended);
-    emitToUser(call.calleeId, 'call:ended', ended);
+    const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+    const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+    emitToUserRooms(allCallerIds, 'call:ended', ended);
+    emitToUserRooms(allCalleeIds, 'call:ended', ended);
     acknowledge({ ok: true, call: ended });
   });
 
@@ -4350,18 +4743,21 @@ io.on('connection', (socket) => {
       io.emit('presence:update', { userId, online: false });
     }
 
-    const callId = userCalls.get(userId);
+    const callId = userCalls.get(userId) || (socket.data.altUserId ? userCalls.get(socket.data.altUserId) : null);
     const call = activeCalls.get(callId);
     if (call) {
-      const otherUserId = participantForCall(call, userId);
-      emitToUser(otherUserId, 'call:state', { callId, status: 'reconnecting' });
+      const allCallerIds = Array.from(new Set(call.callerIds || [call.callerId]));
+      const allCalleeIds = Array.from(new Set(call.calleeIds || [call.calleeId]));
+      const isCaller = allCallerIds.includes(String(userId)) || (socket.data.altUserId && allCallerIds.includes(String(socket.data.altUserId)));
+      const targetIds = isCaller ? allCalleeIds : allCallerIds;
+      targetIds.forEach((id) => emitToUser(id, 'call:state', { callId, status: 'reconnecting' }));
       const timerKey = `disconnect:${call.id}:${userId}`;
       const timer = setTimeout(() => {
         if (!activeCalls.has(callId) || (userSockets.get(userId)?.size || 0)) return;
         finishCall(call, 'ended', userId);
         const ended = { callId, status: 'ended', reason: 'disconnected' };
-        emitToUser(call.callerId, 'call:ended', ended);
-        emitToUser(call.calleeId, 'call:ended', ended);
+        allCallerIds.forEach((id) => emitToUser(id, 'call:ended', ended));
+        allCalleeIds.forEach((id) => emitToUser(id, 'call:ended', ended));
       }, 30000);
       timer.unref?.();
       callTimers.set(timerKey, timer);

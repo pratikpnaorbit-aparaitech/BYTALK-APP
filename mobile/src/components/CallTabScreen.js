@@ -15,12 +15,27 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 
+const PRACTICE_GUIDELINES = [
+  { icon: '⏱️', color: '#E0F2FE', title: 'Practice Daily', text: 'Just 10 minutes of English practice every day can make a difference.' },
+  { icon: '🤝', color: '#FEF3C7', title: 'Learn Together', text: 'Support and encourage fellow English learners.' },
+  { icon: '🗣️', color: '#EDE9FE', title: 'Speak Confidently', text: "Don't worry about mistakes. Every conversation helps you improve." },
+  { icon: '🔒', color: '#FEF9C3', title: 'Stay Safe', text: 'Never share personal or sensitive information.' },
+  { icon: '👂', color: '#DCFCE7', title: 'Listen & Respect', text: 'Give everyone a chance to speak and express themselves.' },
+  { icon: '⭐', color: '#FCE7F3', title: 'Rate Honestly', text: 'Share fair ratings and helpful feedback.' },
+  { icon: '📅', color: '#E0E7FF', title: 'Stay Consistent', text: 'Small daily efforts lead to big improvements.' },
+  { icon: '💬', color: '#CCFBF1', title: 'Be Friendly', text: 'Keep conversations positive, polite, and respectful.' },
+];
+
 export default function CallTabScreen({
   onStartRandomMatch,
   isMatching = false,
   isSubscribed = false,
   freeTrialSecondsRemaining = 600,
   dailyFreeSecondsLimit = 600,
+  connectedCallsCount = 0,
+  freeTrialResetAt = null,
+  progressStats = null,
+  progressError = '',
   onPressUpgrade,
   onBack,
   currentUser = {},
@@ -37,11 +52,15 @@ export default function CallTabScreen({
   onAcceptFriendRequest,
   onDeclineFriendRequest,
   onCancelFriendRequest,
+  onRemoveFriend,
   recentCoLearners = [],
   onCancelMatch,
   onRefreshFriends,
 }) {
   const [friendsRefreshing, setFriendsRefreshing] = useState(false);
+  const [pendingFriendRemoval, setPendingFriendRemoval] = useState(null);
+  const [bottomCardMinimized, setBottomCardMinimized] = useState(false);
+  const [clockNow, setClockNow] = useState(Date.now());
 
   const handleRefreshFriends = async () => {
     if (onRefreshFriends) {
@@ -51,6 +70,9 @@ export default function CallTabScreen({
       } catch {}
       setFriendsRefreshing(false);
     }
+  };
+  const confirmRemoveFriend = (friend) => {
+    setPendingFriendRemoval(String(friend.id || friend._id || friend.name || ''));
   };
   const [activeTopTab, setActiveTopTab] = useState('practice'); // 'practice' | 'friends' | 'progress'
   const [searchFriendText, setSearchFriendText] = useState('');
@@ -96,6 +118,7 @@ export default function CallTabScreen({
   }, [isMatching]);
 
   const handleStartTalk = () => {
+    if (!isSubscribed && freeTrialSecondsRemaining <= 0) return;
     if (onStartRandomMatch) {
       onStartRandomMatch();
     }
@@ -112,16 +135,42 @@ export default function CallTabScreen({
     setSentMap((prev) => ({ ...prev, [uid]: true }));
   };
 
+  const userName = currentUser?.displayName || currentUser?.name || 'Prateek';
+  const userAvatar = currentUser?.avatarUrl || currentUser?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Prateek&top=shortFlat&clothingColor=blue01';
+  const streakCount = currentUser?.streak ?? 0;
   const remainingSeconds = Math.max(0, freeTrialSecondsRemaining);
   const remMinutes = Math.floor(remainingSeconds / 60);
   const remSeconds = remainingSeconds % 60;
   const timerDisplay = `${String(remMinutes).padStart(2, '0')}:${String(remSeconds).padStart(2, '0')}`;
   const usedSeconds = Math.max(0, dailyFreeSecondsLimit - remainingSeconds);
   const progressRatio = isSubscribed ? 1 : Math.min(1, Math.max(0, usedSeconds / dailyFreeSecondsLimit));
+  const dailyLimitReached = !isSubscribed && remainingSeconds <= 0;
+  const resetTimestamp = Date.parse(freeTrialResetAt || '');
+  const cooldownSecondsRemaining = dailyLimitReached && Number.isFinite(resetTimestamp)
+    ? Math.max(0, Math.ceil((resetTimestamp - clockNow) / 1000))
+    : null;
+  const cooldownDisplay = cooldownSecondsRemaining === null
+    ? '24 hours'
+    : `${Math.floor(cooldownSecondsRemaining / 3600)}h ${String(Math.floor((cooldownSecondsRemaining % 3600) / 60)).padStart(2, '0')}m`;
+  const completedCallsCount = progressStats?.completedCalls ?? null;
+  const ratingsReceived = Number(progressStats?.ratingsReceived) || 0;
+  const averageRating = progressStats?.averageRating != null && Number.isFinite(Number(progressStats.averageRating))
+    ? Number(progressStats.averageRating)
+    : null;
+  const politeFeedbackCount = Number(progressStats?.politeFeedbackCount) || 0;
+  const earnedBadges = [];
 
-  const userName = currentUser?.displayName || currentUser?.name || 'Prateek';
-  const userAvatar = currentUser?.avatarUrl || currentUser?.profilePhotoUrl || 'https://api.dicebear.com/7.x/avataaars/png?seed=Prateek&top=shortFlat&clothingColor=blue01';
-  const streakCount = currentUser?.streak ?? 0;
+  if (politeFeedbackCount >= 3) earnedBadges.push({ icon: '🤝', title: 'Polite Learner' });
+  if (completedCallsCount >= 10 && ratingsReceived >= 5 && averageRating >= 4.5) {
+    earnedBadges.push({ icon: '🗣️', title: 'Fluent Speaker' });
+  }
+  if (streakCount >= 7) earnedBadges.push({ icon: '⏱️', title: 'Active Daily' });
+
+  useEffect(() => {
+    if (!dailyLimitReached || !freeTrialResetAt) return undefined;
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [dailyLimitReached, freeTrialResetAt]);
 
   // Deduplicated data sets
   const uniqueFriends = Array.from(
@@ -372,45 +421,45 @@ export default function CallTabScreen({
         <View style={{ flex: 1 }}>
           <ScrollView
             contentContainerStyle={styles.practiceContentScroll}
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator
+            persistentScrollbar
           >
-            {/* Community Guidelines List (Exact from Image 5) */}
+            <Text style={styles.guidelinesTitle}>🌟 Practice Guidelines</Text>
             <View style={styles.guidelinesList}>
-              <View style={styles.guidelineItem}>
-                <View style={[styles.guidelineIconCircle, { backgroundColor: '#E0F2FE' }]}>
-                  <Text style={styles.guidelineEmoji}>🤝</Text>
+              {PRACTICE_GUIDELINES.map((guideline) => (
+                <View key={guideline.title} style={styles.guidelineItem}>
+                  <View style={[styles.guidelineIconCircle, { backgroundColor: guideline.color }]}>
+                    <Text style={styles.guidelineEmoji}>{guideline.icon}</Text>
+                  </View>
+                  <Text style={styles.guidelineText}>
+                    <Text style={styles.guidelineItemTitle}>{guideline.title}: </Text>
+                    {guideline.text}
+                  </Text>
                 </View>
-                <Text style={styles.guidelineText}>
-                  learn together and support fellow english learners
-                </Text>
-              </View>
+              ))}
+            </View>
+          </ScrollView>
 
-              <View style={styles.guidelineItem}>
-                <View style={[styles.guidelineIconCircle, { backgroundColor: '#FEF3C7' }]}>
-                  <Text style={styles.guidelineEmoji}>🤝</Text>
-                </View>
-                <Text style={styles.guidelineText}>
-                  Keep conversations safe. No need to share personal details
+          {/* ================= BOTTOM ACTION SHEET CARD (IMAGE 5) ================= */}
+          {bottomCardMinimized ? (
+            <View style={styles.minimizedBottomCard}>
+              <View style={styles.minimizedCardText}>
+                <Text style={styles.minimizedCardTitle} numberOfLines={1}>
+                  Daily free voice limit
+                </Text>
+                <Text style={styles.minimizedCardSubtitle} numberOfLines={1}>
+                  {isSubscribed ? 'Unlimited' : dailyLimitReached ? `Limit reached · ${cooldownDisplay}` : `${timerDisplay} left`}
+                  {' · '}{connectedCallsCount} connected {connectedCallsCount === 1 ? 'call' : 'calls'}
                 </Text>
               </View>
-
-              <View style={styles.guidelineItem}>
-                <View style={[styles.guidelineIconCircle, { backgroundColor: '#EDE9FE' }]}>
-                  <Text style={styles.guidelineEmoji}>⏳</Text>
-                </View>
-                <Text style={styles.guidelineText}>
-                  Avoid leaving the call early. It helps both of you learn better
-                </Text>
-              </View>
-
-              <View style={styles.guidelineItem}>
-                <View style={[styles.guidelineIconCircle, { backgroundColor: '#FEF9C3' }]}>
-                  <Text style={styles.guidelineEmoji}>⭐</Text>
-                </View>
-                <Text style={styles.guidelineText}>
-                  Aim for higher ratings and give honest ratings to your partner
-                </Text>
-              </View>
+              <TouchableOpacity
+                onPress={() => setBottomCardMinimized(false)}
+                style={styles.sheetToggleButton}
+                accessibilityRole="button"
+                accessibilityLabel="Expand call panel"
+              >
+                <Ionicons name="chevron-up" size={22} color="#334155" />
+              </TouchableOpacity>
             </View>
           </ScrollView>
 
@@ -425,7 +474,7 @@ export default function CallTabScreen({
                 onPress={() =>
                   Alert.alert(
                     '10 Minutes Free Everyday! 🎁',
-                      'Every user receives 10 minutes of free voice practice every single day! It automatically resets every day at midnight. Upgrade to PRO for unlimited calling and faster partner matching.'
+                    'Every user receives 10 minutes of free voice practice every single day! It automatically resets every day at midnight. Upgrade to PRO for unlimited 24/7 speaking practice and exclusive Male/Female filters.'
                   )
                 }
                 style={styles.infoIconBtn}
@@ -436,27 +485,107 @@ export default function CallTabScreen({
               </TouchableOpacity>
             </View>
 
-            {/* Progress Bar & Clock Timer */}
-            <View style={styles.progressRow}>
-              <View style={styles.progressBarTrack}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: `${Math.round(progressRatio * 100)}%`,
-                      backgroundColor: isSubscribed ? '#10B981' : (progressRatio >= 1 ? '#EF4444' : '#6366F1'),
-                    },
-                  ]}
-                />
+              {/* Progress Bar & Clock Timer */}
+              <View style={styles.progressRow}>
+                <View style={styles.progressBarTrack}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: `${Math.round(progressRatio * 100)}%`,
+                        backgroundColor: isSubscribed ? '#10B981' : (progressRatio >= 1 ? '#EF4444' : '#6366F1'),
+                      },
+                    ]}
+                  />
+                </View>
+                <View style={styles.timerClockBox}>
+                  <Ionicons name="time-outline" size={17} color="#64748B" />
+                  <Text style={styles.timerText}>
+                    {isSubscribed ? 'Unlimited' : `${timerDisplay} left`}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.timerClockBox}>
-                <Ionicons name="time-outline" size={17} color="#64748B" />
-                <Text style={styles.timerText}>
-                  {isSubscribed ? 'Unlimited' : timerDisplay}
+              <View style={styles.connectedCallsRow}>
+                <Ionicons name="call-outline" size={15} color="#64748B" />
+                <Text style={styles.connectedCallsText}>
+                  Connected calls (last 24h): {connectedCallsCount}
                 </Text>
               </View>
-            </View>
+              {dailyLimitReached && (
+                <View style={styles.dailyLimitReachedMessage}>
+                  <Text style={styles.dailyLimitReachedText}>
+                    Your daily limit is reached. Free calls available in {cooldownDisplay}.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={onPressUpgrade}
+                    style={styles.upgradeAfterLimitButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Upgrade to PRO to continue now"
+                  >
+                    <Text style={styles.upgradeAfterLimitText}>Upgrade to PRO to continue now</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
+            {/* Gender Selector Label */}
+            <Text style={styles.selectGenderLabel}>Select Co-learner's gender</Text>
+
+            {/* 3 Gender Pill Buttons: Male 👑 | Female 👑 | Any */}
+            <View style={styles.genderPillsRow}>
+              <TouchableOpacity
+                onPress={() => handleSelectGender('male')}
+                style={[
+                  styles.genderPill,
+                  selectedGender === 'male' && styles.genderPillActive,
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.genderPillText,
+                    selectedGender === 'male' && styles.genderPillTextActive,
+                  ]}
+                >
+                  Male 👑
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleSelectGender('female')}
+                style={[
+                  styles.genderPill,
+                  selectedGender === 'female' && styles.genderPillActive,
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.genderPillText,
+                    selectedGender === 'female' && styles.genderPillTextActive,
+                  ]}
+                >
+                  Female 👑
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleSelectGender('any')}
+                style={[
+                  styles.genderPill,
+                  selectedGender === 'any' && styles.genderPillActive,
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.genderPillText,
+                    selectedGender === 'any' && styles.genderPillTextActive,
+                  ]}
+                >
+                  Any
+                </Text>
+              </TouchableOpacity>
+            </View>
             <Text style={{ color: '#64748B', fontSize: 12, marginTop: 8 }}>
               Connect with an available co-learner for a voice practice call.
             </Text>
@@ -673,6 +802,43 @@ export default function CallTabScreen({
                     <Text style={styles.friendSub}>
                       {f.country || 'Global'} • {f.level || 'Intermediate'}
                     </Text>
+                    {pendingFriendRemoval === String(f.id || f._id || f.name || '') ? (
+                      <View style={styles.removeFriendConfirm}>
+                        <Text style={styles.removeFriendConfirmText}>Remove friend?</Text>
+                        <TouchableOpacity
+                          onPress={() => setPendingFriendRemoval(null)}
+                          style={styles.removeFriendCancelBtn}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel removing friend"
+                        >
+                          <Text style={styles.removeFriendCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setPendingFriendRemoval(null);
+                            onRemoveFriend && onRemoveFriend(f);
+                          }}
+                          style={styles.removeFriendConfirmBtn}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Confirm removing ${f.name || 'friend'}`}
+                        >
+                          <Text style={styles.removeFriendConfirmBtnText}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => confirmRemoveFriend(f)}
+                        style={styles.removeFriendAction}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${f.name || 'friend'} from friends`}
+                      >
+                        <Ionicons name="person-remove-outline" size={13} color="#B91C1C" />
+                        <Text style={styles.removeFriendActionText}>Remove friend</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                   {/* Actions for Accepted Friend: Chat, Video Call, Voice Call */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -775,14 +941,15 @@ export default function CallTabScreen({
       {activeTopTab === 'progress' && (
         <ScrollView
           contentContainerStyle={styles.progressContentScroll}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator
+          persistentScrollbar
         >
           {/* Daily 10 Min Free Practice Status Card */}
           <View style={styles.progressStatCard}>
             <View style={styles.progressStatHeader}>
               <View>
-                <Text style={styles.progressCardTitle}>Today's Free Speaking Time</Text>
-                <Text style={styles.progressCardSub}>Resets everyday at midnight</Text>
+                <Text style={styles.progressCardTitle}>Daily Free Speaking Time</Text>
+                <Text style={styles.progressCardSub}>After reaching the limit, free calls unlock 24 hours later.</Text>
               </View>
               <View style={styles.progressLimitBadge}>
                 <Text style={styles.progressLimitText}>10 Min Daily</Text>
@@ -791,9 +958,15 @@ export default function CallTabScreen({
 
             <View style={styles.progressMetricBig}>
               <Text style={styles.progressMetricBigNum}>
-                {isSubscribed ? 'Unlimited' : `${remMinutes}m ${remSeconds}s`}
+                {isSubscribed ? 'Unlimited' : dailyLimitReached ? 'Limit reached' : `${remMinutes}m ${remSeconds}s`}
               </Text>
-              <Text style={styles.progressMetricBigLabel}>remaining today</Text>
+              <Text style={styles.progressMetricBigLabel}>
+                {isSubscribed
+                  ? 'speaking time'
+                  : dailyLimitReached
+                    ? `Free calls available in ${cooldownDisplay}`
+                    : 'remaining'}
+              </Text>
             </View>
 
             <View style={[styles.progressBarTrack, { height: 10, marginTop: 12 }]}>
@@ -802,11 +975,21 @@ export default function CallTabScreen({
                   styles.progressBarFill,
                   {
                     width: `${Math.round(progressRatio * 100)}%`,
-                    backgroundColor: isSubscribed ? '#10B981' : '#6366F1',
+                    backgroundColor: isSubscribed ? '#10B981' : (dailyLimitReached ? '#EF4444' : '#6366F1'),
                   },
                 ]}
               />
             </View>
+            {dailyLimitReached && (
+              <TouchableOpacity
+                onPress={onPressUpgrade}
+                style={styles.upgradeAfterLimitButton}
+                accessibilityRole="button"
+                accessibilityLabel="Upgrade to PRO to continue now"
+              >
+                <Text style={styles.upgradeAfterLimitText}>Upgrade to PRO to continue now</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Daily Streak Card */}
@@ -823,32 +1006,43 @@ export default function CallTabScreen({
           {/* Stats Grid: Calls, Speaking Mins, Co-learner Rating */}
           <View style={styles.statsTwoColRow}>
             <View style={styles.statMiniCard}>
-              <Text style={styles.statMiniNum}>⭐ 4.9</Text>
+              <Text style={styles.statMiniNum}>
+                {ratingsReceived > 0 && averageRating !== null ? `⭐ ${averageRating.toFixed(1)}` : '—'}
+              </Text>
               <Text style={styles.statMiniLabel}>Co-learner Rating</Text>
+              <Text style={styles.progressCardSub}>
+                {progressStats ? `${ratingsReceived} ratings received` : 'Ratings received'}
+              </Text>
             </View>
             <View style={styles.statMiniCard}>
-              <Text style={styles.statMiniNum}>24</Text>
+              <Text style={styles.statMiniNum}>{completedCallsCount ?? '—'}</Text>
               <Text style={styles.statMiniLabel}>Calls Completed</Text>
             </View>
           </View>
+          {progressError ? (
+            <Text style={styles.progressDataError}>
+              Could not load live progress: {progressError}
+            </Text>
+          ) : null}
 
-          {/* Badges Earned */}
           <View style={styles.progressStatCard}>
             <Text style={styles.progressCardTitle}>Co-learner Badges Earned</Text>
-            <View style={styles.badgesRow}>
-              <View style={styles.badgeItem}>
-                <Text style={{ fontSize: 24, marginBottom: 4 }}>🤝</Text>
-                <Text style={styles.badgeLabel}>Polite Learner</Text>
+            {earnedBadges.length > 0 ? (
+              <View style={styles.badgesRow}>
+                {earnedBadges.map((badge) => (
+                  <View key={badge.title} style={styles.badgeItem}>
+                    <Text style={{ fontSize: 24, marginBottom: 4 }}>{badge.icon}</Text>
+                    <Text style={styles.badgeLabel}>{badge.title}</Text>
+                  </View>
+                ))}
               </View>
-              <View style={styles.badgeItem}>
-                <Text style={{ fontSize: 24, marginBottom: 4 }}>🗣️</Text>
-                <Text style={styles.badgeLabel}>Fluent Speaker</Text>
-              </View>
-              <View style={styles.badgeItem}>
-                <Text style={{ fontSize: 24, marginBottom: 4 }}>⏱️</Text>
-                <Text style={styles.badgeLabel}>Active Daily</Text>
-              </View>
-            </View>
+            ) : (
+              <Text style={styles.progressCardSub}>
+                {progressStats
+                  ? 'No badges earned yet. Keep practicing and collect co-learner feedback.'
+                  : progressError || 'Loading your real progress…'}
+              </Text>
+            )}
           </View>
         </ScrollView>
       )}
@@ -1107,9 +1301,15 @@ const styles = StyleSheet.create({
   guidelinesList: {
     gap: 16,
   },
+  guidelinesTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
   guidelineItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 14,
   },
   guidelineIconCircle: {
@@ -1128,6 +1328,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1E293B',
     lineHeight: 19,
+  },
+  guidelineItemTitle: {
+    fontWeight: '800',
   },
 
   /* ================= BOTTOM CARD SHEET (IMAGE 5) ================= */
@@ -1148,10 +1351,51 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 12,
   },
+  minimizedBottomCard: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  minimizedCardText: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 12,
+  },
+  minimizedCardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  minimizedCardSubtitle: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
   freeCallingHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  bottomCardHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   freeCallingTitle: {
     fontSize: 14,
@@ -1160,6 +1404,14 @@ const styles = StyleSheet.create({
   },
   infoIconBtn: {
     padding: 2,
+  },
+  sheetToggleButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   progressRow: {
     flexDirection: 'row',
@@ -1188,6 +1440,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#64748B',
   },
+  selectGenderLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  genderPillsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  genderPill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 22,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  genderPillActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#6366F1',
+  },
+  genderPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  genderPillTextActive: {
+    color: '#4F46E5',
+    fontWeight: '800',
+  },
   tryCallBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1202,7 +1488,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
-  tryCallBtnText: {
+  startCallBtnText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
@@ -1381,6 +1667,62 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  removeFriendAction: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  removeFriendActionText: {
+    color: '#B91C1C',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  removeFriendConfirm: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#FFF7F7',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  removeFriendConfirmText: {
+    color: '#7F1D1D',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  removeFriendCancelBtn: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  removeFriendCancelText: {
+    color: '#475569',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  removeFriendConfirmBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#B91C1C',
+  },
+  removeFriendConfirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   friendReqRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1461,6 +1803,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748B',
     marginTop: 2,
+  },
+  progressDataError: {
+    color: '#B91C1C',
+    fontSize: 12,
+    marginHorizontal: 2,
   },
   progressLimitBadge: {
     backgroundColor: '#EFF6FF',
