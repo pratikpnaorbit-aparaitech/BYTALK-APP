@@ -69,7 +69,7 @@ export const PRO_FAQS = [
   },
   {
     q: 'What features do I get with PRO?',
-    a: 'You get unlimited AI Partner conversations with ARYA, HD video calling, unlimited practice sessions, access to all interview topics, and priority matching with native speakers worldwide.',
+    a: 'You get unlimited AI Partner conversations, HD video calling, unlimited practice sessions, access to all interview topics, and priority matching with native speakers worldwide.',
   },
   {
     q: 'Can I get a refund if I am not satisfied?',
@@ -459,7 +459,7 @@ export default function ProSubscriptionScreen({
                 PRO Membership Active
               </Text>
               <Text style={{ fontSize: 12, color: '#047857', marginTop: 2 }}>
-                Unlimited ARYA AI, HD 1-on-1 Video Calling & All Topics unlocked!
+                Unlimited AI, HD 1-on-1 Video Calling & All Topics unlocked!
               </Text>
             </View>
           </View>
@@ -663,7 +663,7 @@ export default function ProSubscriptionScreen({
 
             <View style={{ width: '100%', backgroundColor: '#F8F9FE', borderRadius: 14, padding: 14, marginBottom: 20, gap: 10 }}>
               {[
-                'Unlimited ARYA AI Speaking Partner',
+                'Unlimited AI Speaking Partner',
                 'HD 1-on-1 Video Calling Practice',
                 'All Interview Practice Topics',
                 'Priority Matching with Native Speakers',

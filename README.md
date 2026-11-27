@@ -57,6 +57,8 @@ npm install
 npm run dev
 ```
 
+The admin console uses the local backend on localhost/private-network hosts and the deployed BYTALK backend on other hosts. Set `VITE_API_URL` before building if your admin console and mobile app should use a different backend; both must point to the same API for home cards to appear in the app. Adding or editing a card publishes it immediately. Each card can have its own optional PNG, JPEG, or WebP image up to 5 MB; the uploaded image replaces that card's illustration. A home screen already open refreshes published cards every 10 seconds.
+
 The local admin console is not protected for public deployment; do not expose it to the internet as-is.
 
 ## ICE / TURN setup

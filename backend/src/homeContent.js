@@ -150,7 +150,9 @@ export function normalizeHomeContent(value) {
       const icon = cleanText(topic.icon, 40);
       const color = COLOR_PATTERN.test(topic.color || '') ? topic.color : '#8B5CF6';
       const bgColor = COLOR_PATTERN.test(topic.bgColor || '') ? topic.bgColor : '#F5F3FF';
+      const imageUrl = cleanText(topic.imageUrl, 100);
       if (!topicTitle || !starterPrompt) return null;
+      if (imageUrl && !/^\/api\/home-card-images\/[0-9a-f-]{36}\.(png|jpg|webp)$/.test(imageUrl)) return null;
 
       topicIds.add(topic.id);
       topics.push({
@@ -163,6 +165,7 @@ export function normalizeHomeContent(value) {
         color,
         bgColor,
         graphic: cleanText(topic.graphic, 40),
+        imageUrl,
         enabled: section.enabled !== false && topic.enabled !== false,
       });
     }

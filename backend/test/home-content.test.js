@@ -27,6 +27,25 @@ test('home content rejects duplicate IDs and topics without titles or prompts', 
   assert.equal(normalizeHomeContent(missingPrompt), null);
 });
 
+test('home content preserves only backend-hosted card image URLs', () => {
+  const imageUrl = '/api/home-card-images/12345678-1234-1234-1234-123456789abc.png';
+  const content = normalizeHomeContent({
+    sections: [{
+      id: 'custom',
+      title: 'Custom',
+      topics: [{ id: 'topic', title: 'Talk', starterPrompt: 'Say hello.', imageUrl }],
+    }],
+  });
+  assert.equal(content.sections[0].topics[0].imageUrl, imageUrl);
+  assert.equal(normalizeHomeContent({
+    sections: [{
+      id: 'custom',
+      title: 'Custom',
+      topics: [{ id: 'topic', title: 'Talk', starterPrompt: 'Say hello.', imageUrl: 'javascript:alert(1)' }],
+    }],
+  }), null);
+});
+
 test('published home cards omit hidden sections and cards', () => {
   const content = {
     sections: [

@@ -286,7 +286,7 @@ export function generateConversationalFallback({ topic, language, level, message
 
   if (!lastUserMsg) {
     const greetings = {
-      talk_anything: "Hello! I'm Arya, your BYTALK AI speaking partner. How is your day going so far?",
+      talk_anything: "Hello! I'm your BYTALK AI speaking partner. How is your day going so far?",
       daily_routine: "Hello! Let's talk about our daily routines. What is the very first thing you usually do when you wake up in the morning?",
       improve_vocabulary: "Hi! I'm excited to practice English vocabulary with you. What is a new word or phrase you have heard recently?",
       childhood_memory: "Hello! Childhood memories are always special. What was your favorite game or hobby when you were growing up?",
@@ -297,7 +297,7 @@ export function generateConversationalFallback({ topic, language, level, message
       strengths_weaknesses: "Welcome! What do you consider your greatest professional strength, and what is an area you are actively improving?",
       career_aspirations: "Hello! Where do you see your career heading over the next three to five years?",
     };
-    return greetings[topic] || `Hello! I'm Arya, your BYTALK AI partner. Let's practice speaking ${language} about "${topic}"! What would you like to discuss first?`;
+    return greetings[topic] || `Hello! I'm your BYTALK AI partner. Let's practice speaking ${language} about "${topic}"! What would you like to discuss first?`;
   }
 
   const followUps = [

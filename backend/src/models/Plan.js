@@ -62,7 +62,7 @@ const planSchema = new mongoose.Schema(
     features: {
       type: [String],
       default: [
-        'Unlimited AI Partner practice with ARYA',
+        'Unlimited AI Partner practice',
         'HD 1-on-1 Video Calling',
         'All interview & daily conversation topics',
         'Priority matching with global speakers',

@@ -30,7 +30,6 @@ export default function CallTabScreen({
   onStartRandomMatch,
   isMatching = false,
   isSubscribed = false,
-  preferredCallGender = 'any',
   freeTrialSecondsRemaining = 600,
   dailyFreeSecondsLimit = 600,
   connectedCallsCount = 0,
@@ -76,14 +75,8 @@ export default function CallTabScreen({
     setPendingFriendRemoval(String(friend.id || friend._id || friend.name || ''));
   };
   const [activeTopTab, setActiveTopTab] = useState('practice'); // 'practice' | 'friends' | 'progress'
-  const initialCallGender = ['male', 'female', 'any'].includes(preferredCallGender) ? preferredCallGender : 'any';
-  const [selectedGender, setSelectedGender] = useState(initialCallGender);
   const [searchFriendText, setSearchFriendText] = useState('');
   const [sentMap, setSentMap] = useState({});
-
-  useEffect(() => {
-    setSelectedGender(['male', 'female', 'any'].includes(preferredCallGender) ? preferredCallGender : 'any');
-  }, [preferredCallGender]);
 
   // Animated pulse for radar matching (Image 4)
   const pulseAnim1 = useRef(new Animated.Value(1)).current;
@@ -124,24 +117,10 @@ export default function CallTabScreen({
     }
   }, [isMatching]);
 
-  const handleSelectGender = (gender) => {
-    if (gender !== 'any' && !isSubscribed) {
-      if (onPressUpgrade) {
-        onPressUpgrade();
-      }
-      return;
-    }
-    setSelectedGender(gender);
-  };
-
   const handleStartTalk = () => {
     if (!isSubscribed && freeTrialSecondsRemaining <= 0) return;
     if (onStartRandomMatch) {
-      onStartRandomMatch({
-        gender: isSubscribed ? (selectedGender === 'any' ? 'all' : selectedGender) : 'all',
-        level: 'beginner',
-        region: 'all',
-      });
+      onStartRandomMatch();
     }
   };
 
@@ -482,36 +461,29 @@ export default function CallTabScreen({
                 <Ionicons name="chevron-up" size={22} color="#334155" />
               </TouchableOpacity>
             </View>
-          ) : (
-            <View style={styles.bottomCardSheet}>
-              <View style={styles.freeCallingHeaderRow}>
-                <Text style={styles.freeCallingTitle}>
-                  Daily free voice limit: 10 minutes
-                </Text>
-                <View style={styles.bottomCardHeaderActions}>
-                  <TouchableOpacity
-                    onPress={() =>
-                      Alert.alert(
-                        '10 Minutes Free Everyday! 🎁',
-                        'Every user receives 10 minutes of free voice practice every single day! It automatically resets every day at midnight. Upgrade to PRO for unlimited 24/7 speaking practice and exclusive Male/Female filters.'
-                      )
-                    }
-                    style={styles.infoIconBtn}
-                    accessibilityRole="button"
-                    accessibilityLabel="Free calling info"
-                  >
-                    <Ionicons name="information-circle-outline" size={20} color="#64748B" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setBottomCardMinimized(true)}
-                    style={styles.sheetToggleButton}
-                    accessibilityRole="button"
-                    accessibilityLabel="Minimize call panel"
-                  >
-                    <Ionicons name="chevron-down" size={22} color="#334155" />
-                  </TouchableOpacity>
-                </View>
-              </View>
+          </ScrollView>
+
+          {/* ================= BOTTOM ACTION SHEET CARD (IMAGE 5) ================= */}
+          <View style={styles.bottomCardSheet}>
+            {/* Header: Practice free calling for 10 minutes everyday + (i) info icon */}
+            <View style={styles.freeCallingHeaderRow}>
+              <Text style={styles.freeCallingTitle}>
+                Practice free calling for 10 minutes everyday
+              </Text>
+              <TouchableOpacity
+                onPress={() =>
+                  Alert.alert(
+                    '10 Minutes Free Everyday! 🎁',
+                    'Every user receives 10 minutes of free voice practice every single day! It automatically resets every day at midnight. Upgrade to PRO for unlimited 24/7 speaking practice and exclusive Male/Female filters.'
+                  )
+                }
+                style={styles.infoIconBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Free calling info"
+              >
+                <Ionicons name="information-circle-outline" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
 
               {/* Progress Bar & Clock Timer */}
               <View style={styles.progressRow}>
@@ -555,89 +527,70 @@ export default function CallTabScreen({
                 </View>
               )}
 
-              {/* Gender Selector Label */}
-              <Text style={styles.selectGenderLabel}>Select Co-learner's gender</Text>
+            {/* Gender Selector Label */}
+            <Text style={styles.selectGenderLabel}>Select Co-learner's gender</Text>
 
-              {/* 3 Gender Pill Buttons: Male 👑 | Female 👑 | Any */}
-              <View style={styles.genderPillsRow}>
-                <TouchableOpacity
-                  onPress={() => handleSelectGender('male')}
-                  style={[
-                    styles.genderPill,
-                    selectedGender === 'male' && styles.genderPillActive,
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.genderPillText,
-                      selectedGender === 'male' && styles.genderPillTextActive,
-                    ]}
-                  >
-                    Male 👑
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => handleSelectGender('female')}
-                  style={[
-                    styles.genderPill,
-                    selectedGender === 'female' && styles.genderPillActive,
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.genderPillText,
-                      selectedGender === 'female' && styles.genderPillTextActive,
-                    ]}
-                  >
-                    Female 👑
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => handleSelectGender('any')}
-                  style={[
-                    styles.genderPill,
-                    selectedGender === 'any' && styles.genderPillActive,
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.genderPillText,
-                      selectedGender === 'any' && styles.genderPillTextActive,
-                    ]}
-                  >
-                    Any
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Start a random speaking call */}
+            {/* 3 Gender Pill Buttons: Male 👑 | Female 👑 | Any */}
+            <View style={styles.genderPillsRow}>
               <TouchableOpacity
-                onPress={handleStartTalk}
-                disabled={isMatching || dailyLimitReached}
+                onPress={() => handleSelectGender('male')}
                 style={[
-                  styles.startCallBtn,
-                  (isMatching || dailyLimitReached) && { opacity: 0.7 },
+                  styles.genderPill,
+                  selectedGender === 'male' && styles.genderPillActive,
                 ]}
-                activeOpacity={0.88}
-                accessibilityRole="button"
-                accessibilityLabel={dailyLimitReached ? 'Daily limit reached' : 'Connect to a learner'}
+                activeOpacity={0.8}
               >
-                <Ionicons name="call" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={styles.startCallBtnText}>
-                  {dailyLimitReached ? 'Daily limit reached' : isMatching ? 'Connecting...' : 'Connect to a learner'}
+                <Text
+                  style={[
+                    styles.genderPillText,
+                    selectedGender === 'male' && styles.genderPillTextActive,
+                  ]}
+                >
+                  Male 👑
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleSelectGender('female')}
+                style={[
+                  styles.genderPill,
+                  selectedGender === 'female' && styles.genderPillActive,
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.genderPillText,
+                    selectedGender === 'female' && styles.genderPillTextActive,
+                  ]}
+                >
+                  Female 👑
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleSelectGender('any')}
+                style={[
+                  styles.genderPill,
+                  selectedGender === 'any' && styles.genderPillActive,
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.genderPillText,
+                    selectedGender === 'any' && styles.genderPillTextActive,
+                  ]}
+                >
+                  Any
                 </Text>
               </TouchableOpacity>
             </View>
             <Text style={{ color: '#64748B', fontSize: 12, marginTop: 8 }}>
-              Choose a gender, then tap Try your 1st Call to start matching.
+              Connect with an available co-learner for a voice practice call.
             </Text>
 
-            {/* Big CTA Button: Try your 1st Call */}
+            {/* Connect to an available online co-learner */}
             <TouchableOpacity
               onPress={handleStartTalk}
               disabled={isMatching}
@@ -647,10 +600,10 @@ export default function CallTabScreen({
               ]}
               activeOpacity={0.88}
               accessibilityRole="button"
-              accessibilityLabel="Try your 1st Call"
+              accessibilityLabel="Connect with an available learner"
             >
               <Ionicons name="call" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.tryCallBtnText}>Try your 1st Call</Text>
+              <Text style={styles.tryCallBtnText}>{isMatching ? 'Finding an available learner…' : 'Connect'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1487,42 +1440,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#64748B',
   },
-  connectedCallsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 9,
-  },
-  connectedCallsText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  dailyLimitReachedMessage: {
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#FEF2F2',
-  },
-  dailyLimitReachedText: {
-    color: '#B91C1C',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  upgradeAfterLimitButton: {
-    alignSelf: 'flex-start',
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 10,
-    backgroundColor: '#4F46E5',
-  },
-  upgradeAfterLimitText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
   selectGenderLabel: {
     fontSize: 13,
     fontWeight: '700',
@@ -1557,7 +1474,7 @@ const styles = StyleSheet.create({
     color: '#4F46E5',
     fontWeight: '800',
   },
-  startCallBtn: {
+  tryCallBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

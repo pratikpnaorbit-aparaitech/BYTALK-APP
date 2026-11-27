@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import './style.css';
 
-const API = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 const EMPTY_HOME_CARD_FORM = {
   title: '',
@@ -38,7 +38,12 @@ const EMPTY_HOME_CARD_FORM = {
   color: '#8B5CF6',
   bgColor: '#F5F3FF',
   starterPrompt: '',
+  imageUrl: '',
+  imageData: '',
 };
+
+const MAX_HOME_CARD_IMAGE_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_HOME_CARD_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 function newHomeContentId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -58,6 +63,7 @@ function App() {
   const [showHomeCardModal, setShowHomeCardModal] = useState(false);
   const [editingHomeTopicId, setEditingHomeTopicId] = useState(null);
   const [homeCardForm, setHomeCardForm] = useState({ ...EMPTY_HOME_CARD_FORM });
+  const [homeCardImageReading, setHomeCardImageReading] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -158,6 +164,37 @@ function App() {
     setShowHomeCardModal(true);
   }
 
+  function chooseHomeCardImage(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!ACCEPTED_HOME_CARD_IMAGE_TYPES.has(file.type)) {
+      setError('Choose a PNG, JPEG, or WebP image.');
+      return;
+    }
+    if (file.size > MAX_HOME_CARD_IMAGE_BYTES) {
+      setError('Home card images must be 5 MB or smaller.');
+      return;
+    }
+
+    const reader = new FileReader();
+    setHomeCardImageReading(true);
+    reader.onerror = () => {
+      setHomeCardImageReading(false);
+      setError('Could not read the selected image.');
+    };
+    reader.onload = () => {
+      setHomeCardImageReading(false);
+      if (typeof reader.result !== 'string') {
+        setError('Could not read the selected image.');
+        return;
+      }
+      setHomeCardForm((current) => ({ ...current, imageData: reader.result }));
+      setError('');
+    };
+    reader.readAsDataURL(file);
+  }
+
   function openEditHomeCard(topic) {
     setEditingHomeTopicId(topic.id);
     setHomeCardForm({
@@ -169,39 +206,66 @@ function App() {
       color: topic.color || '#8B5CF6',
       bgColor: topic.bgColor || '#F5F3FF',
       starterPrompt: topic.starterPrompt || '',
+      imageUrl: topic.imageUrl || '',
+      imageData: '',
     });
     setShowHomeCardModal(true);
   }
 
-  function saveHomeCard(event) {
+  async function saveHomeCard(event) {
     event.preventDefault();
+    const { imageData, ...formValues } = homeCardForm;
     const card = {
-      ...homeCardForm,
-      title: homeCardForm.title.trim(),
-      category: homeCardForm.category.trim() || 'General',
-      starterPrompt: homeCardForm.starterPrompt.trim(),
+      ...formValues,
+      title: formValues.title.trim(),
+      category: formValues.category.trim() || 'General',
+      starterPrompt: formValues.starterPrompt.trim(),
     };
     if (!card.title || !card.starterPrompt) {
       alert('Card title and conversation starter are required.');
       return;
     }
 
-    if (editingHomeTopicId) {
-      updateHomeTopic(editingHomeTopicId, card);
-    } else {
-      const id = newHomeContentId('topic');
-      setHomeContent((current) => {
-        const section = current.sections[0] || { id: 'home-cards', title: 'Home', enabled: true, topics: [] };
-        return {
-          sections: [{
-            ...section,
-            topics: [...(section.topics || []), { id, ...card, enabled: true }],
-          }],
-        };
-      });
+    if (imageData) {
+      setHomeContentSubmitting(true);
+      try {
+        const response = await fetch(`${API}/api/admin/home-card-images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: imageData }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setError(result.error || 'Failed to upload the card image.');
+          return;
+        }
+        card.imageUrl = result.imageUrl;
+      } catch {
+        setError('Network error while uploading the card image.');
+        return;
+      } finally {
+        setHomeContentSubmitting(false);
+      }
     }
 
-    setShowHomeCardModal(false);
+    let updatedSections;
+    if (editingHomeTopicId) {
+      updatedSections = homeContent.sections.map((section) => ({
+        ...section,
+        topics: section.topics.map((topic) => topic.id === editingHomeTopicId ? { ...topic, ...card } : topic),
+      }));
+    } else {
+      const id = newHomeContentId('topic');
+      const section = homeContent.sections[0] || { id: 'home-cards', title: 'Home', enabled: true, topics: [] };
+      updatedSections = [{
+        ...section,
+        topics: [...(section.topics || []), { id, ...card, enabled: true }],
+      }];
+    }
+
+    if (await persistHomeContent({ sections: updatedSections })) {
+      setShowHomeCardModal(false);
+    }
   }
 
   function removeHomeTopic(topicId) {
@@ -213,27 +277,33 @@ function App() {
     }));
   }
 
-  async function publishHomeContent() {
+  async function persistHomeContent(content, successMessage = '') {
     setHomeContentSubmitting(true);
     try {
       const response = await fetch(`${API}/api/admin/home-content`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(homeContent),
+        body: JSON.stringify(content),
       });
       const result = await response.json();
       if (!response.ok) {
         setError(result.error || 'Failed to publish home content.');
-        return;
+        return false;
       }
       setHomeContent(result.homeContent);
       setError('');
-      alert('Home page cards published.');
+      if (successMessage) alert(successMessage);
+      return true;
     } catch {
       setError('Network error while publishing home content.');
+      return false;
     } finally {
       setHomeContentSubmitting(false);
     }
+  }
+
+  async function publishHomeContent() {
+    await persistHomeContent(homeContent, 'Home page cards published.');
   }
 
   useEffect(() => {
@@ -322,7 +392,7 @@ function App() {
       badgeBg: '#FFEDD5',
       unitText: '',
       featuresText: [
-        'Unlimited ARYA AI practice conversations',
+        'Unlimited AI practice conversations',
         'HD 1-on-1 Video Calling with native speakers',
         'All interview & daily conversation topics',
         'Priority matching with global speakers',
@@ -390,7 +460,7 @@ function App() {
         badgeBg: planForm.badgeBg,
         unitText: planForm.unitText.trim() || `/${planForm.duration.trim() || planForm.name.trim()}`,
         features: features.length > 0 ? features : [
-          'Unlimited ARYA AI practice conversations',
+          'Unlimited AI practice conversations',
           'HD 1-on-1 Video Calling',
           'All topics unlocked',
         ],
@@ -1086,7 +1156,7 @@ function App() {
               <div>
                 <h3 style={{ margin: '0 0 4px' }}>Home page cards</h3>
                 <p className="muted" style={{ margin: 0 }}>
-                  Add, edit, hide, delete, or reorder the cards shown to learners. Publish to make changes live.
+                  Adding or editing a card publishes it immediately. Hide, delete, and reorder changes need Publish changes.
                 </p>
               </div>
               <div className="home-content-actions">
@@ -1560,7 +1630,7 @@ function App() {
                     outline: 'none',
                     resize: 'vertical',
                   }}
-                  placeholder="Unlimited ARYA AI practice conversations&#10;HD 1-on-1 Video Calling&#10;Interview Prep Topics"
+                  placeholder="Unlimited AI practice conversations&#10;HD 1-on-1 Video Calling&#10;Interview Prep Topics"
                 />
               </div>
 
@@ -1716,6 +1786,33 @@ function App() {
                     <option value="career_aspirations">Career aspirations</option>
                   </select>
                 </label>
+                <div className="home-card-form-field is-wide">
+                  <label htmlFor="home-card-image">Card image (optional)</label>
+                  <input
+                    id="home-card-image"
+                    className="home-content-input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={chooseHomeCardImage}
+                  />
+                  <small>PNG, JPEG, or WebP; maximum 5 MB. This image replaces the illustration on this card only.</small>
+                  {(homeCardForm.imageData || homeCardForm.imageUrl) && (
+                    <div className="home-card-image-preview-row">
+                      <img
+                        className="home-card-image-preview"
+                        src={homeCardForm.imageData || `${API}${homeCardForm.imageUrl}`}
+                        alt="Home card preview"
+                      />
+                      <button
+                        type="button"
+                        className="home-card-cancel"
+                        onClick={() => setHomeCardForm((current) => ({ ...current, imageUrl: '', imageData: '' }))}
+                      >
+                        Remove image
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <label className="home-card-form-field">
                   Icon name
                   <input
@@ -1758,7 +1855,9 @@ function App() {
 
               <div className="modal-actions">
                 <button type="button" className="home-card-cancel" onClick={() => setShowHomeCardModal(false)}>Cancel</button>
-                <button type="submit" className="action">{editingHomeTopicId ? 'Save changes' : 'Add card'}</button>
+                <button type="submit" className="action" disabled={homeContentSubmitting || homeCardImageReading}>
+                  {homeCardImageReading ? 'Reading image…' : homeContentSubmitting ? 'Saving…' : editingHomeTopicId ? 'Save changes' : 'Add card'}
+                </button>
               </div>
             </form>
           </div>

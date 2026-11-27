@@ -36,9 +36,9 @@ import CallVideo from './CallVideo';
 import { configureSubscription, purchasePlan, restorePurchases } from './src/subscription';
 import { speakText, speakEnglish, stopSpeech, isSpeaking, LANGUAGE_LOCALES } from './src/utils/speechHelper';
 import ringtoneManager from './src/utils/ringtoneHelper';
-import AryaTopBar from './src/components/AryaTopBar';
-import AryaBottomNav from './src/components/AryaBottomNav';
-import AryaHomeScreen from './src/components/AryaHomeScreen';
+import TopBar from './src/components/TopBar';
+import BottomNav from './src/components/BottomNav';
+import HomeScreen from './src/components/HomeScreen';
 import ProSubscriptionScreen from './src/components/ProSubscriptionScreen';
 import ProfileScreen from './src/components/ProfileScreen';
 import LearnScreen from './src/components/LearnScreen';
@@ -1031,7 +1031,7 @@ function App() {
   const [pendingFriendRequests, setPendingFriendRequests] = useState([]);
   const [sentFriendRequests, setSentFriendRequests] = useState([]);
   const [recentCoLearnersList, setRecentCoLearnersList] = useState([]);
-  const [aryaSettings, setAryaSettings] = useState({
+  const [aiSettings, setAiSettings] = useState({
     voice: 'FEMALE',
     speed: '1x',
     nativeLanguage: 'Other (English)',
@@ -1069,7 +1069,7 @@ function App() {
     loadSubscription().catch(() => {});
   };
 
-  const handleStartRandomMatch = async (filters = {}) => {
+  const handleStartRandomMatch = async () => {
     if (!isPaidSubscriber()) {
       setSubscriptionError('An active subscription is required to call other co-learners.');
       await openSubscription();
@@ -1079,13 +1079,13 @@ function App() {
     setIsMatchingCall(true);
     try {
       const recentIds = recentPartnerHistoryRef.current || [];
-      const queryParams = `?gender=${encodeURIComponent(filters.gender || 'all')}&level=${encodeURIComponent(filters.level || 'all')}&exclude=${encodeURIComponent(recentIds.join(','))}&lastCalled=${encodeURIComponent(lastCalledPartnerIdRef.current || '')}`;
+      const queryParams = `?exclude=${encodeURIComponent(recentIds.join(','))}&lastCalled=${encodeURIComponent(lastCalledPartnerIdRef.current || '')}`;
       const onlineRes = await request(`practice/random-online${queryParams}`);
       if (!onlineRes?.ok || !onlineRes.user || onlineRes.user.id?.startsWith('partner_')) {
         setIsMatchingCall(false);
         Alert.alert(
-          'No Available Subscribers',
-          onlineRes?.message || 'There are no subscribed co-learners matching your selection online and available right now.'
+          'No Available Learner',
+          onlineRes?.message || 'There are no subscribed co-learners online and available right now.'
         );
         return;
       }
@@ -1117,7 +1117,6 @@ function App() {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [country, setCountry] = useState('');
   const [profileGender, setProfileGender] = useState('');
-  const [preferredCallGender, setPreferredCallGender] = useState('any');
   const [nativeLanguage, setNativeLanguage] = useState('');
   const [learningLanguage, setLearningLanguage] = useState('English');
   const [level, setLevel] = useState('Beginner');
@@ -1295,8 +1294,6 @@ function App() {
   const [regEmail, setRegEmail] = useState('');
   const [regProfileGender, setRegProfileGender] = useState('');
   const [regProfileGenderDropdownOpen, setRegProfileGenderDropdownOpen] = useState(false);
-  const [regPreferredCallGender, setRegPreferredCallGender] = useState('any');
-  const [regGenderDropdownOpen, setRegGenderDropdownOpen] = useState(false);
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
@@ -2619,9 +2616,6 @@ function App() {
               if (cachedUser.email) setEmail(cachedUser.email);
               if (cachedUser.profilePhotoUrl) setAvatarUrl(cachedUser.profilePhotoUrl);
               if (['male', 'female'].includes(cachedUser.gender)) setProfileGender(cachedUser.gender);
-              if (['male', 'female', 'any'].includes(cachedUser.preferredCallGender)) {
-                setPreferredCallGender(cachedUser.preferredCallGender);
-              }
             }
           } catch {}
         }
@@ -2639,9 +2633,6 @@ function App() {
           if (meRes.user.email) setEmail(meRes.user.email);
           if (meRes.user.profilePhotoUrl !== undefined) setAvatarUrl(meRes.user.profilePhotoUrl);
           setProfileGender(['male', 'female'].includes(meRes.user.gender) ? meRes.user.gender : '');
-          setPreferredCallGender(['male', 'female', 'any'].includes(meRes.user.preferredCallGender)
-            ? meRes.user.preferredCallGender
-            : 'any');
           if (meRes.user.country) setCountry(meRes.user.country);
           if (meRes.user.nativeLanguage) setNativeLanguage(meRes.user.nativeLanguage);
           if (meRes.user.learningLanguage) setLearningLanguage(meRes.user.learningLanguage);
@@ -3275,9 +3266,6 @@ function App() {
         if (res.user.email) setEmail(res.user.email);
         if (res.user.profilePhotoUrl) setAvatarUrl(res.user.profilePhotoUrl);
         setProfileGender(['male', 'female'].includes(res.user.gender) ? res.user.gender : '');
-        setPreferredCallGender(['male', 'female', 'any'].includes(res.user.preferredCallGender)
-          ? res.user.preferredCallGender
-          : 'any');
         if (res.user.country) setCountry(res.user.country);
         if (res.user.nativeLanguage) setNativeLanguage(res.user.nativeLanguage);
         if (res.user.learningLanguage) setLearningLanguage(res.user.learningLanguage);
@@ -3358,7 +3346,6 @@ function App() {
           email: emailTrimmed.toLowerCase(),
           password: regPassword,
           gender: regProfileGender,
-          preferredCallGender: regPreferredCallGender,
         }),
       });
 
@@ -3370,7 +3357,6 @@ function App() {
         setName(nameTrimmed);
         setEmail(emailTrimmed);
         setProfileGender(res.user.gender || regProfileGender);
-        setPreferredCallGender(res.user.preferredCallGender || regPreferredCallGender);
         if (res.subscription) {
           setSubscription(res.subscription);
         }
@@ -3411,7 +3397,6 @@ function App() {
       setAvatarUrl(null);
       setCountry('');
       setProfileGender('');
-      setPreferredCallGender('any');
       setNativeLanguage('');
       setLearningLanguage('English');
       setLevel('Beginner');
@@ -3428,8 +3413,6 @@ function App() {
       setRegEmail('');
       setRegProfileGender('');
       setRegProfileGenderDropdownOpen(false);
-      setRegPreferredCallGender('any');
-      setRegGenderDropdownOpen(false);
       setRegPassword('');
       setRegConfirmPassword('');
       setRegError('');
@@ -4370,9 +4353,9 @@ function App() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ flex: 1 }}
         >
-          {/* Top unified ARYA Header on main screens (Images 1 & 4) */}
+          {/* Top unified header on main screens (Images 1 & 4) */}
           {!['welcome', 'login', 'register', 'onboard', 'level', 'call', 'call-complete', 'profile', 'premium', 'aiPractice', 'messages', 'chat'].includes(screen) && (
-            <AryaTopBar
+            <TopBar
               user={{ displayName: name || 'Prateek Pawar', streak: streak || 0, profilePhotoUrl: avatarUrl }}
               userStats={{ streak: streak || 0 }}
               currentScreen={screen}
@@ -4392,9 +4375,9 @@ function App() {
             />
           )}
 
-          {/* SCREEN: ARYA HOME (IMAGE 1) */}
+          {/* SCREEN: HOME (IMAGE 1) */}
           {screen === 'home' && (
-            <AryaHomeScreen
+            <HomeScreen
               user={{ displayName: name, streak }}
               onSelectTopic={(topic, mode) => handleHomeTopicSelection(topic, mode)}
               onPressGetPro={() => {
@@ -4405,6 +4388,7 @@ function App() {
               isPro={aiPracticeIsPro}
               freeCreditsRemaining={aiFreeCreditsRemaining}
               request={request}
+              apiBaseUrl={API}
             />
           )}
 
@@ -4424,7 +4408,6 @@ function App() {
               onStartRandomMatch={handleStartRandomMatch}
               isMatching={isMatchingCall}
               isSubscribed={isPaidSubscriber()}
-              preferredCallGender={preferredCallGender}
               freeTrialSecondsRemaining={getFreeTrialSecondsRemaining()}
               dailyFreeSecondsLimit={FREE_TRIAL_TOTAL_SECONDS}
               connectedCallsCount={connectedCallsCount}
@@ -4524,8 +4507,8 @@ function App() {
                 }
               }}
               onLogout={handleLogout}
-              aryaSettings={aryaSettings}
-              onUpdateAryaSettings={(newSettings) => setAryaSettings(newSettings)}
+              aiSettings={aiSettings}
+              onUpdateAiSettings={(newSettings) => setAiSettings(newSettings)}
               isPro={subscription?.plan?.id === 'pro' || subscription?.plan?.id === 'plus' || subscription?.active === true}
               subscription={subscription}
             />
@@ -4940,50 +4923,6 @@ function App() {
                             setRegProfileGenderDropdownOpen(false);
                           }}
                           style={{ paddingHorizontal: 14, paddingVertical: 11, backgroundColor: regProfileGender === gender ? '#FFF3EF' : '#FFFFFF' }}
-                        >
-                          <Text style={{ color: COLORS.textPrimary, fontSize: 14 }}>
-                            {gender.charAt(0).toUpperCase() + gender.slice(1)}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Preferred Call Partner</Text>
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel={`Preferred call partner gender: ${regPreferredCallGender}`}
-                    accessibilityState={{ expanded: regGenderDropdownOpen }}
-                    onPress={() => setRegGenderDropdownOpen((open) => !open)}
-                    style={[
-                      styles.inputFieldBox,
-                      regGenderDropdownOpen && styles.inputFieldBoxFocused,
-                    ]}
-                  >
-                    <Ionicons
-                      name="people-outline"
-                      size={20}
-                      color={regGenderDropdownOpen ? COLORS.primary : COLORS.textSecondary}
-                    />
-                    <Text style={{ flex: 1, marginLeft: 10, color: COLORS.textPrimary, fontSize: 15 }}>
-                      {regPreferredCallGender.charAt(0).toUpperCase() + regPreferredCallGender.slice(1)}
-                    </Text>
-                    <Ionicons name={regGenderDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.textSecondary} />
-                  </TouchableOpacity>
-                  {regGenderDropdownOpen && (
-                    <View style={{ marginTop: 6, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, overflow: 'hidden' }}>
-                      {['male', 'female', 'any'].map((gender) => (
-                        <TouchableOpacity
-                          key={gender}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: regPreferredCallGender === gender }}
-                          onPress={() => {
-                            setRegPreferredCallGender(gender);
-                            setRegGenderDropdownOpen(false);
-                          }}
-                          style={{ paddingHorizontal: 14, paddingVertical: 11, backgroundColor: regPreferredCallGender === gender ? '#FFF3EF' : '#FFFFFF' }}
                         >
                           <Text style={{ color: COLORS.textPrimary, fontSize: 14 }}>
                             {gender.charAt(0).toUpperCase() + gender.slice(1)}
@@ -7530,7 +7469,7 @@ function App() {
             'aiPractice', 'settings', 'manage-account', 'legal-terms', 'legal-privacy',
             'dashboard',
           ].includes(screen) && !(screen === 'call' && call) && !(screen === 'call-complete' && callCompletion) && (
-            <AryaHomeScreen
+            <HomeScreen
               user={{ displayName: name, streak }}
               onSelectTopic={(topic, mode) => handleHomeTopicSelection(topic, mode)}
               onPressGetPro={() => {
@@ -7541,6 +7480,7 @@ function App() {
               isPro={aiPracticeIsPro}
               freeCreditsRemaining={aiFreeCreditsRemaining}
               request={request}
+              apiBaseUrl={API}
             />
           )}
 
@@ -7680,9 +7620,9 @@ function App() {
             </ScrollView>
           )}
 
-          {/* BOTTOM NAVIGATION (ARYA TAB BAR) */}
+          {/* BOTTOM NAVIGATION */}
           {!['welcome', 'login', 'register', 'onboard', 'level', 'call', 'call-complete', 'aiPractice', 'manage-account', 'legal-terms', 'legal-privacy', 'chat'].includes(screen) && (
-            <AryaBottomNav
+            <BottomNav
               activeTab={activeBottomTab}
               onTabPress={handleBottomTabPress}
               unreadCount={Object.values(unreadByUser).reduce((sum, count) => sum + count, 0)}
@@ -7753,7 +7693,7 @@ function App() {
 
                 <Text style={styles.aiCreditsModalTitle}>Keep your momentum going</Text>
                 <Text style={styles.aiCreditsModalBody}>
-                  Choose a plan to continue practicing with ARYA across General and Interview topics.
+                  Choose a plan to continue AI practice across General and Interview topics.
                 </Text>
 
                 <View style={styles.aiCreditsBenefits}>

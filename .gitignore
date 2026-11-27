@@ -7,6 +7,7 @@ dist/
 .DS_Store
 backend/data/store.json
 backend/data/attachments/
+backend/data/home-card-images/
 powershell.bat
 
 .env*.local
